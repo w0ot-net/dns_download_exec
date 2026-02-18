@@ -51,9 +51,11 @@ For each configured file:
 4. Split compressed bytes into slices.
 5. Derive deterministic `file_tag` and `slice_token` mapping.
 6. Build immutable manifest/slice tables.
-7. Generate one client file per selected target OS.
 
 All publish tables become read-only before entering serve mode.
+
+Client generation integration is intentionally out of scope for this document.
+Generation behavior is specified in `doc/architecture/CLIENT_GENERATION.md`.
 
 ---
 
@@ -137,22 +139,10 @@ Runtime must not mutate published slice bytes.
 
 ---
 
-## Client Generation Timing
-
-Client artifacts are generated during publish preparation, before serving loop.
-
-Rules:
-- one standalone `.py` file per `(file, target_os)`
-- no sidecar artifacts
-- generation failure is fatal startup error
-- partial generation output must be cleaned before exit
-
----
-
 ## Observability
 
 Minimum runtime logs:
-- startup summary (domain, file count, target_os selection)
+- startup summary (domain, file count, listen address)
 - per-file publish summary (`file_id`, `file_tag`, `total_slices`,
   ciphertext slice budget)
 - request outcomes (`served`, `miss`, `runtime_fault`)
