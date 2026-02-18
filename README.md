@@ -1,2 +1,2 @@
 # dns_download_exec
-easily download and (optionally) exec a file over DNS
+easily download files over DNS using generated clients

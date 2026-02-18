@@ -6,9 +6,11 @@ purpose-built Python clients that download, verify, and restore those files.
 
 The architecture is intentionally narrow:
 - server publishes operator-selected files only
-- generated client downloads one specific file
+- generated clients are OS-specific (Windows or Linux target)
+- each generated client downloads one specific file
 - transport is DNS with CNAME responses only (v1)
 - Python 2.7/3.x, standard library only, Windows and Linux support
+- download-only workflow; no execution stage in v1
 
 ---
 
@@ -123,17 +125,19 @@ Fail-fast behavior:
 
 ### 4. Client Generator
 
-At server startup, generate a Python client per hosted file.
+At server startup, generate Python clients per hosted file and target OS.
 
 Generated client embeds:
 - target domain
+- target OS profile
 - file identity metadata
 - expected total slices
 - integrity metadata (hash and crypto profile)
 - output reconstruction rules
 
 Each generated client is single-purpose:
-- downloads exactly one file definition
+- downloads exactly one file definition for one target OS profile
+- is emitted as exactly one standalone Python file
 - does not rely on runtime negotiation for that file contract
 
 ### 5. Generated Client Runtime
@@ -151,6 +155,7 @@ Rules:
 - accept out-of-order delivery
 - retries must be idempotent
 - any verification mismatch is fatal
+- never execute downloaded bytes in v1
 
 Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
@@ -163,7 +168,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 1. Operator starts server with domain and file list.
 2. Server validates all inputs.
 3. Server builds in-memory publish artifacts for each file.
-4. Server generates one downloader client artifact per file.
+4. Server generates downloader client artifacts per file and target OS.
 5. Server binds DNS socket and begins serving queries.
 
 ### Download Flow
@@ -231,5 +236,6 @@ integrity rules, or client-side reconstruction semantics.
 - runtime file mutation/hot reload
 - compatibility layer for legacy wire formats
 - stealth/timing obfuscation features
+- execution of downloaded files
 
 The v1 goal is a small, deterministic, auditable file download path over DNS.

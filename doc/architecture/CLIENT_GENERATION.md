@@ -3,7 +3,8 @@
 This document defines how the server generates per-file download clients.
 
 v1 generation is deterministic from launch state and file publish metadata.
-Each generated client is single-purpose: download one specific published file.
+Each generated client is single-purpose: download one specific published file
+for one target OS profile.
 
 ---
 
@@ -13,6 +14,7 @@ Each generated client is single-purpose: download one specific published file.
 2. Embed all required metadata so runtime negotiation is unnecessary.
 3. Keep download/verify behavior deterministic and fail-fast.
 4. Keep generated client independent from server source tree at runtime.
+5. Emit exactly one standalone Python file per generated client.
 
 ---
 
@@ -30,6 +32,7 @@ For each published file, generator input is:
 - crypto profile metadata required by `doc/architecture/CRYPTO.md`
 - wire/profile metadata required by `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - runtime knobs (timeouts, retry pacing, max attempts policy)
+- `target_os` (`windows` or `linux`)
 
 Global input:
 - resolver target configuration (direct resolver or system resolver behavior)
@@ -39,16 +42,18 @@ Global input:
 
 ## Output Artifacts
 
-For each published file, generate one Python script artifact.
+For each published file and `target_os`, generate exactly one Python script
+artifact.
 
 Required properties:
 - standalone executable with only stdlib imports
 - ASCII-only source
 - no dependency on repository-relative imports
 - embeds immutable metadata constants for that one file contract
+- no sidecar files (no separate config, manifest, or module files)
 
 Suggested output naming:
-- `dnsdl_<file_id>_<publish_id>.py`
+- `dnsdl_<file_id>_<publish_id>_<target_os>.py`
 
 Filename is not a protocol identifier and may change without wire impact.
 
@@ -66,7 +71,8 @@ The generated script must contain these sections:
 6. `OUTPUT WRITER`: write reconstructed plaintext to temp path.
 7. `CLI ENTRYPOINT`: parse minimal args and run.
 
-Inlining helper code in a single file is preferred to avoid packaging steps.
+All helper code must be inlined in the generated file; external package or
+multi-file layouts are not allowed in v1.
 
 ---
 
@@ -77,6 +83,7 @@ The following constants are required in generated code:
 - `PUBLISH_ID`
 - `FILE_ID`
 - `FILE_VERSION`
+- `TARGET_OS`
 - `TOTAL_SLICES`
 - `COMPRESSED_SIZE`
 - `PLAINTEXT_SHA256_HEX`
@@ -104,6 +111,8 @@ Generated client should expose a small, stable CLI:
 
 If `--out` is omitted, write to a process temp directory with a deterministic
 name derived from `(file_id, file_version, plaintext_sha256)`.
+
+No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 
 ---
 
@@ -201,6 +210,8 @@ Generation must fail before emitting client artifact when:
 - duplicate token in `SLICE_TOKENS`
 - any token exceeds `DNS_MAX_LABEL_LEN`
 - unsupported crypto/wire profile selected
+- unsupported `TARGET_OS`
+- generation path would require more than one output file for the client
 
 Partial artifacts must not be kept on generation failure.
 
