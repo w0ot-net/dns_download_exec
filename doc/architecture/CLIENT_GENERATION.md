@@ -1,0 +1,230 @@
+# Client Generation
+
+This document defines how the server generates per-file download clients.
+
+v1 generation is deterministic from launch state and file publish metadata.
+Each generated client is single-purpose: download one specific published file.
+
+---
+
+## Goals
+
+1. Generate minimal Python client code (2.7/3.x, standard library only).
+2. Embed all required metadata so runtime negotiation is unnecessary.
+3. Keep download/verify behavior deterministic and fail-fast.
+4. Keep generated client independent from server source tree at runtime.
+
+---
+
+## Inputs
+
+For each published file, generator input is:
+- `base_domain`
+- `publish_id`
+- `file_id`
+- `file_version`
+- `total_slices`
+- `compressed_size`
+- `plaintext_sha256`
+- ordered `slice_tokens` array (`slice_index -> token`)
+- crypto profile metadata required by `doc/architecture/CRYPTO.md`
+- wire/profile metadata required by `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
+- runtime knobs (timeouts, retry pacing, max attempts policy)
+
+Global input:
+- resolver target configuration (direct resolver or system resolver behavior)
+- output directory for generated clients
+
+---
+
+## Output Artifacts
+
+For each published file, generate one Python script artifact.
+
+Required properties:
+- standalone executable with only stdlib imports
+- ASCII-only source
+- no dependency on repository-relative imports
+- embeds immutable metadata constants for that one file contract
+
+Suggested output naming:
+- `dnsdl_<file_id>_<publish_id>.py`
+
+Filename is not a protocol identifier and may change without wire impact.
+
+---
+
+## Generated Script Structure
+
+The generated script must contain these sections:
+1. `CONFIG CONSTANTS`: embedded metadata and runtime knobs.
+2. `DNS ENCODE/DECODE HELPERS`: request name construction and CNAME payload
+   parsing for v1 format.
+3. `CRYPTO HELPERS`: key derivation, decrypt, and MAC verification for v1.
+4. `DOWNLOAD ENGINE`: retry loop and slice store.
+5. `REASSEMBLY`: ordered reassembly, decompress, and final hash verify.
+6. `OUTPUT WRITER`: write reconstructed plaintext to temp path.
+7. `CLI ENTRYPOINT`: parse minimal args and run.
+
+Inlining helper code in a single file is preferred to avoid packaging steps.
+
+---
+
+## Embedded Constants Contract
+
+The following constants are required in generated code:
+- `BASE_DOMAIN`
+- `PUBLISH_ID`
+- `FILE_ID`
+- `FILE_VERSION`
+- `TOTAL_SLICES`
+- `COMPRESSED_SIZE`
+- `PLAINTEXT_SHA256_HEX`
+- `SLICE_TOKENS` (ordered by index)
+- `CRYPTO_PROFILE`
+- `WIRE_PROFILE`
+- `RESPONSE_LABEL`
+- `DNS_MAX_LABEL_LEN`
+- retry/timeouts constants
+
+Invariant:
+- `len(SLICE_TOKENS) == TOTAL_SLICES`
+
+Any mismatch in generated constants is a generation-time failure.
+
+---
+
+## Runtime CLI Contract
+
+Generated client should expose a small, stable CLI:
+- `--resolver host:port` (optional override)
+- `--out path` (optional output path)
+- `--timeout seconds` (optional request timeout override)
+- `--max-rounds n` (optional retry rounds cap)
+
+If `--out` is omitted, write to a process temp directory with a deterministic
+name derived from `(file_id, file_version, plaintext_sha256)`.
+
+---
+
+## Download Algorithm
+
+1. Initialize missing set: all slice indices.
+2. While missing set not empty:
+   - choose next index from missing set (strategy is implementation detail)
+   - map `index -> slice_token`
+   - query `<slice_token>.<publish_id>.<base_domain>`
+   - parse and validate response format
+   - verify MAC/decrypt with embedded metadata
+   - store bytes for index if first valid receipt
+   - for duplicate index: bytes must match stored bytes exactly
+3. Exit failure when retry/round policy is exhausted.
+4. Continue until every index has validated bytes.
+
+Required semantics:
+- out-of-order receive accepted
+- duplicate responses accepted only if identical
+- any parse/verification violation is fatal for that run
+
+---
+
+## Retry and Timeout Policy
+
+Generation emits explicit defaults for:
+- per-request timeout
+- sleep/jitter between requests
+- maximum consecutive failures
+- maximum rounds over missing indices
+
+Rules:
+- no infinite unbounded busy loop
+- retries are allowed for transport misses/timeouts
+- cryptographic or contract violations are non-retryable fatal errors
+
+Exact defaults are defined in `doc/architecture/CONFIG.md`.
+
+---
+
+## DNS Contract in Generated Client
+
+The generated client must implement exactly the current doc contracts:
+- query name mapping: `doc/architecture/QUERY_MAPPING.md`
+- CNAME payload parsing: `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
+
+No alternate parse modes or fallback wire decoders are allowed in v1.
+
+---
+
+## Reconstruction and Verification
+
+After all slices are present:
+1. Reassemble bytes by ascending slice index.
+2. Validate reassembled compressed length equals `COMPRESSED_SIZE`.
+3. Decompress.
+4. Compute plaintext SHA-256.
+5. Compare to `PLAINTEXT_SHA256_HEX`.
+6. Write plaintext bytes to output path only on success.
+
+On any failure:
+- do not emit partially reconstructed final file
+- return non-zero exit code
+
+---
+
+## Logging and Exit Codes
+
+Logging should be concise and machine-parseable enough for operator triage.
+
+Minimum events:
+- start metadata summary
+- per-round progress (received/missing counts)
+- fatal failure reason
+- success path and output location
+
+Exit code classes:
+- `0`: success
+- `2`: usage/CLI error
+- `3`: DNS/transport exhaustion (timeouts/retries exhausted)
+- `4`: parse/format violation
+- `5`: crypto verification failure
+- `6`: reconstruction/hash/decompress failure
+- `7`: output write failure
+
+---
+
+## Generator Failure Conditions
+
+Generation must fail before emitting client artifact when:
+- any required metadata field is missing
+- `TOTAL_SLICES <= 0`
+- token array length mismatch
+- duplicate token in `SLICE_TOKENS`
+- any token exceeds `DNS_MAX_LABEL_LEN`
+- unsupported crypto/wire profile selected
+
+Partial artifacts must not be kept on generation failure.
+
+---
+
+## Security Boundaries
+
+Generated client secrecy properties:
+- query names do not expose file path or slice index directly
+- embedded metadata makes replay/tamper detection possible
+
+Non-goals:
+- hiding destination domain
+- traffic shape obfuscation
+- anti-analysis hardening of generated code
+
+---
+
+## Versioning and Breaking Changes
+
+Any change to embedded constants schema, wire parser contract, crypto profile,
+or exit code semantics is a breaking generator/client contract change.
+
+Policy:
+- update server generator and generated client template in one change
+- update referenced architecture docs in the same change
+- do not add compatibility shims for obsolete generated templates
