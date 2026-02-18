@@ -38,6 +38,7 @@ For each published file, generator input is:
 Global input:
 - resolver target configuration (direct resolver or system resolver behavior)
 - output directory for generated clients
+- runtime PSK supplied by client operator
 
 ---
 
@@ -66,10 +67,12 @@ The generated script must contain these sections:
 1. `CONFIG CONSTANTS`: embedded metadata and runtime knobs.
 2. `DNS ENCODE/DECODE HELPERS`: request name construction and CNAME payload
    parsing for v1 format.
-3. `CRYPTO HELPERS`: key derivation, decrypt, and MAC verification for v1.
+3. `CRYPTO HELPERS`: key derivation from runtime PSK, decrypt, and MAC
+   verification for v1.
 4. `DOWNLOAD ENGINE`: retry loop and slice store.
 5. `REASSEMBLY`: ordered reassembly, decompress, and final hash verify.
-6. `OUTPUT WRITER`: write reconstructed plaintext to temp path.
+6. `OUTPUT WRITER`: write reconstructed plaintext to requested output path, or
+   a default temp path when `--out` is omitted.
 7. `CLI ENTRYPOINT`: parse minimal args and run.
 
 All helper code must be inlined in the generated file; external package or
@@ -97,6 +100,7 @@ The following constants are required in generated code:
 
 Invariant:
 - `len(SLICE_TOKENS) == TOTAL_SLICES`
+- PSK must not be embedded as a generated constant in v1
 
 Any mismatch in generated constants is a generation-time failure.
 
@@ -105,11 +109,14 @@ Any mismatch in generated constants is a generation-time failure.
 ## Runtime CLI Contract
 
 Generated client should expose a small, stable CLI:
+- `--psk secret` (required shared secret for v1 crypto profile)
 - `--resolver host:port` (optional override)
 - `--out path` (optional output path)
 - `--timeout seconds` (optional request timeout override)
 - `--no-progress-timeout seconds` (optional override)
 - `--max-rounds n` (optional retry rounds cap)
+
+`--psk` is mandatory and must be non-empty.
 
 If `--out` is omitted, write to a process temp directory with a deterministic
 name derived from `(file_id, file_version, plaintext_sha256)`.
@@ -120,8 +127,9 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 
 ## Download Algorithm
 
-1. Initialize missing set: all slice indices.
-2. While missing set not empty:
+1. Validate `--psk` and derive per-file keys before issuing requests.
+2. Initialize missing set: all slice indices.
+3. While missing set not empty:
    - choose next index from missing set (strategy is implementation detail)
    - map `index -> slice_token`
    - query `<slice_token>.<file_tag>.<base_domain>`
@@ -130,10 +138,10 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
    - store bytes for index if first valid receipt
    - reset no-progress timer when a new slice index is acquired
    - for duplicate index: bytes must match stored bytes exactly
-3. Exit failure when retry/round policy is exhausted.
-4. Exit failure when no new slice is acquired for `no_progress_timeout_seconds`
+4. Exit failure when retry/round policy is exhausted.
+5. Exit failure when no new slice is acquired for `no_progress_timeout_seconds`
    (default `60`).
-5. Continue until every index has validated bytes.
+6. Continue until every index has validated bytes.
 
 Required semantics:
 - out-of-order receive accepted
@@ -200,6 +208,7 @@ Minimum events:
 Exit code classes:
 - `0`: success
 - `2`: usage/CLI error
+- missing or empty `--psk` is a usage/CLI error
 - `3`: DNS/transport exhaustion (timeouts/retries exhausted or no-progress
   timeout reached)
 - `4`: parse/format violation

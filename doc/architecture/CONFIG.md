@@ -77,6 +77,9 @@ Generated-client runtime overrides:
 - `--no-progress-timeout seconds`
 - `--max-rounds n`
 
+Generated-client runtime required input:
+- `--psk secret` (non-empty shared secret for v1 crypto profile)
+
 No runtime flag for execution is allowed in v1.
 
 ---
