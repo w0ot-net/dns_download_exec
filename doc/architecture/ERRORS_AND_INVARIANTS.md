@@ -1,0 +1,214 @@
+# Errors and Invariants
+
+This document defines v1 failure behavior and invariant enforcement for:
+- server startup and request handling
+- generated client download runtime
+- generator output contract
+
+The policy is fail-fast on contract violations and deterministic on known miss
+paths.
+
+---
+
+## Error Classes
+
+### Startup Errors (Server)
+
+Startup errors are fatal and must prevent listener startup.
+
+Examples:
+- invalid config values or bounds
+- unreadable input files
+- invalid deterministic mapping derivation
+- unsupported profile values
+- slice budget computation failure
+
+### Request Misses (Server)
+
+A request miss is a valid DNS request that does not map to a served slice.
+Misses are not process-fatal.
+
+Examples:
+- unknown `file_tag`
+- unknown `slice_token` under a known `file_tag`
+- unsupported qname shape for mapping
+- unsupported qtype/class for v1 flow
+
+### Runtime Faults (Server)
+
+Runtime faults are internal failures during request handling.
+
+Examples:
+- missing manifest entry after successful lookup
+- encoding failure for a supposedly valid slice record
+- invariant mismatch in publish state
+
+### Retryable Transport Events (Client)
+
+Retryable events consume retry budget and do not immediately abort.
+
+Examples:
+- DNS timeout/no response
+- UDP receive timeout
+- socket I/O interruption where retry is possible
+
+### Non-Retryable Contract Violations (Client)
+
+Contract violations terminate the run immediately.
+
+Examples:
+- DNS message parse failure after receipt
+- unexpected payload shape for required CNAME answer
+- CNAME binary record invariant failure
+- MAC/decrypt mismatch
+- duplicate-slice mismatch
+- final reconstruction/hash mismatch
+
+---
+
+## Server Response Matrix
+
+For parseable DNS requests in v1:
+
+1. **Valid mapped slice request**
+- Response: `RCODE=NOERROR`
+- Answer section: exactly one IN CNAME answer with deterministic payload
+- TTL: configured `ttl`
+
+2. **Deterministic miss**
+- Response: `RCODE=NXDOMAIN`
+- Answer section: empty
+- Behavior must be deterministic for identical request name and current publish
+  state.
+
+3. **Internal runtime fault**
+- Response: `RCODE=SERVFAIL`
+- Answer section: empty
+- Log as internal error with reason code.
+
+For unparseable/garbled datagrams (cannot safely parse request envelope), the
+server may drop silently.
+
+No fallback remap is allowed for any miss path.
+
+---
+
+## Server Validation Order
+
+For each incoming request:
+1. Parse DNS message envelope.
+2. Validate qname/class/qtype shape for v1.
+3. Validate suffix and mapping fields (`slice_token`, `file_tag`).
+4. Resolve mapping to canonical slice identity.
+5. Build deterministic slice record.
+6. Encode and return deterministic CNAME answer.
+
+Any failure before step 4 is a deterministic miss unless the request is not
+parseable.
+Any failure at or after step 4 caused by internal inconsistency is a runtime
+fault (`SERVFAIL`).
+
+---
+
+## Client Failure Semantics
+
+Generated client failure classes map to exit codes from
+`doc/architecture/CLIENT_GENERATION.md`:
+
+- `2` usage/CLI error:
+  - invalid runtime flag value
+  - invalid output path argument
+- `3` DNS/transport exhaustion:
+  - retries/timeouts exhausted without full slice set
+- `4` parse/format violation:
+  - DNS response cannot be parsed as expected
+  - CNAME record shape/fields violate v1 format contract
+- `5` crypto verification failure:
+  - MAC mismatch
+  - decrypt/auth context mismatch
+- `6` reconstruction/hash/decompress failure:
+  - compressed size mismatch
+  - decompression failure
+  - plaintext hash mismatch
+- `7` output write failure:
+  - final file cannot be persisted
+
+Retry policy:
+- only transport-level misses/timeouts are retryable
+- format/crypto/invariant violations are non-retryable fatal
+
+---
+
+## Invariants
+
+### Config and Startup
+
+1. Config is immutable after successful startup validation.
+2. All required config fields are present and within documented bounds.
+3. All input files exist and are readable before listener startup.
+4. Deterministic mapping parameters (`mapping_seed`, tag/token lengths) are
+   valid and sufficient for all published slices.
+
+### Mapping and Routing
+
+1. Same `(mapping_seed, file_version, slice_index)` always yields the same
+   `slice_token`.
+2. Same `(mapping_seed, file_version)` always yields the same `file_tag`.
+3. Mapping keys resolve to exactly one canonical slice identity.
+4. No silent fallback to other file/version/index is allowed.
+
+### Slice Serving
+
+1. Same mapped slice identity always yields the same CNAME payload text within
+   a running process.
+2. With unchanged `(mapping_seed, file_version)`, payload identity is stable
+   across restarts.
+3. Server never emits multiple slice answers for one mapped request in v1.
+
+### Client Assembly
+
+1. `TOTAL_SLICES` defines exact required index set `[0, TOTAL_SLICES-1]`.
+2. Duplicate index bytes must be identical.
+3. Final compressed length must equal embedded `COMPRESSED_SIZE`.
+4. Final plaintext hash must equal embedded `PLAINTEXT_SHA256_HEX`.
+5. Client never executes downloaded bytes in v1.
+
+### Generator Contract
+
+1. Exactly one standalone `.py` artifact per `(file, target_os)`.
+2. No sidecar artifacts for runtime dependencies.
+3. Embedded constants must be internally consistent.
+
+Any invariant breach is fatal for the current operation context.
+
+---
+
+## Logging Requirements
+
+Minimum server log fields on error:
+- phase (`startup`, `request_parse`, `mapping`, `encode`, `internal`)
+- classification (`startup_error`, `miss`, `runtime_fault`)
+- stable reason code
+- request key context when available (`file_tag`, `slice_token`)
+
+Minimum generated-client log fields on failure:
+- phase (`dns`, `parse`, `crypto`, `reassembly`, `write`)
+- classification (`retryable`, `fatal`)
+- exit code
+
+Logs must avoid leaking source file paths in network-facing contexts.
+
+---
+
+## Compatibility Policy
+
+Changing any item below is a breaking contract change:
+- miss/error response matrix semantics
+- retryable vs non-retryable classification
+- invariant set that affects acceptance/rejection behavior
+- exit code meaning
+
+Breaking changes require synchronized updates to:
+- server runtime logic
+- generated client template
+- architecture docs referencing these contracts
