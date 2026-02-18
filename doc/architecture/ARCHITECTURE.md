@@ -72,7 +72,7 @@ Client behavior:
 ### 1. CLI and Config
 
 Primary launch form:
-- `dnsdle.py --domain example.com --files /etc/passwd,/tmp/a.bin`
+- `dnsdle.py --domain example.com --files /etc/passwd,/tmp/a.bin --psk <secret>`
 
 Responsibilities:
 - parse and validate operator input
@@ -83,6 +83,7 @@ Responsibilities:
 Fail-fast invariants:
 - domain must be valid for DNS label composition
 - all input files must exist and be readable before server starts
+- PSK must be present and non-empty before server starts
 - configuration is immutable after startup
 
 ### 2. File Publish Pipeline
@@ -111,7 +112,7 @@ Design rule:
 
 Responsibilities:
 - parse QNAME into routing fields
-- validate domain suffix and requested indices
+- validate domain suffix and mapping tokens
 - fetch canonical slice payload
 - encode payload into CNAME target
 - return standards-compliant DNS response
@@ -151,7 +152,7 @@ Responsibilities:
 - deduplicate duplicate slice replies by index
 - reassemble and decompress
 - verify final plaintext hash
-- write output to temp directory
+- write output to requested path or default temp directory
 
 Rules:
 - accept out-of-order delivery
@@ -168,7 +169,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 ### Startup Flow
 
-1. Operator starts server with domain and file list.
+1. Operator starts server with domain, file list, and PSK.
 2. Server validates all inputs.
 3. Server builds in-memory publish artifacts for each file.
 4. Server generates downloader client artifacts per file and target OS.
@@ -176,8 +177,8 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 ### Download Flow
 
-1. Generated client requests slice index `i`.
-2. Server validates query and locates slice `i`.
+1. Generated client selects missing slice index `i` and queries its mapped `slice_token`.
+2. Server validates query mapping and locates canonical slice `i`.
 3. Server replies with CNAME payload for that slice.
 4. Client verifies/stores slice and continues until complete.
 5. Client reassembles, decompresses, verifies hash, writes file.
