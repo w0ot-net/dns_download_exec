@@ -174,8 +174,10 @@ Caching may cause duplicate delivery of the same CNAME answer.
 This is safe only if responses are deterministic per mapped slice identity.
 
 Required property:
-- same `(publish_id, slice_token)` in one server process always yields the same
+- same `(file_tag, slice_token)` in one server process always yields the same
   CNAME target text and TTL.
+- with unchanged `(mapping_seed, file_version)`, derived `(file_tag,
+  slice_token)` and CNAME target text remain stable across restarts.
 
 ---
 

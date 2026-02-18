@@ -2,7 +2,7 @@
 
 This document defines how the server generates per-file download clients.
 
-v1 generation is deterministic from launch state and file publish metadata.
+v1 generation is deterministic from validated config and file publish metadata.
 Each generated client is single-purpose: download one specific published file
 for one target OS profile.
 
@@ -22,7 +22,8 @@ for one target OS profile.
 
 For each published file, generator input is:
 - `base_domain`
-- `publish_id`
+- `mapping_seed`
+- `file_tag`
 - `file_id`
 - `file_version`
 - `total_slices`
@@ -53,7 +54,7 @@ Required properties:
 - no sidecar files (no separate config, manifest, or module files)
 
 Suggested output naming:
-- `dnsdl_<file_id>_<publish_id>_<target_os>.py`
+- `dnsdl_<file_id>_<file_tag>_<target_os>.py`
 
 Filename is not a protocol identifier and may change without wire impact.
 
@@ -80,7 +81,7 @@ multi-file layouts are not allowed in v1.
 
 The following constants are required in generated code:
 - `BASE_DOMAIN`
-- `PUBLISH_ID`
+- `FILE_TAG`
 - `FILE_ID`
 - `FILE_VERSION`
 - `TARGET_OS`
@@ -122,7 +123,7 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 2. While missing set not empty:
    - choose next index from missing set (strategy is implementation detail)
    - map `index -> slice_token`
-   - query `<slice_token>.<publish_id>.<base_domain>`
+   - query `<slice_token>.<file_tag>.<base_domain>`
    - parse and validate response format
    - verify MAC/decrypt with embedded metadata
    - store bytes for index if first valid receipt

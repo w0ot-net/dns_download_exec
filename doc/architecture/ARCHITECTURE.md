@@ -28,9 +28,9 @@ The system uses a simple DNS request/response flow:
 ```
 Generated Client                                   DNSDL Server
 ----------------                                   ------------
-query: <slice>.<file>.<domain>         ---->      parse + validate query
-query: <slice>.<file>.<domain>         ---->      read canonical slice bytes
-query: <slice>.<file>.<domain>         ---->      encode CNAME payload
+query: <slice_token>.<file_tag>.<domain> ---->    parse + validate query
+query: <slice_token>.<file_tag>.<domain> ---->    read canonical slice bytes
+query: <slice_token>.<file_tag>.<domain> ---->    encode CNAME payload
                                                   return CNAME response
 ```
 
@@ -97,6 +97,7 @@ Runs once at startup per file:
 Output per file:
 - `file_id`
 - `file_version`
+- `file_tag` (derived from `mapping_seed` and `file_version`)
 - `total_slices`
 - `compressed_size`
 - `plaintext_sha256`
@@ -130,6 +131,7 @@ At server startup, generate Python clients per hosted file and target OS.
 Generated client embeds:
 - target domain
 - target OS profile
+- deterministic `file_tag`
 - file identity metadata
 - expected total slices
 - integrity metadata (hash and crypto profile)
