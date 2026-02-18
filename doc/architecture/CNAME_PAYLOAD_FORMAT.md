@@ -18,6 +18,22 @@ It is the contract between:
 
 ---
 
+## Label Length Cap (Configurable)
+
+The server exposes a configurable label-length cap:
+- `dns_max_label_len`
+
+Bounds:
+- minimum: 16
+- maximum: 63 (DNS protocol hard limit)
+
+The effective payload label cap for CNAME encoding is:
+- `effective_label_cap = dns_max_label_len`
+
+Startup must fail if `dns_max_label_len` is outside `[16, 63]`.
+
+---
+
 ## Record Model
 
 For each valid slice query, the server returns exactly one CNAME answer that
@@ -87,7 +103,7 @@ Encoding steps:
 1. Base32-encode the binary slice record.
 2. Strip padding (`=`) characters.
 3. Lowercase output text.
-4. Split into labels of at most 63 characters.
+4. Split into labels of at most `effective_label_cap` characters.
 5. Append `.<response_label>.<base_domain>`.
 
 Decoding steps:
@@ -108,7 +124,7 @@ limits and configured suffix length.
 
 Inputs:
 - maximum DNS name length (255 bytes including label lengths)
-- maximum label length (63 bytes)
+- configured `effective_label_cap` (16..63)
 - fixed suffix length for `.<response_label>.<base_domain>`
 - binary record overhead (4-byte header + 16-byte MAC)
 

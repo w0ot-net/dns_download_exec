@@ -69,6 +69,11 @@ Normalization rules:
 - no trailing dot in stored `base_domain`
 - DNS label and full-name length limits must always be enforced
 
+Configurable label cap:
+- `dns_max_label_len` controls maximum label length for generated names
+- valid range is `[16, 63]`
+- startup fails if out of range
+
 ---
 
 ## Token Alphabet and Length
@@ -81,6 +86,7 @@ Constraints:
 - choose the shortest token length that can represent all served slices with
   collision-safe assignment
 - keep `publish_id` short and fixed-length
+- both `slice_token` and `publish_id` must be `<= dns_max_label_len`
 - keep total QNAME length within DNS limits
 
 The server must fail startup if valid tokens cannot be assigned under current
