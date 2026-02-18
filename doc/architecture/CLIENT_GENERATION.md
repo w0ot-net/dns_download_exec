@@ -108,6 +108,7 @@ Generated client should expose a small, stable CLI:
 - `--resolver host:port` (optional override)
 - `--out path` (optional output path)
 - `--timeout seconds` (optional request timeout override)
+- `--no-progress-timeout seconds` (optional override)
 - `--max-rounds n` (optional retry rounds cap)
 
 If `--out` is omitted, write to a process temp directory with a deterministic
@@ -127,9 +128,12 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
    - parse and validate response format
    - verify MAC/decrypt with embedded metadata
    - store bytes for index if first valid receipt
+   - reset no-progress timer when a new slice index is acquired
    - for duplicate index: bytes must match stored bytes exactly
 3. Exit failure when retry/round policy is exhausted.
-4. Continue until every index has validated bytes.
+4. Exit failure when no new slice is acquired for `no_progress_timeout_seconds`
+   (default `60`).
+5. Continue until every index has validated bytes.
 
 Required semantics:
 - out-of-order receive accepted
@@ -142,6 +146,7 @@ Required semantics:
 
 Generation emits explicit defaults for:
 - per-request timeout
+- no-progress timeout (`60` seconds by default)
 - sleep/jitter between requests
 - maximum consecutive failures
 - maximum rounds over missing indices
@@ -149,6 +154,7 @@ Generation emits explicit defaults for:
 Rules:
 - no infinite unbounded busy loop
 - retries are allowed for transport misses/timeouts
+- prolonged no-progress state is terminal
 - cryptographic or contract violations are non-retryable fatal errors
 
 Exact defaults are defined in `doc/architecture/CONFIG.md`.
@@ -194,7 +200,8 @@ Minimum events:
 Exit code classes:
 - `0`: success
 - `2`: usage/CLI error
-- `3`: DNS/transport exhaustion (timeouts/retries exhausted)
+- `3`: DNS/transport exhaustion (timeouts/retries exhausted or no-progress
+  timeout reached)
 - `4`: parse/format violation
 - `5`: crypto verification failure
 - `6`: reconstruction/hash/decompress failure

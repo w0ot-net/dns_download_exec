@@ -156,6 +156,7 @@ Responsibilities:
 Rules:
 - accept out-of-order delivery
 - retries must be idempotent
+- prolonged no-progress state is terminal (default 60 seconds)
 - any verification mismatch is fatal
 - never execute downloaded bytes in v1
 

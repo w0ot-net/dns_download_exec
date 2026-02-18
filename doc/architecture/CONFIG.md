@@ -63,6 +63,7 @@ These values are emitted into each generated client unless overridden by
 runtime CLI flags in the generated client.
 
 - `request_timeout_seconds = 3.0`
+- `no_progress_timeout_seconds = 60`
 - `max_rounds = 64`
 - `max_consecutive_timeouts = 128`
 - `retry_sleep_base_ms = 100`
@@ -73,6 +74,7 @@ Generated-client runtime overrides:
 - `--resolver host:port`
 - `--out path`
 - `--timeout seconds`
+- `--no-progress-timeout seconds`
 - `--max-rounds n`
 
 No runtime flag for execution is allowed in v1.

@@ -120,6 +120,8 @@ Generated client failure classes map to exit codes from
   - invalid output path argument
 - `3` DNS/transport exhaustion:
   - retries/timeouts exhausted without full slice set
+  - no new slice acquired for longer than no-progress timeout (default `60`
+    seconds)
 - `4` parse/format violation:
   - DNS response cannot be parsed as expected
   - CNAME record shape/fields violate v1 format contract
@@ -135,6 +137,7 @@ Generated client failure classes map to exit codes from
 
 Retry policy:
 - only transport-level misses/timeouts are retryable
+- no-progress timeout is terminal
 - format/crypto/invariant violations are non-retryable fatal
 
 ---
@@ -169,9 +172,11 @@ Retry policy:
 
 1. `TOTAL_SLICES` defines exact required index set `[0, TOTAL_SLICES-1]`.
 2. Duplicate index bytes must be identical.
-3. Final compressed length must equal embedded `COMPRESSED_SIZE`.
-4. Final plaintext hash must equal embedded `PLAINTEXT_SHA256_HEX`.
-5. Client never executes downloaded bytes in v1.
+3. No-progress timer resets only when a new slice index is successfully stored.
+4. Client fails when no-progress timeout is reached.
+5. Final compressed length must equal embedded `COMPRESSED_SIZE`.
+6. Final plaintext hash must equal embedded `PLAINTEXT_SHA256_HEX`.
+7. Client never executes downloaded bytes in v1.
 
 ### Generator Contract
 
