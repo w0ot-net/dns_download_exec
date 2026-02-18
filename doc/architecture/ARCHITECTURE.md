@@ -12,14 +12,12 @@ The architecture is intentionally narrow:
 
 ---
 
-## Core Asymmetry
+## Request/Response Model
 
-The system follows polling asymmetry:
-- client initiates all DNS queries
-- server only answers queries
-- server cannot push data without a query
-
-This is a hard transport constraint and drives retry and throughput behavior.
+The system uses a simple DNS request/response flow:
+- client sends slice requests
+- server returns CNAME responses containing the requested slice
+- client retries missing slices until reconstruction is complete
 
 ---
 
