@@ -101,6 +101,10 @@ After implementation:
 ### 6. Documentation-first rollout
 - First change set updates architecture docs to a consistent multi-domain model.
 - Second change set updates startup/core code to match docs.
+- Merge gate for doc/code alignment:
+  - either merge documentation and startup/core code updates atomically in one
+    change, or keep documentation changes on a non-default branch until matching
+    startup/core code is ready for the same merge.
 - Third change set updates generated-client architecture/runtime contracts
   (`BASE_DOMAIN` -> `BASE_DOMAINS`) and the deterministic selection algorithm
   specification only.
@@ -182,9 +186,12 @@ After implementation:
   same unique domain set provided in different CSV orders yields identical
   canonical stored order and identical derived startup outputs.
 - Case 8 (client domain-selection determinism):
-  with `BASE_DOMAINS=[d0,d1,d2]`, retryable transport failures rotate suffix
-  strictly `d0 -> d1 -> d2 -> d0`, valid responses keep current index, and
-  process restart resets selection to `d0`.
+  contract-only check in this plan:
+  `doc/architecture/CLIENT_GENERATION.md` and
+  `doc/architecture/CLIENT_RUNTIME.md` specify that with
+  `BASE_DOMAINS=[d0,d1,d2]`, retryable transport failures rotate suffix strictly
+  `d0 -> d1 -> d2 -> d0`, valid responses keep current index, and process
+  restart resets selection to `d0`.
 
 ## Success Criteria
 - `--domain` is removed from the contract and replaced by `--domains` with
