@@ -40,8 +40,8 @@ def _build_single_publish_item(
 ):
     plaintext_sha256 = _sha256_hex(plaintext_bytes)
     if plaintext_sha256 in seen_plaintext_sha256:
-        ctx = {"plaintext_sha256": plaintext_sha256}
-        ctx.update(item_context)
+        ctx = dict(item_context)
+        ctx["plaintext_sha256"] = plaintext_sha256
         raise StartupError(
             "publish",
             "duplicate_plaintext_sha256",
@@ -72,8 +72,8 @@ def _build_single_publish_item(
     publish_version = _sha256_hex(compressed_bytes)
     file_id = _derive_file_id(publish_version)
     if file_id in seen_file_ids:
-        ctx = {"file_id": file_id}
-        ctx.update(item_context)
+        ctx = dict(item_context)
+        ctx["file_id"] = file_id
         raise StartupError(
             "publish",
             "file_id_collision",
@@ -97,6 +97,23 @@ def _build_single_publish_item(
         "wire_profile": PROFILE_V1,
         "source_filename": source_filename,
     }
+
+
+def _log_publish_item_built(item, extra_context):
+    if not logger_enabled("debug"):
+        return
+    event = {
+        "phase": "publish",
+        "classification": "diagnostic",
+        "reason_code": "publish_item_built",
+        "file_id": item["file_id"],
+        "publish_version": item["publish_version"],
+        "plaintext_sha256": item["plaintext_sha256"],
+        "compressed_size": item["compressed_size"],
+        "total_slices": item["total_slices"],
+    }
+    event.update(extra_context)
+    log_event("debug", "publish", event)
 
 
 def build_publish_items(
@@ -141,24 +158,7 @@ def build_publish_items(
             item_context={"file_index": file_index},
         )
         publish_items.append(item)
-        if logger_enabled("debug"):
-            log_event(
-                "debug",
-                "publish",
-                {
-                    "phase": "publish",
-                    "classification": "diagnostic",
-                    "reason_code": "publish_item_built",
-                    "file_id": item["file_id"],
-                    "publish_version": item["publish_version"],
-                },
-                context_fn=lambda: {
-                    "plaintext_sha256": item["plaintext_sha256"],
-                    "compressed_size": item["compressed_size"],
-                    "total_slices": item["total_slices"],
-                    "file_index": file_index,
-                },
-            )
+        _log_publish_item_built(item, {"file_index": file_index})
 
     return publish_items
 
@@ -195,24 +195,8 @@ def build_publish_items_from_sources(
             item_context={"source_filename": source_filename},
         )
         publish_items.append(item)
-        if logger_enabled("debug"):
-            log_event(
-                "debug",
-                "publish",
-                {
-                    "phase": "publish",
-                    "classification": "diagnostic",
-                    "reason_code": "publish_item_built",
-                    "file_id": item["file_id"],
-                    "publish_version": item["publish_version"],
-                },
-                context_fn=lambda: {
-                    "plaintext_sha256": item["plaintext_sha256"],
-                    "compressed_size": item["compressed_size"],
-                    "total_slices": item["total_slices"],
-                    "source_index": source_index,
-                    "source_filename": source_filename,
-                },
-            )
+        _log_publish_item_built(
+            item, {"source_index": source_index, "source_filename": source_filename}
+        )
 
     return publish_items
