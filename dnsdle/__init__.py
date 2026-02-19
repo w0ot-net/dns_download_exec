@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.cli import parse_cli_args
 from dnsdle.config import build_config
-from dnsdle.generator import generate_client_artifacts
+from dnsdle.client_generator import generate_client_artifacts
 from dnsdle.logging_runtime import configure_active_logger
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
