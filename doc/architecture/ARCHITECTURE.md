@@ -29,7 +29,7 @@ Generated Client                                   DNSDL Server
 ----------------                                   ------------
 query: <slice_token>.<file_tag>.<selected_base_domain> --> parse + validate query
 query: <slice_token>.<file_tag>.<selected_base_domain> --> read canonical slice bytes
-query: <slice_token>.<file_tag>.<selected_base_domain> --> encode CNAME payload
+query: <slice_token>.<file_tag>.<selected_base_domain> --> encrypt + MAC + encode CNAME payload
                                                   return CNAME response
 ```
 
@@ -46,6 +46,11 @@ Client behavior:
 ┌─────────────────────────────────────────────┐
 │ CLI / Config                                │
 │ (domains, files, bind addr, crypto options) │
+└──────────────────────┬──────────────────────┘
+                       │
+┌──────────────────────┴──────────────────────┐
+│ Logging Runtime                              │
+│ (json schema, levels/categories, redaction)  │
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────┴──────────────────────┐
@@ -131,7 +136,7 @@ Fail-fast behavior:
 Responsibilities:
 - request slices (any order)
 - retry missing slices
-- verify slice-level authenticity/integrity
+- verify slice-level authenticity/integrity and decrypt slice ciphertext
 - deduplicate duplicate slice replies by index
 - reassemble and decompress
 - verify final plaintext hash
@@ -202,6 +207,9 @@ Final restored plaintext must match embedded `plaintext_sha256`.
 When wire format or crypto profile changes, update all call sites and generated
 client templates together; do not add compatibility shims.
 
+6. Logging contract consistency
+All emitted server events must follow `doc/architecture/LOGGING.md`.
+
 ---
 
 ## Extensibility Boundaries
@@ -228,3 +236,9 @@ integrity rules, or client-side reconstruction semantics.
 - execution of downloaded files
 
 The v1 goal is a small, deterministic, auditable file download path over DNS.
+
+---
+
+## Related Docs
+
+- `doc/architecture/LOGGING.md`

@@ -48,6 +48,17 @@ Query flags:
 The server must reject malformed requests and apply the response matrix in
 `doc/architecture/ERRORS_AND_INVARIANTS.md`.
 
+For parseable request envelopes, v1 validation requires:
+- `QR = 0`
+- opcode = `QUERY`
+- `QDCOUNT = 1`
+- `ANCOUNT = 0`
+- `NSCOUNT = 0`
+- `ARCOUNT` policy:
+  - when `dns_edns_size = 512`, require `ARCOUNT = 0`
+  - when `dns_edns_size > 512`, accept `ARCOUNT` in `{0,1}` and reject
+    `ARCOUNT > 1`
+
 ---
 
 ## Response Header Contract

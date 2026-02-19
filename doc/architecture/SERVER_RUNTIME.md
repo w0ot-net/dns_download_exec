@@ -117,16 +117,20 @@ equivalence for wire behavior and invariants.
 
 For each parseable request:
 1. Parse DNS envelope and question.
-2. Match one configured base-domain suffix.
-3. Validate qtype/class for v1 (`A` / `IN`).
-4. Classify follow-up shape first:
+2. Validate query-envelope semantics:
+   - `QR=0`, opcode `QUERY`
+   - `QDCOUNT=1`, `ANCOUNT=0`, `NSCOUNT=0`
+   - `ARCOUNT` policy by EDNS mode (`0` in classic, `0..1` in EDNS mode)
+3. Match one configured base-domain suffix.
+4. Validate qtype/class for v1 (`A` / `IN`).
+5. Classify follow-up shape first:
    - `<payload_labels>.<response_label>.<selected_base_domain>`
    - respond with one synthetic `A` answer (`0.0.0.0`)
-5. Classify slice shape:
+6. Classify slice shape:
    - `<slice_token>.<file_tag>.<selected_base_domain>`
-6. Resolve mapping key to canonical slice identity.
-7. Build deterministic v1 payload record from canonical slice bytes.
-8. Encode CNAME target using matched `base_domain` and write response.
+7. Resolve mapping key to canonical slice identity.
+8. Build deterministic v1 payload record from canonical slice bytes.
+9. Encode CNAME target using matched `base_domain` and write response.
 
 Response behavior must follow `doc/architecture/ERRORS_AND_INVARIANTS.md`:
 - valid mapped request -> `NOERROR` + one CNAME answer
@@ -162,6 +166,13 @@ Minimum runtime logs:
   ciphertext slice budget)
 - request outcomes (`served`, `followup`, `miss`, `runtime_fault`)
 - shutdown summary (uptime and counters)
+
+All runtime logs must follow `doc/architecture/LOGGING.md`:
+- single-line JSON records
+- explicit `level` and `category`
+- required lifecycle events (`server_start`, `shutdown`) are never suppressed
+  by category filters, sampling, or rate limits
+- `ERROR` events are never suppressed
 
 Sensitive values must not be logged:
 - plaintext file paths in network-facing error context
@@ -200,6 +211,7 @@ Forced shutdown may drop in-flight responses; this is acceptable for UDP.
 
 - `doc/architecture/ARCHITECTURE.md`
 - `doc/architecture/CONFIG.md`
+- `doc/architecture/LOGGING.md`
 - `doc/architecture/PUBLISH_PIPELINE.md`
 - `doc/architecture/QUERY_MAPPING.md`
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`

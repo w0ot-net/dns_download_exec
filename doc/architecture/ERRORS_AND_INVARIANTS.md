@@ -34,6 +34,8 @@ Examples:
 - unknown/unconfigured base domain
 - unknown `file_tag`
 - unknown `slice_token` under a known `file_tag`
+- invalid parseable query envelope (`QR=1`, non-query opcode, invalid section
+  counts)
 - unsupported qname shape for mapping
 - unsupported qtype/class for v1 flow
 
@@ -108,18 +110,20 @@ No fallback remap is allowed for any miss path.
 
 For each incoming request:
 1. Parse DNS message envelope.
-2. Classify follow-up shape
+2. Validate parseable query-envelope invariants (`QR=0`, query opcode,
+   section-count policy).
+3. Classify follow-up shape
    (`<payload_labels>.<response_label>.<selected_base_domain>`, qtype `A`) for
    configured domains before slice-mapping evaluation.
-3. Validate qname/class/qtype shape for v1 slice flow.
-4. Validate suffix and mapping fields (`slice_token`, `file_tag`).
-5. Resolve mapping to canonical slice identity.
-6. Build deterministic slice record.
-7. Encode and return deterministic CNAME answer.
+4. Validate qname/class/qtype shape for v1 slice flow.
+5. Validate suffix and mapping fields (`slice_token`, `file_tag`).
+6. Resolve mapping to canonical slice identity.
+7. Build deterministic slice record.
+8. Encode and return deterministic CNAME answer.
 
-Any failure before step 5 is a deterministic miss unless the request is not
+Any failure before step 6 is a deterministic miss unless the request is not
 parseable.
-Any failure at or after step 5 caused by internal inconsistency is a runtime
+Any failure at or after step 6 caused by internal inconsistency is a runtime
 fault (`SERVFAIL`).
 
 ---
@@ -212,6 +216,9 @@ Any invariant breach is fatal for the current operation context.
 ## Logging Requirements
 
 Minimum server log fields on request handling paths:
+- timestamp (`ts_unix_ms`)
+- level (`level`)
+- category (`category`)
 - phase (`server` for runtime request paths)
 - classification (`served`, `followup`, `miss`, `runtime_fault`)
 - stable reason code
@@ -221,6 +228,8 @@ Shutdown logging:
 - classification `shutdown`
 - phase `server`
 - deterministic stop reason code and counters
+- level `INFO`
+- category `server`
 
 Minimum generated-client log fields on failure:
 - phase (`dns`, `parse`, `crypto`, `reassembly`, `write`)
@@ -228,6 +237,12 @@ Minimum generated-client log fields on failure:
 - exit code
 
 Logs must avoid leaking source file paths in network-facing contexts.
+Logs must never include raw PSK/key material or raw payload bytes.
+`ERROR` and lifecycle events (`server_start`, `shutdown`) must not be
+suppressed by category filters, sampling, or rate limits.
+
+Detailed logging schema and suppression rules are defined in
+`doc/architecture/LOGGING.md`.
 
 ---
 

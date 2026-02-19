@@ -95,6 +95,11 @@ Per-slice nonce input:
 - `publish_version`
 - `slice_index`
 
+Deterministic v1 keystream construction:
+- `block[i] = HMAC_SHA256(enc_key, "dnsdle-enc-stream-v1|" + file_id + "|" + publish_version + "|" + slice_index + "|" + i)`
+- concatenate blocks and truncate to `len(slice_bytes)`
+- `ciphertext = slice_bytes XOR keystream`
+
 Invariant:
 - For a given `(file_id, publish_version, slice_index)`, encryption output is
   deterministic and stable across retries.
@@ -139,7 +144,8 @@ After all indices are present:
 ## Server Behavior Rules
 
 1. Reject out-of-range slice requests.
-2. For valid requests, return canonical bytes for requested index only.
+2. For valid requests, derive deterministic ciphertext from canonical slice
+   bytes for the requested index only.
 3. Never emit variant encodings for the same slice index in one
    `(file_id, publish_version)` context.
 4. If runtime state violates invariants (missing slice table, wrong bounds,

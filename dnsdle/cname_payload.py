@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import struct
 
+from dnsdle.constants import PAYLOAD_ENC_KEY_LABEL
+from dnsdle.constants import PAYLOAD_ENC_STREAM_LABEL
 from dnsdle.constants import PAYLOAD_FLAGS_V1_BYTE
 from dnsdle.constants import PAYLOAD_MAC_KEY_LABEL
 from dnsdle.constants import PAYLOAD_MAC_MESSAGE_LABEL
@@ -22,6 +24,14 @@ def _to_utf8_bytes(value):
     if isinstance(value, bytes):
         return value
     return value.encode("utf-8")
+
+
+def _iter_byte_values(raw_bytes):
+    for value in raw_bytes:
+        if isinstance(value, int):
+            yield value
+        else:
+            yield ord(value)
 
 
 def _to_ascii_int_bytes(value, field_name):
@@ -56,6 +66,74 @@ def _split_payload_labels(payload_text, label_cap):
     return tuple(labels)
 
 
+def _enc_key(psk, file_id, publish_version):
+    psk_bytes = _to_utf8_bytes(psk)
+    if not psk_bytes:
+        raise ValueError("psk must be non-empty")
+    file_id_bytes = _to_bytes(file_id)
+    publish_version_bytes = _to_bytes(publish_version)
+    return hmac.new(
+        psk_bytes,
+        PAYLOAD_ENC_KEY_LABEL + file_id_bytes + b"|" + publish_version_bytes,
+        hashlib.sha256,
+    ).digest()
+
+
+def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len):
+    if output_len <= 0:
+        raise ValueError("output_len must be positive")
+    file_id_bytes = _to_bytes(file_id)
+    publish_version_bytes = _to_bytes(publish_version)
+    slice_index_bytes = _to_ascii_int_bytes(slice_index, "slice_index")
+    blocks = []
+    counter = 0
+    produced = 0
+    while produced < output_len:
+        counter_bytes = _to_ascii_int_bytes(counter, "counter")
+        block_input = (
+            PAYLOAD_ENC_STREAM_LABEL
+            + file_id_bytes
+            + b"|"
+            + publish_version_bytes
+            + b"|"
+            + slice_index_bytes
+            + b"|"
+            + counter_bytes
+        )
+        block = hmac.new(enc_key, block_input, hashlib.sha256).digest()
+        blocks.append(block)
+        produced += len(block)
+        counter += 1
+    return b"".join(blocks)[:output_len]
+
+
+def _xor_bytes(left_bytes, right_bytes):
+    left_values = list(_iter_byte_values(left_bytes))
+    right_values = list(_iter_byte_values(right_bytes))
+    if len(left_values) != len(right_values):
+        raise ValueError("xor inputs must have equal length")
+
+    out = bytearray(len(left_values))
+    for index, left_value in enumerate(left_values):
+        out[index] = left_value ^ right_values[index]
+    return bytes(out)
+
+
+def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes):
+    payload = _to_bytes(slice_bytes)
+    if not payload:
+        raise ValueError("slice_bytes must be non-empty")
+    key = _enc_key(psk, file_id, publish_version)
+    stream = _keystream_bytes(
+        key,
+        file_id,
+        publish_version,
+        slice_index,
+        len(payload),
+    )
+    return _xor_bytes(payload, stream)
+
+
 def _mac_key(psk, file_id, publish_version):
     psk_bytes = _to_utf8_bytes(psk)
     if not psk_bytes:
@@ -76,7 +154,7 @@ def _mac_bytes(
     slice_index,
     total_slices,
     compressed_size,
-    slice_bytes,
+    ciphertext_bytes,
 ):
     slice_index_bytes = _to_ascii_int_bytes(slice_index, "slice_index")
     total_slices_bytes = _to_ascii_int_bytes(total_slices, "total_slices")
@@ -85,7 +163,7 @@ def _mac_bytes(
         raise ValueError("total_slices must be positive")
     if int(compressed_size) <= 0:
         raise ValueError("compressed_size must be positive")
-    payload = _to_bytes(slice_bytes)
+    payload = _to_bytes(ciphertext_bytes)
     message = (
         PAYLOAD_MAC_MESSAGE_LABEL
         + _to_bytes(file_id)
@@ -119,20 +197,34 @@ def build_slice_record(
         raise ValueError("slice_bytes must be non-empty")
     if payload_len > 65535:
         raise ValueError("slice_bytes exceeds u16 length field")
-    if int(slice_index) >= int(total_slices):
+    try:
+        slice_index_int = int(slice_index)
+        total_slices_int = int(total_slices)
+    except (TypeError, ValueError):
+        raise ValueError("slice index metadata must be integers")
+    if total_slices_int <= 0:
+        raise ValueError("total_slices must be positive")
+    if slice_index_int < 0 or slice_index_int >= total_slices_int:
         raise ValueError("slice_index must be within total_slices")
+    ciphertext = _encrypt_slice_bytes(
+        psk,
+        file_id,
+        publish_version,
+        slice_index_int,
+        payload,
+    )
 
     header = struct.pack("!BBH", PAYLOAD_PROFILE_V1_BYTE, PAYLOAD_FLAGS_V1_BYTE, payload_len)
     mac = _mac_bytes(
         psk,
         file_id,
         publish_version,
-        slice_index,
-        total_slices,
+        slice_index_int,
+        total_slices_int,
         compressed_size,
-        payload,
+        ciphertext,
     )
-    return header + payload + mac
+    return header + ciphertext + mac
 
 
 def payload_labels_for_slice(

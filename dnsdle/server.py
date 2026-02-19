@@ -5,12 +5,16 @@ import socket
 
 import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
+from dnsdle.constants import DNS_FLAG_QR
+from dnsdle.constants import DNS_OPCODE_QUERY
 from dnsdle.constants import DNS_QCLASS_IN
 from dnsdle.constants import DNS_QTYPE_A
 from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.constants import DNS_UDP_RECV_MAX
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
@@ -74,23 +78,85 @@ def _is_followup_query(prefix_labels, response_label):
     return len(prefix_labels) >= 2 and prefix_labels[-1] == response_label
 
 
+def _invalid_additional_count(config, arcount):
+    if config.dns_edns_size == 512:
+        return arcount != 0
+    return arcount > 1
+
+
 def handle_request_message(runtime_state, request_bytes):
     config = runtime_state.config
     try:
         request = dnswire.parse_request(request_bytes)
     except dnswire.DnsParseError:
         return None, None
+    if logger_enabled("trace", "server"):
+        log_event(
+            "trace",
+            "server",
+            {
+                "phase": "server",
+                "classification": "diagnostic",
+                "reason_code": "request_parsed",
+            },
+            context_fn=lambda: {
+                "request_len": len(request_bytes),
+                "qdcount": request.get("qdcount"),
+            },
+        )
 
-    question = request.get("question")
-    if question is None:
-        return _miss_response(request, config, "missing_question", None)
+    if request["flags"] & DNS_FLAG_QR:
+        return _miss_response(
+            request,
+            config,
+            "invalid_query_flags",
+            {"flags": request["flags"]},
+        )
+    if request["opcode"] != DNS_OPCODE_QUERY:
+        return _miss_response(
+            request,
+            config,
+            "unsupported_opcode",
+            {"opcode": request["opcode"]},
+        )
     if request["qdcount"] != 1:
         return _miss_response(
             request,
             config,
-            "qdcount_not_one",
-            {"qdcount": request["qdcount"]},
+            "invalid_query_section_counts",
+            {
+                "qdcount": request["qdcount"],
+                "ancount": request["ancount"],
+                "nscount": request["nscount"],
+                "arcount": request["arcount"],
+            },
         )
+    if request["ancount"] != 0 or request["nscount"] != 0:
+        return _miss_response(
+            request,
+            config,
+            "invalid_query_section_counts",
+            {
+                "qdcount": request["qdcount"],
+                "ancount": request["ancount"],
+                "nscount": request["nscount"],
+                "arcount": request["arcount"],
+            },
+        )
+    if _invalid_additional_count(config, request["arcount"]):
+        return _miss_response(
+            request,
+            config,
+            "invalid_additional_count",
+            {
+                "arcount": request["arcount"],
+                "dns_edns_size": config.dns_edns_size,
+            },
+        )
+
+    question = request.get("question")
+    if question is None:
+        return _miss_response(request, config, "missing_question", None)
 
     qtype = question["qtype"]
     qclass = question["qclass"]
@@ -150,6 +216,23 @@ def handle_request_message(runtime_state, request_bytes):
         )
 
     file_id, publish_version, slice_index = identity_value
+    if logger_enabled("debug", "server"):
+        log_event(
+            "debug",
+            "server",
+            {
+                "phase": "server",
+                "classification": "diagnostic",
+                "reason_code": "mapping_resolved",
+            },
+            context_fn=lambda: {
+                "selected_base_domain": selected_domain,
+                "file_tag": file_tag,
+                "slice_token": slice_token,
+                "file_id": file_id,
+                "slice_index": slice_index,
+            },
+        )
     identity = (file_id, publish_version)
     slice_table = runtime_state.slice_bytes_by_identity.get(identity)
     if slice_table is None:
@@ -372,6 +455,16 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
             try:
                 datagram, addr = sock.recvfrom(DNS_UDP_RECV_MAX)
             except socket.timeout:
+                if logger_enabled("trace", "server"):
+                    log_event(
+                        "trace",
+                        "server",
+                        {
+                            "phase": "server",
+                            "classification": "diagnostic",
+                            "reason_code": "loop_timeout",
+                        },
+                    )
                 continue
             except KeyboardInterrupt:
                 stop_state["stop"] = True

@@ -58,23 +58,23 @@ follow-up traffic cannot be misparsed as client slice requests.
 Before DNS text encoding, the server builds this binary record:
 
 ```
-+--------+--------+----------------+-------------------+-------------+
++--------+--------+----------------+-------------------+------------+
 | Byte 0 | Byte 1 | Bytes 2..3     | Bytes 4..N-9      | Bytes N-8.. |
-+--------+--------+----------------+-------------------+-------------+
-|profile | flags  | slice_len_u16  | slice bytes       | mac_trunc8   |
-+--------+--------+----------------+-------------------+-------------+
++--------+--------+----------------+-------------------+------------+
+|profile | flags  | cipher_len_u16 | ciphertext bytes  | mac_trunc8  |
++--------+--------+----------------+-------------------+------------+
 ```
 
 Field definitions:
 - `profile` (1 byte): crypto profile id. v1 value is `0x01`.
 - `flags` (1 byte): reserved. v1 requires `0x00`.
-- `slice_len_u16` (2 bytes, big-endian): canonical slice-byte length.
-- `slice bytes`: canonical bytes from startup publish state for this slice.
+- `cipher_len_u16` (2 bytes, big-endian): ciphertext byte length.
+- `ciphertext bytes`: encrypted slice bytes for this slice index.
 - `mac_trunc8` (8 bytes): truncated HMAC-SHA256 over slice metadata and payload.
 
 Invariants:
-1. `slice_len_u16` must equal actual slice-byte length.
-2. `slice_len_u16` must be greater than zero.
+1. `cipher_len_u16` must equal actual ciphertext byte length.
+2. `cipher_len_u16` must be greater than zero.
 3. Reserved flags must be zero.
 4. Unknown `profile` is a hard failure.
 
@@ -88,7 +88,7 @@ The transmitted MAC field authenticates:
 - `slice_index`
 - `total_slices`
 - `compressed_size`
-- `slice bytes`
+- `ciphertext bytes`
 
 The server derives per-file MAC key material from `psk`, `file_id`, and
 `publish_version`, then emits an 8-byte truncated HMAC-SHA256 value.
@@ -160,9 +160,10 @@ smaller.
 
 For a valid request:
 1. Resolve query to exactly one slice identity.
-2. Build deterministic binary slice record for that identity.
-3. Encode deterministic CNAME target text.
-4. Return one IN CNAME answer with configured TTL.
+2. Derive deterministic ciphertext from canonical slice bytes and slice index.
+3. Build deterministic binary slice record for that identity.
+4. Encode deterministic CNAME target text.
+5. Return one IN CNAME answer with configured TTL.
 
 For invalid requests:
 - return a deterministic miss behavior (defined in
