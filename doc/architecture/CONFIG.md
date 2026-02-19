@@ -28,7 +28,8 @@ Configuration is immutable after server startup validation completes.
 - `listen_addr` (`--listen-addr`): UDP bind address, default `0.0.0.0:53`.
 - `ttl` (`--ttl`): answer TTL seconds, default `30`, valid `1..300`.
 - `dns_edns_size` (`--dns-edns-size`): EDNS UDP size advertisement,
-  default `1232`, valid `512..4096`.
+  default `1232`, valid `512..4096`. No-OPT mode is non-default and requires
+  explicit `--dns-edns-size 512`.
 - `dns_max_label_len` (`--dns-max-label-len`): payload label cap, default `63`,
   valid `16..63`.
 - `response_label` (`--response-label`): fixed CNAME response discriminator,

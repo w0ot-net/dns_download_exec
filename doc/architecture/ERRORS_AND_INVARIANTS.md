@@ -75,13 +75,20 @@ For parseable DNS requests in v1:
 - Answer section: exactly one IN CNAME answer with deterministic payload
 - TTL: configured `ttl`
 
-2. **Deterministic miss**
+2. **CNAME-chase follow-up request**
+- Detection: qname matches
+  `<payload_labels>.<response_label>.<base_domain>` with qtype `A`
+- Response: `RCODE=NOERROR`
+- Answer section: exactly one IN `A` answer
+- TTL: configured `ttl`
+
+3. **Deterministic miss**
 - Response: `RCODE=NXDOMAIN`
 - Answer section: empty
 - Behavior must be deterministic for identical request name and current publish
   state.
 
-3. **Internal runtime fault**
+4. **Internal runtime fault**
 - Response: `RCODE=SERVFAIL`
 - Answer section: empty
 - Log as internal error with reason code.
@@ -97,15 +104,18 @@ No fallback remap is allowed for any miss path.
 
 For each incoming request:
 1. Parse DNS message envelope.
-2. Validate qname/class/qtype shape for v1.
-3. Validate suffix and mapping fields (`slice_token`, `file_tag`).
-4. Resolve mapping to canonical slice identity.
-5. Build deterministic slice record.
-6. Encode and return deterministic CNAME answer.
+2. Classify follow-up shape
+   (`<payload_labels>.<response_label>.<base_domain>`, qtype `A`) before
+   slice-mapping evaluation.
+3. Validate qname/class/qtype shape for v1 slice flow.
+4. Validate suffix and mapping fields (`slice_token`, `file_tag`).
+5. Resolve mapping to canonical slice identity.
+6. Build deterministic slice record.
+7. Encode and return deterministic CNAME answer.
 
-Any failure before step 4 is a deterministic miss unless the request is not
+Any failure before step 5 is a deterministic miss unless the request is not
 parseable.
-Any failure at or after step 4 caused by internal inconsistency is a runtime
+Any failure at or after step 5 caused by internal inconsistency is a runtime
 fault (`SERVFAIL`).
 
 ---
@@ -190,9 +200,9 @@ Any invariant breach is fatal for the current operation context.
 
 ## Logging Requirements
 
-Minimum server log fields on error:
+Minimum server log fields on request handling paths:
 - phase (`startup`, `request_parse`, `mapping`, `encode`, `internal`)
-- classification (`startup_error`, `miss`, `runtime_fault`)
+- classification (`startup_error`, `followup`, `miss`, `runtime_fault`)
 - stable reason code
 - request key context when available (`file_tag`, `slice_token`)
 
