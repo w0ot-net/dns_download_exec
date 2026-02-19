@@ -27,9 +27,14 @@ After implementation:
 ### 1. Introduce a dedicated CLI parser module
 - Add `dnsdle/cli.py` for startup flag parsing only.
 - Move `argparse` parser construction from `dnsdle/config.py` into this module.
-- Set `allow_abbrev=False` to prevent ambiguous long-option prefix matching.
+- Prevent ambiguous long-option prefix matching in a Python 2.7/3.x-safe way:
+  - use `allow_abbrev=False` where supported by runtime `argparse`
+  - keep deterministic no-abbrev behavior on Python 2.7 via explicit long-option
+    token validation before `argparse` parse.
 - Keep explicit rejection for removed legacy `--domain` with stable startup
   error semantics.
+- Preserve parser failure contract: invalid CLI syntax/options must raise
+  `StartupError` (not raw `SystemExit`) with stable startup fields/reason shape.
 - Return a parsed args object without applying config invariants in this module.
 
 ### 2. Make `dnsdle/config.py` normalization-only
@@ -38,6 +43,9 @@ After implementation:
   `dnsdle/config.py` (domains, files, numeric bounds, derived longest-domain
   fields, response suffix constraints).
 - Add one clear entrypoint that converts parsed args into immutable `Config`.
+- Keep `parse_cli_config(argv)` as a thin compatibility wrapper that delegates to
+  CLI parse + config build entrypoints, so existing internal call sites continue
+  to work during this cleanup without reintroducing parser logic into config.
 - Normalize remaining singular-domain wording in config validation messages to
   match the multi-domain contract where applicable.
 
@@ -60,7 +68,11 @@ After implementation:
   - valid multi-domain launch
   - removed `--domain` rejection
   - duplicate/overlap domain failures
-- Run Python syntax checks for touched runtime modules.
+- Run existing focused unit test modules (without editing test files):
+  - `python -m unittest unit_tests.test_config`
+  - `python -m unittest unit_tests.test_startup_state`
+- Run Python syntax checks for touched runtime modules:
+  - `python -m py_compile dnsdle/cli.py dnsdle/config.py dnsdle/__init__.py`
 - Do not modify files under `unit_tests/` in this plan execution.
 
 ## Affected Components
@@ -81,6 +93,8 @@ After implementation:
 - `dnsdle/config.py` has no `argparse` usage and no direct raw-argv parsing.
 - CLI parsing behavior is centralized in `dnsdle/cli.py` with deterministic
   fail-fast behavior for removed flags and invalid syntax.
+- CLI parse errors continue to surface as `StartupError` with stable startup
+  logging semantics (no parser-driven process exit path).
 - Startup path still produces identical config-derived behavior for equivalent
   valid inputs.
 - Architecture docs consistently describe startup config handling as a two-step
