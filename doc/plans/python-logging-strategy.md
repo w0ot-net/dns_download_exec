@@ -12,7 +12,10 @@ After implementation:
 - Levels are explicit: `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`.
 - Categories are explicit and module-aligned: `startup`, `config`, `budget`, `publish`, `mapping`, `dnswire`, `server`.
 - Disabled diagnostic paths do not evaluate expensive log context (single fast branch only).
-- Sensitive values (PSK, key material, payload bytes, network-facing path data) are consistently redacted.
+- Sensitive values (PSK, key material, payload bytes, network-facing path data)
+  are consistently redacted.
+- Required operational/error events are never dropped by category filters,
+  sampling, or rate limiting.
 
 ## Design
 ### 1. Canonical logging contract
@@ -48,12 +51,22 @@ Add explicit server CLI/config controls:
 
 Validation is fail-fast in config parsing; invalid combinations are startup errors.
 
+Filtering/suppression invariants:
+- category filters apply only to non-required `INFO/DEBUG/TRACE` diagnostics.
+- sampling and rate limiting apply only to `DEBUG/TRACE`.
+- `ERROR` events always emit.
+- required lifecycle events (`server_start`, `shutdown`) always emit.
+
 ### 4. Runtime and startup integration
 Replace direct `_emit_record` usage with the centralized logger:
 - startup success/failure and publish summaries remain `INFO`/`ERROR`
 - request outcomes remain stable (`served`, `followup`, `miss`, `runtime_fault`)
 - add opt-in `DEBUG/TRACE` events for packet parsing, mapping resolution, payload encoding, and loop pacing
 - keep shutdown summary as a required `INFO` event
+- preserve server runtime integration contract in this phase:
+  `serve_runtime(runtime_state, emit_record, stop_requested=None)` signature
+  remains unchanged; `dnsdle.py` passes a logger-backed emit adapter so call
+  sites outside logging refactor scope do not break.
 
 ### 5. Diagnostics controls
 Support deep introspection without always-on noise:
@@ -65,7 +78,8 @@ Support deep introspection without always-on noise:
 Centralize redaction policy in the logger module:
 - never log PSK, derived keys, or raw payload bytes
 - never include source file paths in network-facing request logs
-- permit explicit payload logging only in `TRACE` with dedicated opt-in flag
+- for deep diagnostics, use safe surrogates only (lengths, hashes, counters),
+  never raw payload bytes.
 
 ### 7. Documentation alignment
 Add a dedicated architecture logging document and update existing architecture docs so logging behavior, defaults, and invariants are specified in one place and cross-referenced consistently.
@@ -83,6 +97,17 @@ Add a dedicated architecture logging document and update existing architecture d
 - `dnsdle/dnswire.py`: add gated diagnostics for parse/encode and response-shape decisions.
 - `dnsdle/server.py`: migrate request/runtime/shutdown logging to centralized level/category-aware API.
 - `dnsdle/logging_runtime.py` (new): stdlib-only logging facade, gating, sampling, rate limiting, sinks, and redaction helpers.
+- `unit_tests/test_state.py`: assert startup-error records continue to surface
+  required stable fields after logger migration.
+- `unit_tests/test_server_runtime.py`: verify required runtime lifecycle/events
+  (`server_start`, `shutdown`, request outcomes) are emitted and not suppressed.
+- `unit_tests/test_cli.py`: validate logging CLI flag parsing and fail-fast
+  behavior for invalid logging controls.
+- `unit_tests/test_config.py`: validate logging config field normalization and
+  invalid-combination startup errors.
+- `unit_tests/test_logging_runtime.py` (new): verify level/category gating,
+  disabled-path `context_fn` non-evaluation, sampling/rate-limit behavior, and
+  redaction rules.
 - `doc/architecture/LOGGING.md` (new): canonical logging architecture, schema, levels, categories, redaction, and performance model.
 - `doc/architecture/ARCHITECTURE.md`: reference logging subsystem as first-class runtime component.
 - `doc/architecture/CONFIG.md`: document logging CLI/config fields and validation constraints.
@@ -99,15 +124,35 @@ Add a dedicated architecture logging document and update existing architecture d
 6. Update architecture docs to match implemented behavior and defaults.
 
 ## Validation
-- Startup error paths still emit machine-readable JSON with stable `phase/classification/reason_code`.
-- Default run (`--log-level info`) emits current operational summaries without debug noise.
-- `debug/trace` disabled paths do not build expensive log context objects.
-- Redaction checks confirm no PSK/key/payload leakage in emitted logs.
-- Sampling and rate-limit controls deterministically bound high-frequency diagnostics.
+- Run parser/config/logging unit coverage:
+  - `python -m unittest unit_tests.test_cli`
+  - `python -m unittest unit_tests.test_config`
+  - `python -m unittest unit_tests.test_state`
+  - `python -m unittest unit_tests.test_server_runtime`
+  - `python -m unittest unit_tests.test_logging_runtime`
+- Run startup CLI checks through entrypoint:
+  - valid run:
+    `python dnsdle.py --domains example.com --files <file> --psk secret`
+    expects machine-readable startup records and `server_start` before loop.
+  - removed flag:
+    `python dnsdle.py --domain example.com --files <file> --psk secret`
+    expects non-zero exit with `classification=startup_error`.
+  - invalid logging combo:
+    `python dnsdle.py --domains example.com --files <file> --psk secret --log-output file`
+    expects non-zero exit with `reason_code=invalid_config`.
+- Run disabled-path guard check in unit tests:
+  - `context_fn` counter remains `0` when corresponding level/category disabled.
+- Run suppression invariants checks in unit tests:
+  - `ERROR` events still emit when category filter excludes event category.
+  - `server_start` and `shutdown` still emit when sampling/rate limit configured.
+- Run syntax checks:
+  - `python -m py_compile dnsdle.py dnsdle/logging_runtime.py dnsdle/server.py dnsdle/state.py`
 
 ## Success Criteria
 - One unified logging API is used across startup, publish, mapping, dnswire, and server runtime.
 - Level/category controls are operator-configurable and fail-fast validated.
 - Existing required operational logs remain present and machine-parseable.
+- Required `ERROR` and lifecycle events are unsampled/unthrottled and cannot be
+  suppressed by category filtering.
 - Diagnostics mode provides deep introspection without changing runtime correctness behavior.
 - Architecture docs clearly define logging behavior, invariants, and safety policy.
