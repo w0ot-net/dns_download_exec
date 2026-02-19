@@ -4,7 +4,7 @@
 Restructure the `--help` output of `dnsdle.py` so arguments are grouped by
 purpose, every argument has a short help description with its default/range,
 and required arguments appear first. Add ANSI color to group headings and the
-required marker when stderr is a TTY.
+required marker when stdout is a TTY.
 
 ## Problem
 The current `--help` output is a flat, ungrouped list of 20 arguments with no
@@ -51,8 +51,9 @@ logging:
   --log-focus KEY         focus key for debug filtering
 ```
 
-When stderr is a TTY, group headings are bold/colored. When piped or on
-non-TTY, output is plain text (no escape codes).
+When stdout is a TTY, group headings are bold/colored. When piped or on
+non-TTY, output is plain text (no escape codes). The check is on stdout
+because argparse `print_help()` writes to `sys.stdout`.
 
 ## Design
 
@@ -70,32 +71,41 @@ Replace the flat `add_argument` calls in `_build_parser()` with
 
 ### 2. Add help text to every argument
 Each `add_argument` call gets a `help=` string showing a brief description
-and the default or valid range where applicable. Format:
-`"<description> (default: <value>)"` or `"<description>, <range> (default: <value>)"`.
+and the default or valid range where applicable. Use argparse's built-in
+`%(default)s` interpolation to avoid hardcoding defaults in two places.
+Format: `"<description>, <range> (default: %(default)s)"`.
 
 Required arguments use `help="<description> (required)"`.
 
 ### 3. Colorize group titles on TTY
 Subclass `argparse.HelpFormatter` to wrap group titles in ANSI bold
-(`\033[1m...\033[0m`) when `sys.stderr.isatty()` is true. The subclass
+(`\033[1m...\033[0m`) when `sys.stdout.isatty()` is true. The subclass
 overrides `start_section` to inject the escape codes around the title.
 This is the minimal intervention point; no other formatter behavior changes.
 
 Pass the custom formatter via `formatter_class=` to `_RaisingArgumentParser`.
 
-### 4. Suppress default argparse groups
-Use `add_help=False` to avoid the default "options" group header, then add
-`-h`/`--help` explicitly into the required group (or as a standalone entry)
-so it does not appear in a separate "options:" section.
-
-Actually, a simpler approach: set the parser `description` to empty and rely
-solely on argument groups for structure. Keep `add_help=True` and accept that
-argparse appends `-h` to the default `options:` group. This is standard and
-expected.
+### 4. Suppress default argparse options group
+Use `add_help=False` to prevent argparse from creating the default `options:`
+group containing only `-h, --help`. Without this, argparse emits an extra
+group header above the custom groups that doesn't match the goal output.
+Add `-h`/`--help` explicitly as the last entry in the **required** group
+with `help="show this help message and exit"`. This keeps `-h` discoverable
+while producing clean, group-only output.
 
 ### 5. Update `_LONG_OPTIONS` and `_KNOWN_LONG_OPTIONS`
 No change needed -- the set of accepted option names is unchanged. The grouping
 is purely a display concern.
+
+## Validation
+- Run `python dnsdle.py --help` in a terminal to confirm grouped output with
+  ANSI-colored headings.
+- Run `python dnsdle.py --help | cat` to confirm plain text output with no
+  escape codes (stdout is not a TTY when piped).
+- Verify that `%(default)s` values in help text match the actual `default=`
+  parameter on each argument.
+- Run existing test suite (`python -m pytest unit_tests/`) to confirm no
+  regressions in argument parsing behavior.
 
 ## Affected Components
 - `dnsdle/cli.py`: restructure `_build_parser()` to use argument groups, add
