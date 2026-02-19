@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import os
+import random
 import shutil
 import tempfile
 import unittest
@@ -23,10 +24,12 @@ class StartupStateTests(unittest.TestCase):
         return path
 
     def test_build_startup_state_end_to_end_single_file(self):
-        payload = os.urandom(700)
+        rng = random.Random(42)
+        payload = bytes(bytearray(rng.randint(0, 255) for _ in range(10000)))
         file_path = self._write_file("sample.bin", payload)
+        client_out = os.path.join(self.tmpdir, "clients_out")
 
-        runtime = build_startup_state(
+        runtime, generation_result = build_startup_state(
             [
                 "--domains",
                 "example.com",
@@ -34,10 +37,16 @@ class StartupStateTests(unittest.TestCase):
                 file_path,
                 "--psk",
                 "k",
+                "--client-out-dir",
+                client_out,
             ]
         )
 
-        self.assertEqual(1, len(runtime.publish_items))
+        user_file_count = 1
+        target_os_count = len(runtime.config.target_os)
+        expected_count = user_file_count + user_file_count * target_os_count
+        self.assertEqual(expected_count, len(runtime.publish_items))
+
         item = runtime.publish_items[0]
         self.assertGreater(item.total_slices, 0)
         self.assertEqual(item.total_slices, len(item.slice_tokens))

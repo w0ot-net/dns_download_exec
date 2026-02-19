@@ -4,7 +4,6 @@ from __future__ import print_function
 import sys
 
 from dnsdle import build_startup_state
-from dnsdle import generate_client_artifacts
 from dnsdle import serve_runtime
 from dnsdle.logging_runtime import emit_structured_record
 from dnsdle.logging_runtime import reset_active_logger
@@ -23,7 +22,7 @@ def _emit_record(record, level=None, category=None, required=False):
 def main(argv=None):
     reset_active_logger()
     try:
-        runtime_state = build_startup_state(argv)
+        runtime_state, generation_result = build_startup_state(argv)
     except StartupError as exc:
         _emit_record(
             exc.to_log_record(),
@@ -36,51 +35,6 @@ def main(argv=None):
         _emit_record(
             {
                 "classification": "startup_error",
-                "phase": "startup",
-                "reason_code": "unexpected_exception",
-                "message": str(exc),
-            },
-            level="error",
-            category="startup",
-            required=True,
-        )
-        return 1
-
-    expected_artifact_count = len(runtime_state.publish_items) * len(runtime_state.config.target_os)
-    _emit_record(
-        {
-            "classification": "generation_start",
-            "phase": "startup",
-            "reason_code": "generation_start",
-            "expected_artifact_count": expected_artifact_count,
-            "target_os": runtime_state.config.target_os_csv,
-        },
-        level="info",
-        category="startup",
-    )
-    try:
-        generation_result = generate_client_artifacts(runtime_state)
-    except StartupError as exc:
-        error_record = {
-            "classification": "generation_error",
-            "phase": "startup",
-            "reason_code": exc.reason_code,
-            "message": exc.message,
-        }
-        for key, value in exc.context.items():
-            if key not in error_record:
-                error_record[key] = value
-        _emit_record(
-            error_record,
-            level="error",
-            category="startup",
-            required=True,
-        )
-        return 1
-    except Exception as exc:
-        _emit_record(
-            {
-                "classification": "generation_error",
                 "phase": "startup",
                 "reason_code": "unexpected_exception",
                 "message": str(exc),
