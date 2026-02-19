@@ -239,7 +239,7 @@ def _decode_name(message, start_offset):
         if (first & DNS_POINTER_TAG) == DNS_POINTER_TAG:
             if offset + 1 >= message_len:
                 raise ClientError(EXIT_PARSE, "parse", "truncated name pointer")
-            pointer = ((first & 0x3F) << 8) | _byte_at(message, offset + 1)
+            pointer = ((first << 8) | _byte_at(message, offset + 1)) & DNS_POINTER_VALUE_MASK
             if pointer >= message_len:
                 raise ClientError(EXIT_PARSE, "parse", "name pointer out of bounds")
             if pointer in visited_offsets:
@@ -523,10 +523,6 @@ def _decrypt_and_verify_slice(enc_key_bytes, mac_key_bytes, slice_index, ciphert
     return plaintext
 
 
-def _join_bytes(parts):
-    return b"".join(parts)
-
-
 def _reassemble_plaintext(slice_bytes_by_index):
     ordered = []
     for index in range(TOTAL_SLICES):
@@ -534,7 +530,7 @@ def _reassemble_plaintext(slice_bytes_by_index):
             raise ClientError(EXIT_REASSEMBLY, "reassembly", "missing slice index %d" % index)
         ordered.append(slice_bytes_by_index[index])
 
-    compressed = _join_bytes(ordered)
+    compressed = b"".join(ordered)
     if len(compressed) != COMPRESSED_SIZE:
         raise ClientError(
             EXIT_REASSEMBLY,
@@ -562,8 +558,7 @@ def _deterministic_output_path():
     return os.path.join(tempfile.gettempdir(), name)
 
 
-def _write_output_atomic(path, payload):
-    output_path = path
+def _write_output_atomic(output_path, payload):
     directory = os.path.dirname(output_path) or "."
     if not os.path.isdir(directory):
         raise ClientError(EXIT_WRITE, "write", "output directory does not exist")
@@ -575,8 +570,6 @@ def _write_output_atomic(path, payload):
         if os.path.exists(output_path):
             os.remove(output_path)
         os.rename(temp_path, output_path)
-    except ClientError:
-        raise
     except Exception as exc:
         try:
             if os.path.exists(temp_path):
@@ -698,10 +691,7 @@ def _run_nslookup():
         stderr=subprocess.PIPE,
         universal_newlines=True,
     )
-    try:
-        output, _ = proc.communicate()
-    except TypeError:
-        output, _ = proc.communicate()
+    output, _ = proc.communicate()
     return output or ""
 
 
@@ -1022,7 +1012,7 @@ def _safe_mkdir(path_value, reason_code):
     try:
         if os.path.isdir(path_value):
             return
-        if os.path.exists(path_value) and not os.path.isdir(path_value):
+        if os.path.exists(path_value):
             raise StartupError(
                 "startup",
                 reason_code,
@@ -1071,20 +1061,12 @@ def _filename_for(file_id, file_tag, target_os):
     return GENERATED_CLIENT_FILENAME_TEMPLATE % (file_id, file_tag, target_os)
 
 
-def _validate_contract(config, publish_item, target_os):
-    if target_os not in ALLOWED_TARGET_OS:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "unsupported target_os for generator",
-            {"target_os": target_os},
-        )
+def _validate_publish_item(publish_item):
     if not publish_item.file_id or not publish_item.file_tag:
         raise StartupError(
             "startup",
             "generator_invalid_contract",
             "missing required publish identity fields",
-            {"target_os": target_os},
         )
     if publish_item.total_slices <= 0:
         raise StartupError(
@@ -1113,18 +1095,6 @@ def _validate_contract(config, publish_item, target_os):
             "generator_invalid_contract",
             "missing required profile fields",
             {"file_id": publish_item.file_id},
-        )
-    if not config.domains:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "BASE_DOMAINS must be non-empty",
-        )
-    if not config.response_label:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "RESPONSE_LABEL must be non-empty",
         )
 
 
@@ -1162,7 +1132,7 @@ def _render_client_source(config, publish_item, target_os):
     for key, value in replacements.items():
         source = source.replace("@@%s@@" % key, repr(value))
 
-    unreplaced = re.search(r"@@[A-Z_]+@@", source)
+    unreplaced = re.search(r"@@[A-Z0-9_]+@@", source)
     if unreplaced:
         raise StartupError(
             "startup",
@@ -1206,13 +1176,34 @@ def _write_staged_file(stage_dir, filename, source_text):
 
 def _build_artifacts(runtime_state):
     config = runtime_state.config
+    if not config.domains:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "BASE_DOMAINS must be non-empty",
+        )
+    if not config.response_label:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "RESPONSE_LABEL must be non-empty",
+        )
+    for os_value in config.target_os:
+        if os_value not in ALLOWED_TARGET_OS:
+            raise StartupError(
+                "startup",
+                "generator_invalid_contract",
+                "unsupported target_os for generator",
+                {"target_os": os_value},
+            )
+
     artifacts = []
     seen_names = set()
     seen_identities = set()
 
     for publish_item in runtime_state.publish_items:
+        _validate_publish_item(publish_item)
         for target_os in config.target_os:
-            _validate_contract(config, publish_item, target_os)
             filename = _filename_for(
                 publish_item.file_id,
                 publish_item.file_tag,
@@ -1278,8 +1269,7 @@ def _build_artifacts(runtime_state):
 
 
 def _collect_backup_targets(managed_dir, expected_names):
-    existing_expected = []
-    stale_managed = []
+    targets = []
     try:
         names = sorted(os.listdir(managed_dir))
     except Exception as exc:
@@ -1294,13 +1284,10 @@ def _collect_backup_targets(managed_dir, expected_names):
         path = os.path.join(managed_dir, name)
         if not os.path.isfile(path):
             continue
-        if name in expected_names:
-            existing_expected.append(path)
-            continue
-        if _MANAGED_FILE_RE.match(name):
-            stale_managed.append(path)
+        if name in expected_names or _MANAGED_FILE_RE.match(name):
+            targets.append(path)
 
-    return tuple(sorted(existing_expected + stale_managed))
+    return tuple(sorted(targets))
 
 
 def _rollback_commit(moved_pairs, placed_paths, backup_dir):
