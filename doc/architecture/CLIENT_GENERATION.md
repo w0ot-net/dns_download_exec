@@ -96,6 +96,7 @@ The following constants are required in generated code:
 - `WIRE_PROFILE`
 - `RESPONSE_LABEL`
 - `DNS_MAX_LABEL_LEN`
+- `DNS_EDNS_SIZE`
 - retry/timeouts constants
 
 Invariant:
@@ -174,6 +175,8 @@ Exact defaults are defined in `doc/architecture/CONFIG.md`.
 The generated client must implement exactly the current doc contracts:
 - query name mapping: `doc/architecture/QUERY_MAPPING.md`
 - CNAME payload parsing: `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
+- DNS message construction: include EDNS OPT using embedded `DNS_EDNS_SIZE`
+  (default `1232`; OPT omitted only when configured `512`)
 
 No alternate parse modes or fallback wire decoders are allowed in v1.
 

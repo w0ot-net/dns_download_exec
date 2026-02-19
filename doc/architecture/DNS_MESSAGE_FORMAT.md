@@ -33,7 +33,8 @@ Generated client emits requests with:
 - `QDCOUNT = 1`
 - `ANCOUNT = 0`
 - `NSCOUNT = 0`
-- `ARCOUNT = 0` or `1` (when EDNS OPT is enabled)
+- `ARCOUNT = 1` by default (`dns_edns_size=1232`, OPT present)
+- `ARCOUNT = 0` only when `dns_edns_size=512` (EDNS disabled)
 - `QCLASS = IN`
 - `QTYPE = A` (fixed in v1)
 - `QNAME = <slice_token>.<file_tag>.<base_domain>`
@@ -71,7 +72,8 @@ For a valid mapped slice request:
 - `QDCOUNT = 1`
 - `ANCOUNT = 1`
 - `NSCOUNT = 0`
-- `ARCOUNT = 0` or `1` (EDNS OPT)
+- `ARCOUNT = 1` by default (`dns_edns_size=1232`, OPT present)
+- `ARCOUNT = 0` only when `dns_edns_size=512` (EDNS disabled)
 
 Answer RR:
 - `NAME`: compression pointer to question name start (offset 12)
@@ -139,8 +141,10 @@ Response code selection and classification are governed by
 ## EDNS and Size Handling
 
 EDNS policy:
-- when enabled, include one OPT RR in additional section
+- default configuration includes one OPT RR in additional section
+  (`dns_edns_size=1232`)
 - advertised UDP size follows configured EDNS size
+- `dns_edns_size=512` disables OPT emission for classic DNS behavior
 
 Packet size policy:
 - responses must fit configured UDP/EDNS bounds

@@ -92,7 +92,7 @@ Per-iteration steps:
 1. choose next missing index
 2. map index to `slice_token`
 3. build query name `<slice_token>.<file_tag>.<base_domain>`
-4. send DNS query
+4. send DNS query (include OPT when `DNS_EDNS_SIZE > 512`, default `1232`)
 5. wait for response subject to request timeout
 6. on timeout/no-response, update retry state and continue
 7. on response, validate expected CNAME answer contract

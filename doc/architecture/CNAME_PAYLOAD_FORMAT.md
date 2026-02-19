@@ -125,6 +125,7 @@ limits and configured suffix length.
 Inputs:
 - maximum DNS name length (255 bytes including label lengths)
 - configured `effective_label_cap` (16..63)
+- configured `dns_edns_size` (default `1232`)
 - fixed suffix length for `.<response_label>.<base_domain>`
 - binary record overhead (4-byte header + 16-byte MAC)
 
