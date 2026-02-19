@@ -46,9 +46,13 @@ encrypted, and served via DNS.
 
 This requires:
 - A new function `build_publish_items_from_sources()` in `dnsdle/publish.py`
-  that accepts a list of `(source_filename, plaintext_bytes)` pairs instead of
-  reading from file paths. It performs the same steps as
+  with signature `(sources, compression_level, max_ciphertext_slice_bytes,
+  seen_plaintext_sha256=None, seen_file_ids=None)` where `sources` is a list
+  of `(source_filename, plaintext_bytes)` pairs. It performs the same steps as
   `build_publish_items()`: hash, compress, derive file_id, chunk into slices.
+  The optional `seen_plaintext_sha256` and `seen_file_ids` sets enable
+  cross-set uniqueness enforcement when called after `build_publish_items()`
+  (Phase 2 passes the sets accumulated during Phase 1).
 - `generate_client_artifacts()` in `dnsdle/client_generator.py` must include
   the `"source"` field in its returned artifact dicts (currently stripped).
 
@@ -58,23 +62,37 @@ Restructure `build_startup_state()` in `dnsdle/__init__.py`:
 
 **Phase 1 -- user files:**
 1. Run the existing budget convergence loop on user files only.
-2. Produce mapped publish items and generate client scripts.
-3. Record the user file mapping snapshot (file_tags and slice_tokens).
+2. Build an intermediate user-file-only `RuntimeState` from the converged
+   mapped publish items. This intermediate state is the input to
+   `generate_client_artifacts()`, whose interface (`_build_artifacts` iterates
+   `runtime_state.publish_items` and reads `runtime_state.config`) is
+   unchanged.
+3. Call `generate_client_artifacts(intermediate_state)` to produce client
+   scripts. The returned artifact dicts now include the `"source"` field.
+4. Record the user file mapping snapshot (file_tags and slice_tokens).
 
 **Phase 2 -- client scripts as additional files:**
-4. Call `build_publish_items_from_sources()` on the generated client source
-   text from each artifact.
-5. Combine user + client publish items into one list.
-6. Apply mapping to the combined set.
-7. **Invariant:** user file mappings must be unchanged after combining.
+5. Call `build_publish_items_from_sources()` on the generated client source
+   text from each artifact, passing the `seen_plaintext_sha256` and
+   `seen_file_ids` sets accumulated during Phase 1 to enforce cross-set
+   uniqueness of content hashes and file IDs.
+6. Combine user + client publish items into one list.
+7. Apply mapping to the combined set.
+8. **Invariant:** user file mappings must be unchanged after combining.
    File tags and tokens are HMAC-derived from per-file publish_version, so
    cross-file interference requires an astronomically unlikely hash
-   collision. Fail startup if violated.
-8. **Invariant:** combined `realized_max_token_len` must fit within the
+   collision. This invariant is structurally required, not merely
+   probabilistic: client scripts generated in Phase 1 embed Phase 1 slice
+   tokens and file tags as compiled constants. If collision resolution in
+   the combined mapping promotes or changes any user-file token, the
+   already-generated client scripts contain stale, incorrect `SLICE_TOKENS`
+   and would query wrong DNS names at runtime. Fail startup if violated.
+9. **Invariant:** combined `realized_max_token_len` must fit within the
    converged `query_token_len` from Phase 1. Fail startup if violated.
-9. Build final `RuntimeState` from all mapped items (user files + client
-   scripts). The server's `lookup_by_key` now contains entries for both.
-10. Generate stager one-liners from client publish items.
+10. Build final `RuntimeState` from all mapped items (user files + client
+    scripts). The server's `lookup_by_key` now contains entries for both.
+    The intermediate user-file-only RuntimeState from Phase 1 is discarded.
+11. Generate stager one-liners from client publish items.
 
 ### 3. Stager template
 
@@ -102,12 +120,13 @@ file.
 - Logging or progress output.
 - Descriptive error messages (raw exceptions propagate).
 - System resolver discovery (resolver is a required positional argument).
-- Domain rotation (uses first configured domain only).
+- Domain rotation (uses lexicographically first configured domain only;
+  `config.domains` is sorted alphabetically during normalization).
 - Duplicate-slice handling (fatal on any re-receipt).
 
 **Embedded constants** (filled at generation time via placeholder
 substitution, same pattern as the client template):
-- `D`: domain label tuple (first configured domain).
+- `D`: domain label tuple (lexicographically first configured domain).
 - `T`: file_tag of the client publish item.
 - `F`: file_id.
 - `V`: publish_version.
@@ -198,7 +217,7 @@ The generation must verify:
 - The one-liner round-trips: decompress(decode(payload)) equals the
   minified source.
 
-### 5. Stager output
+### 6. Stager output
 
 During startup, after building the final runtime state and stagers, output
 the stager one-liners. One entry per (source file, target_os):
@@ -216,10 +235,18 @@ Output goes through the existing logging system at `info` level, category
 
 ## Affected Components
 
+- `dnsdle.py`: remove the standalone `generate_client_artifacts()` call and
+  its surrounding generation logging (generation_start, generation_ok,
+  generation_summary). Client generation now happens inside
+  `build_startup_state()` during Phase 1. Stager output logging replaces
+  generation-summary logging. The main function's post-startup flow
+  simplifies to: `build_startup_state()` -> publish-item logging ->
+  `serve_runtime()`.
 - `dnsdle/publish.py`: add `build_publish_items_from_sources()` that accepts
-  in-memory `(source_filename, plaintext_bytes)` pairs and produces publish
-  items through the same compress/hash/slice pipeline as
-  `build_publish_items()`.
+  in-memory `(source_filename, plaintext_bytes)` pairs plus
+  `compression_level`, `max_ciphertext_slice_bytes`, and optional cross-set
+  uniqueness sets, producing publish items through the same
+  compress/hash/slice pipeline as `build_publish_items()`.
 - `dnsdle/client_generator.py`: include `"source"` field in the artifact
   dicts returned by `generate_client_artifacts()` so auto-publishing can
   access the client source text without re-reading from disk.
