@@ -70,6 +70,23 @@ RuntimeState = namedtuple(
 )
 
 
+def to_publish_item(mapped_item):
+    return PublishItem(
+        file_id=mapped_item["file_id"],
+        publish_version=mapped_item["publish_version"],
+        file_tag=mapped_item["file_tag"],
+        plaintext_sha256=mapped_item["plaintext_sha256"],
+        compressed_size=mapped_item["compressed_size"],
+        total_slices=mapped_item["total_slices"],
+        slice_token_len=mapped_item["slice_token_len"],
+        slice_tokens=tuple(mapped_item["slice_tokens"]),
+        slice_bytes_by_index=tuple(mapped_item["slice_bytes_by_index"]),
+        crypto_profile=mapped_item["crypto_profile"],
+        wire_profile=mapped_item["wire_profile"],
+        source_filename=mapped_item["source_filename"],
+    )
+
+
 def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
     publish_items = []
     lookup = {}
@@ -77,20 +94,7 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
     publish_meta_by_identity = {}
 
     for item in mapped_publish_items:
-        publish_item = PublishItem(
-            file_id=item["file_id"],
-            publish_version=item["publish_version"],
-            file_tag=item["file_tag"],
-            plaintext_sha256=item["plaintext_sha256"],
-            compressed_size=item["compressed_size"],
-            total_slices=item["total_slices"],
-            slice_token_len=item["slice_token_len"],
-            slice_tokens=tuple(item["slice_tokens"]),
-            slice_bytes_by_index=tuple(item["slice_bytes_by_index"]),
-            crypto_profile=item["crypto_profile"],
-            wire_profile=item["wire_profile"],
-            source_filename=item["source_filename"],
-        )
+        publish_item = to_publish_item(item)
         publish_items.append(publish_item)
         identity = (publish_item.file_id, publish_item.publish_version)
         if identity in slice_bytes_by_identity:

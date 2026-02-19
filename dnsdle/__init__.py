@@ -13,6 +13,23 @@ from dnsdle.publish import build_publish_items_from_sources
 from dnsdle.server import serve_runtime
 from dnsdle.state import build_runtime_state
 from dnsdle.state import StartupError
+from dnsdle.state import to_publish_item
+
+
+class _GeneratorInput(object):
+
+    def __init__(self, config, mapped_items):
+        self.config = config
+        self._mapped_items = mapped_items
+        self._publish_items = None
+
+    @property
+    def publish_items(self):
+        if self._publish_items is None:
+            self._publish_items = tuple(
+                to_publish_item(item) for item in self._mapped_items
+            )
+        return self._publish_items
 
 
 def _max_slice_token_len(mapped_publish_items):
@@ -58,15 +75,10 @@ def build_startup_state(argv=None):
             break
         query_token_len = realized_max_token_len
 
-    # Build intermediate RuntimeState for client generation
-    intermediate_state = build_runtime_state(
-        config=config,
-        mapped_publish_items=mapped_items,
-        max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
-        budget_info=budget_info,
-    )
+    # Lightweight input for client generation (avoids full RuntimeState construction)
+    generator_input = _GeneratorInput(config=config, mapped_items=mapped_items)
 
-    generation_result = generate_client_artifacts(intermediate_state)
+    generation_result = generate_client_artifacts(generator_input)
 
     # Snapshot user file mappings for invariant check
     user_file_snapshot = {}
@@ -124,6 +136,8 @@ def build_startup_state(argv=None):
             {
                 "combined_max_token_len": combined_max_token_len,
                 "query_token_len": query_token_len,
+                "hint": "client scripts require additional token budget;"
+                        " reduce user file count or size",
             },
         )
 
