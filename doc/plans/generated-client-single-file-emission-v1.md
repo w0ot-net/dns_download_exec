@@ -1,7 +1,7 @@
 # Plan: Generated Client Single-File Emission (v1)
 
 ## Summary
-Implement the server-side generated-client emission phase so startup produces exactly one standalone Python file per `(published file, target_os)` pair. This phase focuses on deterministic artifact generation, embedded metadata contract correctness, and fail-fast output behavior. It does not implement full client download orchestration logic; it wires generation around the parity/runtime contracts and prepares the artifact shape for the next phase.
+Implement the server-side generated-client emission phase so startup produces exactly one standalone Python file per `(published file, target_os)` pair. This phase focuses on deterministic artifact generation, embedded metadata contract correctness, run-level transactional output behavior, and startup fail-fast guarantees. It emits runnable one-file clients that satisfy the current architecture contract and use the parity crypto/parser behavior defined in the client-parity phase.
 
 ## Problem
 The runtime server now publishes encrypted CNAME slices, but there is no implemented client artifact generator in code. Config fields (`target_os`, `client_out_dir`) exist but are not used to emit client files. Without this phase, operators cannot obtain generated one-file clients, and the architecture contract in `CLIENT_GENERATION.md` remains unimplemented.
@@ -11,7 +11,8 @@ After implementation:
 - Startup generates one standalone `.py` artifact per `(file_id, target_os)` in `client_out_dir`.
 - Each artifact embeds required immutable constants (`BASE_DOMAINS`, `FILE_TAG`, `FILE_ID`, `PUBLISH_VERSION`, `TOTAL_SLICES`, `COMPRESSED_SIZE`, `PLAINTEXT_SHA256_HEX`, `SLICE_TOKENS`, profile IDs, wire knobs).
 - Artifact naming is deterministic and collision-safe for the current publish set.
-- Generation fails fast on invariant violations and does not leave partial artifacts.
+- Generation is transactional at run level: on failure, no newly generated artifact from that run remains.
+- Rerun behavior is deterministic and explicit (managed-file overwrite + stale managed-file pruning policy).
 - Startup logs include generation summaries with stable reason codes/events.
 
 ## Design
@@ -23,8 +24,8 @@ In scope:
 4. Deterministic naming/path behavior and fail-fast filesystem handling.
 
 Out of scope:
-- full generated-client download loop runtime behavior (separate phase)
-- generated-client crypto/parser implementation details beyond wiring/import-safe placeholders to parity core contract
+- advanced scheduling/optimization of client runtime loop (for example adaptive jitter tuning)
+- alternate transport/qtype support
 - execution of downloaded files (still non-goal)
 
 ### 1. Introduce generation module and deterministic template rendering
@@ -42,7 +43,10 @@ Template contract:
 - ASCII-only source
 - stdlib-only imports
 - one-file structure with sections required by `CLIENT_GENERATION.md`
-- includes explicit TODO/runtime placeholders only where downstream phases are intentionally deferred
+- emitted script is minimally functional end-to-end for one file (query, parse, verify, decrypt, reassemble, hash-check, write), with conservative defaults
+
+Phase dependency:
+- this plan assumes the client parity core from `doc/plans/client-crypto-parser-parity-v1.md` is available and can be embedded/inlined into generated scripts without repository-relative runtime imports.
 
 ### 2. Artifact naming and path invariants
 Define deterministic filename scheme:
@@ -51,8 +55,14 @@ Define deterministic filename scheme:
 Fail-fast rules:
 - reject path traversal or invalid output path composition
 - ensure output dir exists (create if missing) or fail with explicit reason
-- prevent silent overwrite ambiguity; choose explicit policy and enforce it deterministically
-- on any generation failure, remove temp file and do not leave partial artifact
+- transactional generation:
+  - render all artifacts into a per-run staging directory under `client_out_dir`
+  - if any artifact fails validation/write, delete staging directory and leave destination unchanged
+  - only after all artifacts succeed, commit staged files to destination
+- overwrite/idempotency policy (explicit):
+  - for managed target paths in current run, replace destination atomically
+  - stale managed files (matching `dnsdl_*_<target_os>.py` naming policy) not in current expected set are removed during commit
+  - any failed replace/remove operation aborts commit and removes all newly staged outputs from this run
 
 ### 3. Embedded metadata schema enforcement
 Before writing each artifact, validate generation invariants:
@@ -83,6 +93,10 @@ Add generation logging events through centralized logging runtime:
 - `generation_summary`
 
 Ensure sensitive values are not logged (no PSK or raw slice bytes).
+Generation events use existing visible categories under default config:
+- category `startup` for lifecycle events (`generation_start`, `generation_summary`, `generation_error`)
+- category `publish` for per-artifact success details (`generation_ok`)
+No new logging category is introduced in this phase.
 
 ### 6. Architecture-doc synchronization
 Update architecture docs to reflect actual generation behavior and startup placement:
@@ -94,8 +108,10 @@ Update architecture docs to reflect actual generation behavior and startup place
 Validation for this phase:
 1. run startup with 1 file, 2 target OS values and verify 2 generated scripts.
 2. verify filenames and embedded constant blocks are deterministic across reruns with unchanged inputs.
-3. verify generation fails fast on an induced invariant violation (for example token/count mismatch fixture) with no partial output.
-4. verify startup does not enter serve loop when generation fails.
+3. verify rerun replaces managed files deterministically and prunes stale managed files not in current expected set.
+4. verify generation fails fast on an induced invariant violation (for example token/count mismatch fixture) with no newly emitted files left behind.
+5. verify startup does not enter serve loop when generation fails.
+6. execute one generated script against live server and confirm successful download/verify/write path for a hosted file.
 
 ## Affected Components
 - `dnsdle/generator.py` (new): deterministic one-file client artifact rendering/writing and invariant checks.
@@ -103,11 +119,13 @@ Validation for this phase:
 - `dnsdle.py`: include generation lifecycle logging and startup failure handling integration.
 - `dnsdle/constants.py`: add generation-related constants (template/version identifiers, filename prefix policy, logging category if needed).
 - `dnsdle/config.py`: enforce/clarify generation-specific config invariants for `target_os` and `client_out_dir` as used by emitter.
-- `dnsdle/logging_runtime.py`: add/align generation event categories/required lifecycle events as needed.
 - `dnsdle/state.py`: extend runtime structures only if generator requires stable derived metadata view (avoid mutation).
+- `dnsdle/client_payload.py`: parity crypto/parser helpers consumed by generated client runtime body (or inline source builder from same logic).
+- `dnsdle/client_reassembly.py`: parity reassembly/hash verification helpers consumed by generated client runtime body (or inline source builder from same logic).
 - `doc/architecture/CLIENT_GENERATION.md`: align implemented template/filename/startup behavior and failure semantics.
 - `doc/architecture/CONFIG.md`: align generation-related config behavior and defaults with implementation.
 - `doc/architecture/ARCHITECTURE.md`: reflect startup data flow now including concrete generation step.
 - `doc/architecture/SERVER_RUNTIME.md`: reflect generation as enforced pre-serve startup phase.
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: add/align startup generation failure classes and invariants.
-- `doc/architecture/LOGGING.md`: include generation event classes/required fields if new categories are introduced.
+- `unit_tests/test_generator.py` (new): deterministic filename/render/invariant tests and transactional failure cleanup tests.
+- `unit_tests/test_generated_client_smoke.py` (new): generated-script end-to-end smoke against local runtime server for one hosted file.
