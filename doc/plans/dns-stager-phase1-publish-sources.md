@@ -19,10 +19,11 @@ After implementation:
   accepts in-memory `(source_filename, plaintext_bytes)` pairs and produces
   publish item dicts through the same compress/hash/slice pipeline as
   `build_publish_items()`.
-- Cross-set uniqueness enforcement is supported: callers can pass
-  `seen_plaintext_sha256` and `seen_file_ids` sets accumulated from a prior
-  `build_publish_items()` call so that content hashes and file IDs are unique
-  across both sets.
+- Cross-set uniqueness enforcement is supported: both `build_publish_items()`
+  and `build_publish_items_from_sources()` accept optional
+  `seen_plaintext_sha256` and `seen_file_ids` sets. Callers share a single
+  pair of sets across both calls so that content hashes and file IDs are
+  unique across both publish passes (the sets are mutated in place).
 - `generate_client_artifacts()` includes the `"source"` field in its returned
   artifact dicts so callers can access the generated client source text
   without re-reading from disk.
@@ -99,8 +100,8 @@ def _build_single_publish_item(
 
 `item_context` is a dict merged into `StartupError` context for any error
 raised by the helper (e.g. `{"file_index": 0}` from the disk caller or
-`{"source": "dnsdl_..._linux.py"}` from the sources caller). This preserves
-structured error output.
+`{"source_filename": "dnsdl_..._linux.py"}` from the sources caller). This
+preserves structured error output.
 
 The helper returns the publish item dict. Callers are responsible for
 diagnostic logging (the existing `log_event` call in `build_publish_items()`
@@ -108,7 +109,13 @@ stays in its disk-read loop; `build_publish_items_from_sources()` adds its
 own logging with source-appropriate context).
 
 Rewrite `build_publish_items()` to call `_build_single_publish_item()` per
-file, keeping its disk-read loop and per-item logging.
+file, keeping its disk-read loop and per-item logging. Add optional
+`seen_plaintext_sha256=None` and `seen_file_ids=None` parameters to
+`build_publish_items()` (same semantics as `build_publish_items_from_sources()`
+-- when `None`, an internal set is used; when provided, the caller's sets are
+mutated in place). This keeps the two functions symmetric and lets Phase 2
+callers share a single pair of sets across both publish passes without
+reconstructing them from returned items.
 `build_publish_items_from_sources()` calls the same helper per source entry.
 
 ### 3. Include `"source"` in `generate_client_artifacts()` return
@@ -126,8 +133,9 @@ Change: include `"source": artifact["source"]` in the dicts appended to
 - `dnsdle/publish.py`:
   - Extract `_build_single_publish_item()` private helper from the per-file
     loop body in `build_publish_items()`.
-  - Rewrite `build_publish_items()` to use the extracted helper, preserving
-    its current behavior exactly.
+  - Rewrite `build_publish_items()` to use the extracted helper. Add optional
+    `seen_plaintext_sha256` and `seen_file_ids` parameters (default `None`)
+    for cross-set uniqueness; existing callers are unaffected.
   - Add `build_publish_items_from_sources()` using the same helper.
 - `dnsdle/client_generator.py`:
   - Include `"source"` field in the dicts returned by
