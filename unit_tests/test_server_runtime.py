@@ -367,10 +367,6 @@ class ServerRuntimeTests(unittest.TestCase):
         capture = _CaptureStream()
         logger = logging_runtime.RuntimeLogger(
             level="info",
-            categories=("startup",),
-            sample_rate=0.0,
-            rate_limit_per_sec=0,
-            output="stdout",
             stream=capture,
         )
         original_socket_factory = server_module.socket.socket

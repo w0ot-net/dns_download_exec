@@ -71,6 +71,55 @@ class DnsWireTests(unittest.TestCase):
         )
         self.assertEqual(0, arcount)
 
+    def test_parse_request_captures_raw_question_bytes(self):
+        mixed_case_labels = ("tOk", "tAg", "ExAmPlE", "cOm")
+        message = _query_message(mixed_case_labels)
+        request = dnswire.parse_request(message)
+
+        self.assertEqual(
+            ("tok", "tag", "example", "com"),
+            request["question"]["qname_labels"],
+        )
+        self.assertEqual(message[12:], request["raw_question_bytes"])
+
+    def test_build_response_preserves_original_question_case(self):
+        mixed_case_labels = ("tOk", "tAg", "ExAmPlE", "cOm")
+        message = _query_message(mixed_case_labels)
+        request = dnswire.parse_request(message)
+        response = dnswire.build_response(
+            request,
+            DNS_RCODE_NXDOMAIN,
+            answer_bytes=None,
+            include_opt=False,
+            edns_size=512,
+        )
+
+        self.assertEqual(message[12:], response[12:])
+
+    def test_build_response_falls_back_to_encode_without_raw_bytes(self):
+        request = {
+            "id": 0x1234,
+            "flags": 0x0100,
+            "question": {
+                "qname_labels": ("a", "example", "com"),
+                "qtype": DNS_QTYPE_A,
+                "qclass": DNS_QCLASS_IN,
+            },
+        }
+        response = dnswire.build_response(
+            request,
+            DNS_RCODE_NXDOMAIN,
+            answer_bytes=None,
+            include_opt=False,
+            edns_size=512,
+        )
+
+        expected_question = (
+            dnswire.encode_name(("a", "example", "com"))
+            + struct.pack("!HH", DNS_QTYPE_A, DNS_QCLASS_IN)
+        )
+        self.assertEqual(expected_question, response[12:])
+
     def test_build_cname_answer_points_suffix_at_question_domain(self):
         question_labels = ("token", "tag001", "example", "com")
         payload_labels = ("abc", "def")
