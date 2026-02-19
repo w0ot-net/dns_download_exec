@@ -35,12 +35,16 @@ After implementation:
 - Normalize each domain (lowercase, strip trailing dot), reject duplicate
   normalized values (no silent dedupe), and require deterministic canonical
   order for valid unique inputs.
+- Canonical order rule: sort normalized unique domain strings by ascending
+  ASCII lexicographic order; every derived/output list must use this order.
 - Enforce non-overlap invariant at startup:
   no configured domain may be equal to, or DNS-suffix-contained by, another
   configured domain on label boundaries.
 - Add derived values:
-  `domains`, `domain_labels_set`, `longest_domain_labels`,
-  `longest_domain_wire_len`.
+  `domains` (ordered tuple), `domain_labels_by_domain` (ordered tuple aligned to
+  `domains`), `longest_domain_labels`, `longest_domain_wire_len`.
+- Internal set-like helpers (for membership/overlap checks) are allowed but must
+  not be emitted in logs or serialized startup artifacts.
 - Treat legacy `--domain` as removed (clean break) and update all call sites.
 
 ### 2. Mapping and publish constraints
@@ -97,7 +101,11 @@ After implementation:
 ### 6. Documentation-first rollout
 - First change set updates architecture docs to a consistent multi-domain model.
 - Second change set updates startup/core code to match docs.
-- Third change set updates generated-client contract and implementation.
+- Third change set updates generated-client architecture/runtime contracts
+  (`BASE_DOMAIN` -> `BASE_DOMAINS`) and the deterministic selection algorithm
+  specification only.
+- Generated-client implementation changes are explicitly deferred to a follow-on
+  execution plan in the same phase as serve-path implementation.
 - Runtime request-handler enforcement is explicitly out of scope for this plan
   because a serve-path implementation is not currently present in the codebase.
 - No compatibility shims for single-domain contracts.
