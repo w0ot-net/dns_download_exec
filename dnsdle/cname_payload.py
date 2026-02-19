@@ -33,7 +33,7 @@ def _split_payload_labels(payload_text, label_cap):
     return tuple(labels)
 
 
-def _enc_key(psk, file_id, publish_version):
+def _derive_file_bound_key(psk, file_id, publish_version, key_label):
     psk_bytes = to_utf8_bytes(psk)
     if not psk_bytes:
         raise ValueError("psk must be non-empty")
@@ -41,9 +41,18 @@ def _enc_key(psk, file_id, publish_version):
     publish_version_bytes = to_ascii_bytes(publish_version)
     return hmac.new(
         psk_bytes,
-        PAYLOAD_ENC_KEY_LABEL + file_id_bytes + b"|" + publish_version_bytes,
+        key_label + file_id_bytes + b"|" + publish_version_bytes,
         hashlib.sha256,
     ).digest()
+
+
+def _enc_key(psk, file_id, publish_version):
+    return _derive_file_bound_key(
+        psk,
+        file_id,
+        publish_version,
+        PAYLOAD_ENC_KEY_LABEL,
+    )
 
 
 def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len):
@@ -75,14 +84,12 @@ def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len)
 
 
 def _xor_bytes(left_bytes, right_bytes):
-    left_values = list(iter_byte_values(left_bytes))
-    right_values = list(iter_byte_values(right_bytes))
-    if len(left_values) != len(right_values):
+    if len(left_bytes) != len(right_bytes):
         raise ValueError("xor inputs must have equal length")
 
-    out = bytearray(len(left_values))
-    for index, left_value in enumerate(left_values):
-        out[index] = left_value ^ right_values[index]
+    out = bytearray(len(left_bytes))
+    for index, values in enumerate(zip(iter_byte_values(left_bytes), iter_byte_values(right_bytes))):
+        out[index] = values[0] ^ values[1]
     return bytes(out)
 
 
@@ -99,19 +106,6 @@ def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes
         len(payload),
     )
     return _xor_bytes(payload, stream)
-
-
-def _mac_key(psk, file_id, publish_version):
-    psk_bytes = to_utf8_bytes(psk)
-    if not psk_bytes:
-        raise ValueError("psk must be non-empty")
-    file_id_bytes = to_ascii_bytes(file_id)
-    publish_version_bytes = to_ascii_bytes(publish_version)
-    return hmac.new(
-        psk_bytes,
-        PAYLOAD_MAC_KEY_LABEL + file_id_bytes + b"|" + publish_version_bytes,
-        hashlib.sha256,
-    ).digest()
 
 
 def _mac_bytes(
@@ -145,8 +139,37 @@ def _mac_bytes(
         + b"|"
         + payload
     )
-    mac_key = _mac_key(psk, file_id, publish_version)
+    mac_key = _derive_file_bound_key(
+        psk,
+        file_id,
+        publish_version,
+        PAYLOAD_MAC_KEY_LABEL,
+    )
     return hmac.new(mac_key, message, hashlib.sha256).digest()[:PAYLOAD_MAC_TRUNC_LEN]
+
+
+def decrypt_slice_ciphertext(psk, file_id, publish_version, slice_index, ciphertext_bytes):
+    return _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, ciphertext_bytes)
+
+
+def compute_slice_mac(
+    psk,
+    file_id,
+    publish_version,
+    slice_index,
+    total_slices,
+    compressed_size,
+    ciphertext_bytes,
+):
+    return _mac_bytes(
+        psk,
+        file_id,
+        publish_version,
+        slice_index,
+        total_slices,
+        compressed_size,
+        ciphertext_bytes,
+    )
 
 
 def build_slice_record(
@@ -215,28 +238,3 @@ def payload_labels_for_slice(
     )
     payload_text = base32_lower_no_pad(record_bytes)
     return _split_payload_labels(payload_text, label_cap)
-
-
-def build_cname_target_labels(
-    psk,
-    file_id,
-    publish_version,
-    slice_index,
-    total_slices,
-    compressed_size,
-    slice_bytes,
-    response_label,
-    selected_domain_labels,
-    dns_max_label_len,
-):
-    payload_labels = payload_labels_for_slice(
-        psk,
-        file_id,
-        publish_version,
-        slice_index,
-        total_slices,
-        compressed_size,
-        slice_bytes,
-        dns_max_label_len,
-    )
-    return payload_labels + (response_label,) + tuple(selected_domain_labels)
