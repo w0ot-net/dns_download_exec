@@ -141,3 +141,45 @@ Validation for this phase:
 - `doc/architecture/ARCHITECTURE.md`: reflect startup data flow now including concrete generation step.
 - `doc/architecture/SERVER_RUNTIME.md`: reflect generation as enforced pre-serve startup phase.
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: add/align startup generation failure classes and invariants.
+
+## Execution Notes
+- Implemented `dnsdle/generator.py` with deterministic one-file emission per
+  `(publish_item, target_os)`, embedded runtime constants, and managed output
+  ownership under `<client_out_dir>/dnsdle_v1/`.
+- Implemented rollback-safe transactional generation:
+  - per-run staging and backup directories
+  - atomic managed-file replacement
+  - stale managed-file pruning restricted to managed filename pattern
+  - rollback restoration on commit failure
+- Integrated generation into startup flow before serving in `dnsdle.py` with
+  fail-fast `generation_error` handling and no server loop entry on generation
+  failure.
+- Added generation lifecycle logging (`generation_start`, `generation_ok`,
+  `generation_summary`, `generation_error`) via existing startup/publish
+  categories and level mapping.
+- Added generation constants/defaults in `dnsdle/constants.py` and normalized
+  `client_out_dir` to absolute form in `dnsdle/config.py`.
+- Updated architecture docs to align startup placement, managed output
+  semantics, and generator failure/invariant contract.
+
+Validation executed:
+- `python -m py_compile dnsdle/generator.py dnsdle.py dnsdle/__init__.py dnsdle/config.py dnsdle/constants.py dnsdle/logging_runtime.py`
+- `python2 -m py_compile dnsdle/generator.py dnsdle.py dnsdle/__init__.py dnsdle/config.py dnsdle/constants.py dnsdle/logging_runtime.py`
+- Startup generation validation (1 file, 2 target OS, deterministic rerun,
+  stale pruning, induced invariant failure, and fail-before-serve checks):
+  - `timeout 3 python dnsdle.py --domains example.com --files /tmp/dnsdle_plan_validate/input1.txt --psk test-psk --listen-addr 127.0.0.1:55353 --client-out-dir /tmp/dnsdle_plan_validate/out --target-os windows,linux --log-level info --log-categories startup,publish,server`
+  - rerun with same args and diff of generated file hashes
+  - rerun with `--target-os linux` and verify stale pruning to one artifact
+  - induced mismatch fixture via `generate_client_artifacts(...)` with tampered
+    `slice_tokens` and verify `generator_invalid_contract` + unchanged managed
+    directory
+  - failure-path run with `--client-out-dir` pointing to an existing file and
+    verify `generation_error` with no `server_start`
+- Live generated-client transfer check (local UDP loopback server using
+  `handle_request_message` + generated client subprocess):
+  - result: `live_generated_client_download_ok`
+  - note: this check required elevated execution in the sandbox to permit UDP
+    sockets.
+
+Implementation commit: `261e092`
+Deviations from plan: none.
