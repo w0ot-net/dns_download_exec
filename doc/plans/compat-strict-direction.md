@@ -2,13 +2,15 @@
 
 ## Summary
 
-Rename the polymorphic `to_ascii_bytes` / `to_ascii_text` / `to_utf8_bytes` /
-`to_ascii_int_bytes` helpers to `encode_ascii` / `decode_ascii` / `encode_utf8` /
-`encode_ascii_int`, signalling one-way conversion. Drop the explicit `TypeError`
-branches (let `AttributeError` propagate for truly wrong types). Remove ~5
-passthrough calls in `cname_payload.py` and `client_payload.py` where the input is
-provably already bytes. Make `FILE_ID_PREFIX` a bytes literal so its only call site
-needs no conversion.
+Add `from __future__ import unicode_literals` to all 18 modules under `dnsdle/`,
+then rename and simplify the compat conversion helpers. With `unicode_literals`,
+every string literal produces `text_type` on Py2, so `encode_ascii` and
+`encode_utf8` collapse to one-liners with zero isinstance checks. `decode_ascii`
+retains one isinstance check because `str.decode()` does not exist on Py3. Remove
+~5 passthrough calls on known-bytes values. Make `FILE_ID_PREFIX` a bytes literal.
+
+Branch count before: 9 (3 per encode/decode/encode_utf8).
+Branch count after: 1 (decode_ascii only).
 
 ## Problem
 
@@ -23,20 +25,25 @@ The current helpers accept *both* text and bytes, which:
 3. **Uses ambiguous naming.** `to_ascii_bytes` does not indicate *from what* — the
    name reads the same whether you are encoding text or passing through bytes.
 4. **Carries unnecessary branches.** Each helper has three branches (binary
-   passthrough, text conversion, TypeError). The TypeError can never fire in
-   practice and can be replaced by a natural `AttributeError` from `.encode()` /
-   `.decode()`, dropping one branch per function.
+   passthrough, text conversion, TypeError). Without `unicode_literals`, the binary
+   passthrough is genuinely exercised on Py2 (string literals are `str`/bytes). With
+   `unicode_literals`, string literals produce `text_type` on both Py2 and Py3, and
+   stdlib functions that still return Py2 `str` (like `hexdigest()`) survive the
+   bare `.encode("ascii")` via the implicit decode-encode roundtrip for ASCII
+   content.
 5. **`FILE_ID_PREFIX`** is declared as a text literal but only ever used in byte
    context (HMAC input concatenated with other bytes). It requires a conversion
    call that would disappear if the constant were `b"..."`.
 
 ## Goal
 
+- `from __future__ import unicode_literals` in every module under `dnsdle/`.
 - Helpers renamed to signal direction: `encode_ascii`, `decode_ascii`,
   `encode_utf8`, `encode_ascii_int`.
-- Each function body drops the explicit `text_type` / `binary_type` + `TypeError`
-  three-branch pattern to a two-branch pattern (isinstance check for the Py2 `str`
-  edge case, then direct `.encode()` / `.decode()`).
+- `encode_ascii` and `encode_utf8` become one-liners: bare
+  `return value.encode(...)` with zero isinstance checks.
+- `decode_ascii` drops to one isinstance check (text_type passthrough, required
+  because `str.decode()` does not exist on Py3).
 - No passthrough calls on values whose type is provably bytes at the call site.
 - `FILE_ID_PREFIX` is a bytes literal; its call site concatenates directly.
 - All call sites and imports updated in the same commit.
@@ -44,17 +51,29 @@ The current helpers accept *both* text and bytes, which:
 
 ## Design
 
-### `dnsdle/compat.py` — function renames and body simplification
+### All 18 modules under `dnsdle/` — add `unicode_literals`
 
-Rename and simplify each conversion helper. The isinstance check for `binary_type`
-(Py2 `str` passthrough) or `text_type` (Py3 `str` passthrough) stays — it is the
-minimal Py2/3 `str`-means-different-things bridge and cannot be removed without
-`unicode_literals`. The explicit `text_type` / `binary_type` guard and `TypeError`
-raise are dropped; an invalid type hits `.encode()` / `.decode()` and raises
-`AttributeError` naturally.
+Every file already has `from __future__ import absolute_import`. Add
+`unicode_literals` on the same line or as a second import:
 
 ```python
-# before
+from __future__ import absolute_import, unicode_literals
+```
+
+The audit found zero bare string literals in bytes context across the entire
+`dnsdle/` tree — every byte-context literal already uses `b"..."`. No literal
+changes are needed beyond the import.
+
+### `dnsdle/compat.py` — function renames and body simplification
+
+With `unicode_literals`, callers pass `text_type` for all string-literal arguments.
+Stdlib functions like `hexdigest()` still return Py2 `str` (bytes), but
+`str.encode("ascii")` on Py2 performs an implicit decode-then-re-encode roundtrip
+that works correctly for ASCII content. This means `encode_ascii` no longer needs
+its `isinstance(value, binary_type)` passthrough:
+
+```python
+# before (3 branches)
 def to_ascii_bytes(value):
     if isinstance(value, binary_type):
         return value
@@ -62,19 +81,64 @@ def to_ascii_bytes(value):
         return value.encode("ascii")
     raise TypeError("value must be text or bytes")
 
-# after
+# after (0 branches)
 def encode_ascii(value):
-    if isinstance(value, binary_type):
-        return value
     return value.encode("ascii")
 ```
 
-Same pattern for `decode_ascii` (drop `binary_type` guard + TypeError),
-`encode_utf8` (drop `text_type` guard + TypeError), and `encode_ascii_int`
-(internal call rename only).
+Same for `encode_utf8`:
 
-Internal callers (`base32_lower_no_pad`, `base32_decode_no_pad`, `key_text`,
-`encode_ascii_int`) update their calls to the new names.
+```python
+# after (0 branches)
+def encode_utf8(value):
+    return value.encode("utf-8")
+```
+
+`decode_ascii` cannot drop its isinstance check because `str` on Py3 has no
+`.decode()` method. Callers like `client_reassembly.py` and `base32_decode_no_pad`
+receive values that are `text_type` on Py3 (from `hexdigest()` or `.join()`), so
+the passthrough is exercised:
+
+```python
+# after (1 branch)
+def decode_ascii(value):
+    if isinstance(value, text_type):
+        return value
+    return value.decode("ascii")
+```
+
+`encode_ascii_int` — internal call rename only. Change `str(int_value)` to
+`text_type(int_value)` so the value is `text_type` on Py2 (avoids the Py2 `str()`
+→ bytes path):
+
+```python
+def encode_ascii_int(value, field_name):
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("%s must be an integer" % field_name)
+    if int_value < 0:
+        raise ValueError("%s must be non-negative" % field_name)
+    return encode_ascii(text_type(int_value))
+```
+
+`key_text` — same `str()` → `text_type()` fix (two occurrences) so the function
+consistently returns `text_type`:
+
+```python
+def key_text(value):
+    if isinstance(value, text_type):
+        return value
+    if is_binary(value):
+        try:
+            return decode_ascii(value)
+        except Exception:
+            return text_type(value)
+    return text_type(value)
+```
+
+Internal callers (`base32_lower_no_pad`, `base32_decode_no_pad`) update their calls
+to the new names.
 
 ### `dnsdle/constants.py` — `FILE_ID_PREFIX` to bytes
 
@@ -132,15 +196,20 @@ Remove these three calls and use the parameter directly. Remaining
 to `encode_ascii`. Other renames: `to_utf8_bytes` → `encode_utf8`,
 `to_ascii_int_bytes` → `encode_ascii_int`.
 
-### `dnsdle/client_generator.py` — rename imports and calls
+### `dnsdle/client_generator.py` — rename, fix validation guard
+
+The validation guard at line 188 currently calls `decode_ascii(source)`. With
+`unicode_literals`, `source` is `text_type` on both Py2 and Py3, so `decode_ascii`
+is a no-op passthrough — no actual ASCII validation occurs. Replace with
+`encode_ascii(source)` which validates by encoding text to ASCII bytes (raises
+`UnicodeEncodeError` on non-ASCII):
 
 ```python
-# imports
+# imports — decode_ascii no longer needed
 from dnsdle.compat import encode_ascii
-from dnsdle.compat import decode_ascii
 
-# line 188 (validation guard)
-decode_ascii(source)
+# line 188 (validation guard — encode validates ASCII, result discarded)
+encode_ascii(source)
 
 # line 204 (binary write)
 handle.write(encode_ascii(source_text))
@@ -193,13 +262,16 @@ expected_hash = decode_ascii(plaintext_sha256).lower()
 
 ## Affected Components
 
-- `dnsdle/compat.py`: rename four functions, simplify bodies (drop TypeError
-  branch), update internal callers.
+- `dnsdle/*.py` (all 18 modules): add `from __future__ import unicode_literals`.
+- `dnsdle/compat.py`: rename four functions; `encode_ascii` and `encode_utf8`
+  become one-liners (zero isinstance); `decode_ascii` drops to one isinstance;
+  `str()` → `text_type()` in `encode_ascii_int` and `key_text`.
 - `dnsdle/constants.py`: change `FILE_ID_PREFIX` from text to bytes literal.
 - `dnsdle/client_payload.py`: remove `to_ascii_bytes` passthrough call and import.
 - `dnsdle/cname_payload.py`: remove 3 passthrough calls on known-bytes values;
   rename remaining 5 conversion imports/calls.
-- `dnsdle/client_generator.py`: rename 2 imports and 2 call sites.
+- `dnsdle/client_generator.py`: rename 1 import, change validation guard from
+  `decode_ascii` to `encode_ascii`, rename binary-write call.
 - `dnsdle/__init__.py`: rename 1 import and 1 call site.
 - `dnsdle/dnswire.py`: rename 3 imports and 2 call sites.
 - `dnsdle/mapping.py`: rename 3 imports and 4 call sites.
