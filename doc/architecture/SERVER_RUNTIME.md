@@ -207,6 +207,9 @@ Forced shutdown may drop in-flight responses; this is acceptable for UDP.
 5. Request failures follow the defined response matrix exactly.
 6. Runtime internal inconsistencies are surfaced as faults, never silently
    remapped.
+7. Response question section echoes verbatim request wire bytes, preserving
+   original label case for DNS 0x20 compatibility (see
+   `doc/architecture/DNS_MESSAGE_FORMAT.md`).
 
 ---
 

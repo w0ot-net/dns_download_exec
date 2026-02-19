@@ -78,6 +78,12 @@ ID handling:
 
 Question handling:
 - response echoes exactly one question matching request qname/qtype/qclass.
+- the echoed question section must be the verbatim wire bytes from the request,
+  preserving original label case. Recursive resolvers use DNS 0x20 encoding
+  (RFC 7816 appendix, widely deployed) to randomize qname case for
+  cache-poisoning resistance. If the server re-encodes the question from
+  lowercased labels, the resolver detects a case mismatch, suspects a spoofed
+  response, and returns SERVFAIL to the client.
 
 ---
 
