@@ -18,8 +18,8 @@ these artifacts.
 
 ## Goal
 After implementation:
-- startup enforces full v1 startup-validation contract and builds publish
-  artifacts for all files
+- startup enforces full startup-time config/input validation for the core
+  publish/mapping phase and builds publish artifacts for all files
 - duplicate-content files are rejected (`file_version` uniqueness invariant)
 - deterministic mapping outputs are generated from canonical inputs
 - global `(file_tag, slice_token)` uniqueness is enforced before serving
@@ -52,9 +52,13 @@ This phase validates all startup-time config invariants from
 - CNAME payload budget viability (`max_ciphertext_slice_bytes > 0`)
 - mapping feasibility within DNS and digest-capacity bounds
 
-Generation execution invariants (for example emitted artifact counts) remain out
-of scope until the generator is implemented, but generator-related config field
-validation is in scope now.
+Generation execution invariants remain out of scope until the generator is
+implemented, but generator-related config field validation is in scope now.
+
+Non-goals for this phase (explicitly deferred):
+- generator output invariant: exactly one `.py` artifact per `(file, target_os)`
+- generator output invariant: no sidecar output artifacts
+- generator output/content invariant checks tied to client template emission
 
 ### 3. Implement deterministic identity + publish pipeline
 For each input file:
