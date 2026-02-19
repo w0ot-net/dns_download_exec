@@ -14,6 +14,17 @@ After implementation:
 - No compatibility shim layer is added; one clear response-validation contract is enforced.
 
 ## Design
+### 0. Transport-asymmetry reference for this change
+`doc/architecture/ASYMMETRY.md` is currently not present in this repository.
+For this DNS-only compatibility change, treat the following as the normative
+transport contract set during execution/review:
+- `doc/architecture/DNS_MESSAGE_FORMAT.md`
+- `doc/architecture/CLIENT_RUNTIME.md`
+- `doc/architecture/ERRORS_AND_INVARIANTS.md`
+
+This plan does not change tunnel/multi-transport behavior; it only adjusts
+client acceptance rules for recursive DNS response envelopes.
+
 ### 1. Replace authoritative-only envelope checks with recursive-compatible invariants
 Update `extract_response_cname_labels()` in `dnsdle/client_payload.py`:
 1. Keep strict checks for invariants that must hold regardless of resolver topology:
@@ -62,11 +73,17 @@ Use deterministic validation commands during execution:
 - `python -m unittest unit_tests.test_client_payload_parity`
 - `python -m unittest unit_tests.test_dnswire`
 - `python -m unittest unit_tests.test_cname_payload`
-2. run an explicit recursive-response acceptance check (scripted command) that verifies decode succeeds when response headers/counts reflect recursive resolver behavior but still carry one valid matching CNAME.
-3. run negative checks to confirm malformed/ambiguous CNAME responses remain fatal parse failures.
+2. run explicit recursive-response acceptance tests (new deterministic unit tests):
+- `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_accepts_recursive_resolver_style_response`
+- `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_accepts_non_authoritative_response_with_extra_sections`
+3. run explicit negative parsing tests to confirm malformed/ambiguous answers remain fatal:
+- `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_ambiguous_matching_cname_answers`
+- `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_missing_matching_cname_answer`
+- `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_tc_set_even_with_valid_cname`
 
 ## Affected Components
 - `dnsdle/client_payload.py`: remove authoritative-only response gating and enforce recursive-compatible response invariants.
+- `unit_tests/test_client_payload_parity.py`: add deterministic recursive-envelope acceptance tests and ambiguity/missing-CNAME/TC negative tests.
 - `doc/architecture/ARCHITECTURE.md`: declare recursive DNS support as a MUST-level client runtime invariant and primary usage mode.
 - `doc/architecture/CONFIG.md`: clarify recursive/system resolver mode is the default expected deployment path.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: redefine client response-acceptance rules to be recursive-compatible.
