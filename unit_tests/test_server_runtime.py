@@ -200,6 +200,21 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(DNS_QTYPE_A, answer_type)
         self.assertEqual("followup", record["classification"])
 
+    def test_qname_minimization_probe_returns_nodata(self):
+        runtime_state = self._runtime_state(dns_edns_size=1232)
+        labels = ("tag001", "example", "com")
+
+        response, record = server_module.handle_request_message(
+            runtime_state,
+            _query_message(labels),
+        )
+
+        _rid, flags, _qd, ancount, _ns, _ar = _header(response)
+        self.assertEqual(DNS_RCODE_NOERROR, flags & 0x000F)
+        self.assertEqual(0, ancount)
+        self.assertEqual("miss", record["classification"])
+        self.assertEqual("invalid_slice_qname_shape", record["reason_code"])
+
     def test_unknown_mapping_returns_nxdomain(self):
         runtime_state = self._runtime_state(dns_edns_size=512)
         labels = ("missing", "tag001", "example", "com")

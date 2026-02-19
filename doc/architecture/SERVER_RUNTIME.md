@@ -137,7 +137,8 @@ For each parseable request:
 Response behavior must follow `doc/architecture/ERRORS_AND_INVARIANTS.md`:
 - valid mapped request -> `NOERROR` + one CNAME answer
 - follow-up request -> `NOERROR` + one A answer
-- deterministic miss -> `NXDOMAIN`
+- domain-matched non-served request -> `NOERROR` + empty answer (NODATA)
+- unmatched domain or unknown mapping -> `NXDOMAIN`
 - internal runtime fault after mapping -> `SERVFAIL`
 
 No fallback remap is allowed.

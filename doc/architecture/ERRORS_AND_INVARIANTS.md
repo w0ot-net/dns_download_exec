@@ -96,13 +96,24 @@ For parseable DNS requests in v1:
 - Answer section: exactly one IN `A` answer
 - TTL: configured `ttl`
 
-3. **Deterministic miss**
+3. **Domain-matched non-served request (NODATA)**
+- Response: `RCODE=NOERROR`
+- Answer section: empty
+- Applies when base domain matches but the query does not fit a served pattern:
+  unsupported qtype/class for a matched domain, or wrong prefix label count
+  (QNAME minimization probes).
+- This tells recursive resolvers the name exists, preventing NXDOMAIN caching
+  of the entire subtree (RFC 9156 QNAME minimization compatibility).
+
+4. **Deterministic miss (NXDOMAIN)**
 - Response: `RCODE=NXDOMAIN`
 - Answer section: empty
+- Applies to unknown/unconfigured base domains and mapping-not-found after
+  full qname validation.
 - Behavior must be deterministic for identical request name and current publish
   state.
 
-4. **Internal runtime fault**
+5. **Internal runtime fault**
 - Response: `RCODE=SERVFAIL`
 - Answer section: empty
 - Log as internal error with reason code.
@@ -120,18 +131,23 @@ For each incoming request:
 1. Parse DNS message envelope.
 2. Validate parseable query-envelope invariants (`QR=0`, query opcode,
    section-count policy).
-3. Classify follow-up shape
+3. Match one configured base-domain suffix. Unmatched domains return NXDOMAIN.
+4. Classify follow-up shape
    (`<payload_labels>.<response_label>.<selected_base_domain>`, qtype `A`) for
    configured domains before slice-mapping evaluation.
-4. Validate qname/class/qtype shape for v1 slice flow.
-5. Validate suffix and mapping fields (`slice_token`, `file_tag`).
-6. Resolve mapping to canonical slice identity.
-7. Build deterministic slice record.
-8. Encode and return deterministic CNAME answer.
+5. Validate qtype/class for v1 slice flow. Unsupported qtype/class on a matched
+   domain returns NODATA (NOERROR with empty answer).
+6. Validate prefix label count for slice shape. Wrong count on a matched domain
+   returns NODATA.
+7. Resolve mapping to canonical slice identity. Unknown mapping returns
+   NXDOMAIN.
+8. Build deterministic slice record.
+9. Encode and return deterministic CNAME answer.
 
-Any failure before step 6 is a deterministic miss unless the request is not
-parseable.
-Any failure at or after step 6 caused by internal inconsistency is a runtime
+Any failure before step 7 is a deterministic miss (NXDOMAIN for unmatched
+domains, NODATA for domain-matched non-served queries) unless the request is
+not parseable.
+Any failure at or after step 7 caused by internal inconsistency is a runtime
 fault (`SERVFAIL`).
 
 ---

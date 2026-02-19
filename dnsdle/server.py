@@ -72,6 +72,17 @@ def _miss_response(request, config, reason_code, context):
     return response, _build_log("miss", reason_code, context)
 
 
+def _nodata_response(request, config, reason_code, context):
+    response = dnswire.build_response(
+        request,
+        DNS_RCODE_NOERROR,
+        answer_bytes=None,
+        include_opt=_include_opt(config),
+        edns_size=config.dns_edns_size,
+    )
+    return response, _build_log("miss", reason_code, context)
+
+
 def _is_followup_query(prefix_labels, response_label):
     return len(prefix_labels) >= 2 and prefix_labels[-1] == response_label
 
@@ -143,16 +154,6 @@ def handle_request_message(runtime_state, request_bytes):
     if question is None:
         return _miss_response(request, config, "missing_question", None)
 
-    qtype = question["qtype"]
-    qclass = question["qclass"]
-    if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
-        return _miss_response(
-            request,
-            config,
-            "unsupported_qtype_or_class",
-            {"qtype": qtype, "qclass": qclass},
-        )
-
     qname_labels = question["qname_labels"]
     selected_domain, prefix_labels = _selected_domain(config, qname_labels)
     if selected_domain is None:
@@ -173,8 +174,18 @@ def handle_request_message(runtime_state, request_bytes):
             {"selected_base_domain": selected_domain},
         )
 
+    qtype = question["qtype"]
+    qclass = question["qclass"]
+    if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
+        return _nodata_response(
+            request,
+            config,
+            "unsupported_qtype_or_class",
+            {"qtype": qtype, "qclass": qclass},
+        )
+
     if len(prefix_labels) != 2:
-        return _miss_response(
+        return _nodata_response(
             request,
             config,
             "invalid_slice_qname_shape",
