@@ -208,6 +208,9 @@ The generated client must implement exactly the current doc contracts:
 - CNAME payload parsing: `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - DNS message construction: include EDNS OPT using embedded `DNS_EDNS_SIZE`
   (default `1232`; OPT omitted only when configured `512`)
+- response acceptance: recursive-DNS-compatible envelope validation per
+  `doc/architecture/DNS_MESSAGE_FORMAT.md` (MUST NOT gate on `AA`, `RA`, or
+  exact section counts)
 
 No alternate parse modes or fallback wire decoders are allowed in v1.
 

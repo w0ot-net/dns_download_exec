@@ -44,10 +44,8 @@ RETRY_SLEEP_BASE_MS = @@RETRY_SLEEP_BASE_MS@@
 RETRY_SLEEP_JITTER_MS = @@RETRY_SLEEP_JITTER_MS@@
 
 DNS_FLAG_QR = 0x8000
-DNS_FLAG_AA = 0x0400
 DNS_FLAG_TC = 0x0200
 DNS_FLAG_RD = 0x0100
-DNS_FLAG_RA = 0x0080
 DNS_OPCODE_QUERY = 0x0000
 DNS_OPCODE_MASK = 0x7800
 DNS_QTYPE_A = 1
@@ -284,21 +282,14 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response ID mismatch")
     if (flags & DNS_FLAG_QR) == 0:
         raise ClientError(EXIT_PARSE, "parse", "response missing QR flag")
-    if (flags & DNS_FLAG_AA) == 0:
-        raise ClientError(EXIT_PARSE, "parse", "response does not set AA")
     if flags & DNS_FLAG_TC:
         raise ClientError(EXIT_PARSE, "parse", "response sets TC")
-    if flags & DNS_FLAG_RA:
-        raise ClientError(EXIT_PARSE, "parse", "response sets RA")
     if (flags & DNS_OPCODE_MASK) != DNS_OPCODE_QUERY:
         raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
     rcode = flags & 0x000F
-    if qdcount != 1 or ancount != 1 or nscount != 0:
-        raise ClientError(EXIT_PARSE, "parse", "response section counts invalid")
-    expected_arcount = 1 if DNS_EDNS_SIZE > 512 else 0
-    if arcount != expected_arcount:
-        raise ClientError(EXIT_PARSE, "parse", "response arcount does not match EDNS mode")
+    if qdcount != 1:
+        raise ClientError(EXIT_PARSE, "parse", "response qdcount is not 1")
 
     offset = DNS_HEADER_BYTES
     qname_labels, offset = _decode_name(message, offset)

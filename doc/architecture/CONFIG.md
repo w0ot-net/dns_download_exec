@@ -87,7 +87,8 @@ runtime CLI flags in the generated client.
 - `max_consecutive_timeouts = 128`
 - `retry_sleep_base_ms = 100`
 - `retry_sleep_jitter_ms = 150`
-- `resolver_mode = system` (unless generator embeds direct resolver)
+- `resolver_mode = system` (default and primary deployment mode; generated
+  clients MUST accept recursive-resolver responses)
 
 Generated-client runtime overrides:
 - `--resolver host:port`

@@ -148,10 +148,11 @@ For each received response:
 6. validate duplicate-slice consistency if index already stored
 
 Parity helper ownership:
-- `dnsdle/client_payload.py` enforces response-envelope rules (`ID`, `QR/AA/TC/RA`,
-  opcode, `RCODE`, section counts, question echo), selects exactly one matching
-  IN CNAME answer, validates payload record invariants, verifies MAC, and
-  decrypts ciphertext.
+- `dnsdle/client_payload.py` enforces response-envelope rules (`ID`, `QR/TC`,
+  opcode, `RCODE`, question echo), selects exactly one matching IN CNAME
+  answer, validates payload record invariants, verifies MAC, and decrypts
+  ciphertext. Envelope validation is recursive-DNS-compatible: `AA`, `RA`,
+  and exact section counts are not checked.
 - `dnsdle/client_reassembly.py` enforces duplicate-index equality, complete
   index coverage, ordered reassembly, compressed-size checks, decompression, and
   final plaintext hash verification.

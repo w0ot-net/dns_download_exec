@@ -172,6 +172,8 @@ Rules:
 - prolonged no-progress state is terminal (default 60 seconds)
 - any verification mismatch is fatal
 - never execute downloaded bytes in v1
+- MUST accept responses traversing recursive DNS resolvers; recursive DNS is
+  the primary operating path (system resolver mode is the default)
 
 Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 

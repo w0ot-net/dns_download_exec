@@ -7,6 +7,9 @@ import dnsdle.client_payload as client_payload
 import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
 from dnsdle.compat import base32_lower_no_pad
+from dnsdle.constants import DNS_FLAG_AA
+from dnsdle.constants import DNS_FLAG_RA
+from dnsdle.constants import DNS_FLAG_TC
 from dnsdle.constants import DNS_QCLASS_IN
 from dnsdle.constants import DNS_QTYPE_A
 from dnsdle.constants import DNS_RCODE_NOERROR
@@ -54,6 +57,32 @@ def _response_with_record(
     )
 
 
+def _patch_response_flags(message, clear_flags=0, set_flags=0):
+    flags = struct.unpack("!H", message[2:4])[0]
+    flags = (flags & ~clear_flags) | set_flags
+    return message[:2] + struct.pack("!H", flags) + message[4:]
+
+
+def _append_authority_rrs(message, rr_bytes_list):
+    nscount = struct.unpack("!H", message[8:10])[0]
+    nscount += len(rr_bytes_list)
+    patched = message[:8] + struct.pack("!H", nscount) + message[10:]
+    for rr_bytes in rr_bytes_list:
+        patched += rr_bytes
+    return patched
+
+
+def _dummy_ns_rr():
+    """Build a minimal dummy NS RR using a pointer to the question name."""
+    name = b'\xc0\x0c'
+    rr_type = 2  # NS
+    rr_class = 1  # IN
+    ttl = 30
+    rdata = b'\xc0\x0c'  # pointer to question name
+    rdlength = len(rdata)
+    return name + struct.pack("!HHIH", rr_type, rr_class, ttl, rdlength) + rdata
+
+
 class ClientPayloadParityTests(unittest.TestCase):
     def test_roundtrip_decode_verify_decrypt_matches_slice_bytes(self):
         psk = "k"
@@ -99,7 +128,6 @@ class ClientPayloadParityTests(unittest.TestCase):
             request_qname_labels,
             DNS_QTYPE_A,
             DNS_QCLASS_IN,
-            1232,
             response_label,
             selected_domain_labels,
             psk,
@@ -120,7 +148,6 @@ class ClientPayloadParityTests(unittest.TestCase):
             request_qname_labels,
             DNS_QTYPE_A,
             DNS_QCLASS_IN,
-            1232,
             response_label,
             selected_domain_labels,
             "k",
@@ -181,7 +208,6 @@ class ClientPayloadParityTests(unittest.TestCase):
                 request_qname_labels,
                 DNS_QTYPE_A,
                 DNS_QCLASS_IN,
-                1232,
                 response_label,
                 selected_domain_labels,
                 psk,
@@ -223,7 +249,6 @@ class ClientPayloadParityTests(unittest.TestCase):
                 request_qname_labels,
                 DNS_QTYPE_A,
                 DNS_QCLASS_IN,
-                1232,
                 response_label,
                 selected_domain_labels,
                 psk,
@@ -234,6 +259,204 @@ class ClientPayloadParityTests(unittest.TestCase):
                 321,
             )
         self.assertEqual("mac_mismatch", raised.exception.reason_code)
+
+    def test_accepts_recursive_resolver_style_response(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        slice_index = 0
+        total_slices = 3
+        compressed_size = 321
+        slice_bytes = b"slice-data-not-trivial"
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        response_label = "r-x"
+        selected_domain_labels = ("example", "com")
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version,
+            slice_index, total_slices, compressed_size, slice_bytes,
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_flags(
+            response, clear_flags=DNS_FLAG_AA, set_flags=DNS_FLAG_RA,
+        )
+
+        parsed_slice = client_payload.decode_response_slice(
+            response,
+            0x1234,
+            request_qname_labels,
+            DNS_QTYPE_A,
+            DNS_QCLASS_IN,
+            response_label,
+            selected_domain_labels,
+            psk,
+            file_id,
+            publish_version,
+            slice_index,
+            total_slices,
+            compressed_size,
+        )
+        self.assertEqual(slice_bytes, parsed_slice)
+
+    def test_accepts_non_authoritative_response_with_extra_sections(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        slice_index = 0
+        total_slices = 3
+        compressed_size = 321
+        slice_bytes = b"slice-data-not-trivial"
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        response_label = "r-x"
+        selected_domain_labels = ("example", "com")
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version,
+            slice_index, total_slices, compressed_size, slice_bytes,
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels,
+            response_label, include_opt=False,
+        )
+        response = _patch_response_flags(
+            response, clear_flags=DNS_FLAG_AA, set_flags=DNS_FLAG_RA,
+        )
+        response = _append_authority_rrs(response, [_dummy_ns_rr()])
+
+        parsed_slice = client_payload.decode_response_slice(
+            response,
+            0x1234,
+            request_qname_labels,
+            DNS_QTYPE_A,
+            DNS_QCLASS_IN,
+            response_label,
+            selected_domain_labels,
+            psk,
+            file_id,
+            publish_version,
+            slice_index,
+            total_slices,
+            compressed_size,
+        )
+        self.assertEqual(slice_bytes, parsed_slice)
+
+    def test_rejects_ambiguous_matching_cname_answers(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels,
+            response_label, include_opt=False,
+        )
+
+        # Compute answer section start: header(12) + question name + qtype/qclass
+        qname_wire = dnswire.encode_name(request_qname_labels)
+        answer_start = 12 + len(qname_wire) + 4
+        answer_bytes = response[answer_start:]
+
+        # Duplicate the answer and patch ANCOUNT to 2
+        doubled = response + answer_bytes
+        doubled = doubled[:6] + struct.pack("!H", 2) + doubled[8:]
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                doubled,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("required_cname_missing", raised.exception.reason_code)
+
+    def test_rejects_missing_matching_cname_answer(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels,
+            response_label, include_opt=False,
+        )
+
+        # Strip the answer section: header(12) + question only, ANCOUNT=0
+        qname_wire = dnswire.encode_name(request_qname_labels)
+        question_end = 12 + len(qname_wire) + 4
+        stripped = response[:6] + struct.pack("!H", 0) + response[8:question_end]
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                stripped,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("required_cname_missing", raised.exception.reason_code)
+
+    def test_rejects_tc_set_even_with_valid_cname(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_flags(response, set_flags=DNS_FLAG_TC)
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_truncated", raised.exception.reason_code)
 
 
 if __name__ == "__main__":

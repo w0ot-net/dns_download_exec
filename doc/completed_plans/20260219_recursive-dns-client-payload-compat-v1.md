@@ -103,6 +103,51 @@ Use deterministic validation commands during execution:
 - `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_missing_matching_cname_answer`
 - `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_tc_set_even_with_valid_cname`
 
+## Execution Notes
+
+Executed 2026-02-19.
+
+### Deviation: generator.py split
+
+The plan references `dnsdle/generator.py` for the client template updates.
+Between plan drafting and execution, `generator.py` was split into
+`dnsdle/client_template.py` (CLIENT_TEMPLATE string) and
+`dnsdle/client_generator.py` (generator infrastructure) by commit `57ae1adf`.
+All template changes (Design section 2) were applied to
+`dnsdle/client_template.py` instead.
+
+### Implementation summary
+
+1. **Design 1 (client_payload.py)**: Removed AA/RA checks, combined
+   section-count guard (qdcount coverage via downstream
+   `len(parsed["questions"]) != 1`), EDNS-driven arcount check, dead
+   `DNS_FLAG_AA`/`DNS_FLAG_RA` imports.
+
+2. **Design 2 (client_template.py)**: Removed `DNS_FLAG_AA`/`DNS_FLAG_RA`
+   constants, AA/RA checks, replaced combined section-count check with
+   standalone `qdcount != 1`, removed `expected_arcount`/arcount check. Kept
+   `_consume_rrs` for all sections and trailing-bytes check intact.
+
+3. **Design 3 (clean break)**: Removed `dns_edns_size` parameter from
+   `extract_response_cname_labels()` and `decode_response_slice()`. Updated
+   4 test call sites.
+
+4. **Design 4 (architecture docs)**: Updated all 6 docs:
+   ARCHITECTURE.md, CONFIG.md, DNS_MESSAGE_FORMAT.md, CLIENT_RUNTIME.md,
+   CLIENT_GENERATION.md, ERRORS_AND_INVARIANTS.md.
+
+5. **Design 5 (test helpers + tests)**: Added `_patch_response_flags`,
+   `_append_authority_rrs`, `_dummy_ns_rr` helpers. Added 5 new tests:
+   recursive-style acceptance, extra-sections acceptance, ambiguous CNAME
+   rejection, missing CNAME rejection, TC rejection.
+
+### Validation
+
+- `python -m unittest unit_tests.test_client_payload_parity`: 9 tests OK
+- `python -m unittest unit_tests.test_dnswire`: 5 tests OK
+- `python -m unittest unit_tests.test_cname_payload`: 4 tests OK
+- All modules import cleanly
+
 ## Affected Components
 - `dnsdle/client_payload.py`: remove authoritative-only response gating, enforce recursive-compatible response invariants, remove dead `dns_edns_size` parameter from public entrypoints, remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` imports.
 - `dnsdle/generator.py`: update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` with the same recursive-compatible invariants; remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` constant definitions from template.

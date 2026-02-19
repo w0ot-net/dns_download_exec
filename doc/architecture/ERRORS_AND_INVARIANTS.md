@@ -64,12 +64,18 @@ Examples:
 Contract violations terminate the run immediately.
 
 Examples:
-- DNS message parse failure after receipt
+- DNS message parse failure after receipt (wire-level decode failure, `TC=1`,
+  non-`QUERY` opcode, transaction ID mismatch, `RCODE` not `NOERROR`, question
+  echo mismatch, missing or ambiguous required IN CNAME answer)
 - unexpected payload shape for required CNAME answer
 - CNAME binary record invariant failure
 - MAC/decrypt mismatch
 - duplicate-slice mismatch
 - final reconstruction/hash mismatch
+
+Note: recursive-resolver envelope characteristics (`AA=0`, `RA=1`, extra
+authority/additional section RRs, modified `ARCOUNT`) are NOT contract
+violations and MUST be accepted on the success path.
 
 ---
 

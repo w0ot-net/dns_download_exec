@@ -7,9 +7,7 @@ import dnsdle.dnswire as dnswire
 from dnsdle.compat import base32_decode_no_pad
 from dnsdle.compat import constant_time_equals
 from dnsdle.compat import to_ascii_bytes
-from dnsdle.constants import DNS_FLAG_AA
 from dnsdle.constants import DNS_FLAG_QR
-from dnsdle.constants import DNS_FLAG_RA
 from dnsdle.constants import DNS_FLAG_TC
 from dnsdle.constants import DNS_OPCODE_QUERY
 from dnsdle.constants import DNS_QCLASS_IN
@@ -133,7 +131,6 @@ def extract_response_cname_labels(
     request_qname_labels,
     request_qtype,
     request_qclass,
-    dns_edns_size,
 ):
     try:
         parsed = dnswire.parse_message(response_message)
@@ -143,24 +140,14 @@ def extract_response_cname_labels(
     flags = parsed["flags"]
     if (flags & DNS_FLAG_QR) == 0:
         _raise_parse("response_not_qr", "response does not set QR")
-    if (flags & DNS_FLAG_AA) == 0:
-        _raise_parse("response_not_aa", "response does not set AA")
     if flags & DNS_FLAG_TC:
         _raise_parse("response_truncated", "response must not set TC")
-    if flags & DNS_FLAG_RA:
-        _raise_parse("response_ra_set", "response must not set RA")
     if parsed["opcode"] != DNS_OPCODE_QUERY:
         _raise_parse("response_opcode_invalid", "response opcode is not QUERY")
     if parsed["id"] != request_id:
         _raise_parse("response_id_mismatch", "response ID does not match request ID")
     if parsed["rcode"] != DNS_RCODE_NOERROR:
         _raise_parse("response_rcode_invalid", "response RCODE is not NOERROR")
-    if parsed["qdcount"] != 1 or parsed["ancount"] != 1 or parsed["nscount"] != 0:
-        _raise_parse("response_counts_invalid", "response section counts do not match success path")
-
-    expected_arcount = 1 if int(dns_edns_size) > 512 else 0
-    if parsed["arcount"] != expected_arcount:
-        _raise_parse("response_arcount_invalid", "response additional count does not match EDNS mode")
 
     if len(parsed["questions"]) != 1:
         _raise_parse("response_question_count_invalid", "response does not contain exactly one question")
@@ -194,7 +181,6 @@ def decode_response_slice(
     request_qname_labels,
     request_qtype,
     request_qclass,
-    dns_edns_size,
     response_label,
     selected_domain_labels,
     psk,
@@ -210,7 +196,6 @@ def decode_response_slice(
         request_qname_labels,
         request_qtype,
         request_qclass,
-        dns_edns_size,
     )
     payload_labels = _extract_payload_labels(cname_labels, response_label, selected_domain_labels)
     record_bytes = _decode_payload_record_bytes(payload_labels)
