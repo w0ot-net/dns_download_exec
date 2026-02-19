@@ -37,14 +37,18 @@ Determinism rule:
 - identical inputs must produce identical ciphertext and MAC.
 
 Fail-fast rules:
-- invalid numeric bounds, empty PSK, or out-of-range indexes raise encoding errors; server maps these to runtime fault where applicable.
+- startup invariants remain startup-fatal: empty `psk`, invalid config bounds, and other config-shape violations must fail before bind.
+- runtime payload construction keeps defensive checks for impossible states (`slice_index` bounds, non-positive totals, malformed metadata); those paths map to runtime fault only if reached after successful startup.
 
 ### 2. Harden request-envelope validation before routing
 Add deterministic pre-routing envelope checks in `dnsdle/server.py` (using parsed header fields from `dnsdle/dnswire.py`):
 1. Require query semantics (`QR=0`, opcode=`QUERY`).
 2. Require `QDCOUNT=1`.
 3. Require `ANCOUNT=0` and `NSCOUNT=0`.
-4. Constrain additional-section count to v1-acceptable values (`ARCOUNT` bounds policy), with explicit reason code on violation.
+4. Enforce explicit `ARCOUNT` policy with no placeholder language:
+   - when `dns_edns_size == 512`, require `ARCOUNT=0`
+   - when `dns_edns_size > 512`, accept `ARCOUNT` in `{0,1}` and reject `ARCOUNT>1`
+   - all policy violations map to miss reason `invalid_additional_count`
 5. Keep existing qtype/qclass checks and domain/mapping classification after envelope validation.
 
 Classification policy:
@@ -61,18 +65,36 @@ Update docs in the same change to match behavior exactly:
 - Define explicit parseable-envelope validation requirements in request handling.
 - Ensure error matrix and validation order reflect new fail-fast envelope checks.
 
-### 5. Validation approach (no test-file changes in this phase)
-Run deterministic/manual validation against runtime behavior:
+### 5. Validation approach (required automated coverage + targeted manual check)
+Add concrete automated validation in `unit_tests/`:
+1. `unit_tests/test_cname_payload_encryption.py`
+   - asserts record payload bytes are ciphertext (non-trivial input differs from plaintext)
+   - asserts deterministic output for identical `(psk, file_id, publish_version, slice_index, slice_bytes)`
+   - asserts MAC binding changes when ciphertext-bound metadata changes
+2. `unit_tests/test_server_request_envelope_validation.py`
+   - asserts pre-routing `NXDOMAIN` miss classification/reason codes for parseable envelope violations:
+     - `QR=1`
+     - non-query opcode
+     - `QDCOUNT!=1`
+     - non-zero `ANCOUNT`/`NSCOUNT`
+     - invalid `ARCOUNT` by configured EDNS mode
+   - asserts valid envelopes still reach existing follow-up/slice routing paths
+3. `unit_tests/test_server_request_envelope_integration.py`
+   - constructs mapped request fixtures and verifies envelope validation occurs before mapping lookup
+   - verifies deterministic `reason_code` values for each rejection class
+
+Targeted manual/runtime verification:
 1. Same startup inputs + same query => identical CNAME payload bytes across retries.
-2. Ciphertext segment differs from plaintext slice bytes for non-trivial slice input.
-3. Invalid parseable headers (`QR=1`, non-query opcode, non-zero AN/NS counts, out-of-policy ARCOUNT) => `NXDOMAIN` miss responses, never served slices.
-4. Valid request envelopes still serve `NOERROR` + one CNAME for mapped slices.
+2. Valid mapped requests still return `NOERROR` with one CNAME answer.
 
 ## Affected Components
 - `dnsdle/cname_payload.py`: implement deterministic encryption plus MAC-over-ciphertext record construction.
 - `dnsdle/constants.py`: add/adjust crypto derivation label constants for encryption stream derivation; keep overhead/profile invariants coherent.
 - `dnsdle/server.py`: enforce strict request-envelope validation before follow-up/slice routing and add stable miss reason codes.
 - `dnsdle/dnswire.py`: expose/normalize envelope fields or helpers needed by server-side query-envelope validation.
+- `unit_tests/test_cname_payload_encryption.py`: verify deterministic encryption/MAC-over-ciphertext behavior.
+- `unit_tests/test_server_request_envelope_validation.py`: verify strict pre-routing envelope rejection matrix and reason codes.
+- `unit_tests/test_server_request_envelope_integration.py`: verify envelope validation ordering relative to routing/mapping.
 - `doc/architecture/CRYPTO.md`: specify concrete v1 encryption + MAC construction and deterministic inputs.
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`: update binary record semantics to ciphertext payload bytes and MAC binding text.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: codify required query-envelope invariants and miss handling for parseable envelope violations.
