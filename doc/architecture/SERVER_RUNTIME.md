@@ -53,6 +53,8 @@ For each configured file:
 6. Build immutable manifest/slice tables.
 
 All publish tables become read-only before entering serve mode.
+Publish pipeline details are defined in
+`doc/architecture/PUBLISH_PIPELINE.md`.
 
 Client generation integration is intentionally out of scope for this document.
 Generation behavior is specified in `doc/architecture/CLIENT_GENERATION.md`.
@@ -185,6 +187,7 @@ Forced shutdown may drop in-flight responses; this is acceptable for UDP.
 
 - `doc/architecture/ARCHITECTURE.md`
 - `doc/architecture/CONFIG.md`
+- `doc/architecture/PUBLISH_PIPELINE.md`
 - `doc/architecture/QUERY_MAPPING.md`
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - `doc/architecture/CLIENT_GENERATION.md`

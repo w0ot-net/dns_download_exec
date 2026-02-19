@@ -108,6 +108,9 @@ Design rule:
 - the same `(file_id, file_version, slice_index)` must always map to the same
   served bytes for the life of the process
 
+Detailed pipeline contract:
+- `doc/architecture/PUBLISH_PIPELINE.md`
+
 ### 3. DNS Response Engine (CNAME v1)
 
 Responsibilities:

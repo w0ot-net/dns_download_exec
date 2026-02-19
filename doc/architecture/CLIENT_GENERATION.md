@@ -35,6 +35,9 @@ For each published file, generator input is:
 - runtime knobs (timeouts, retry pacing, max attempts policy)
 - `target_os` (`windows` or `linux`)
 
+These fields are produced by the startup publish pipeline contract in
+`doc/architecture/PUBLISH_PIPELINE.md`.
+
 Global input:
 - resolver target configuration (direct resolver or system resolver behavior)
 - output directory for generated clients
