@@ -39,13 +39,6 @@ _LONG_OPTIONS = (
 _KNOWN_LONG_OPTIONS = set(_LONG_OPTIONS)
 
 
-class _ColorHelpFormatter(argparse.HelpFormatter):
-    def start_section(self, heading):
-        if heading and sys.stdout.isatty():
-            heading = "\033[1;36m%s\033[0m" % heading
-        argparse.HelpFormatter.start_section(self, heading)
-
-
 class _RaisingArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise StartupError(
@@ -53,6 +46,18 @@ class _RaisingArgumentParser(argparse.ArgumentParser):
             "invalid_config",
             "argument parsing failed: %s" % message,
         )
+
+    def print_help(self, file=None):
+        if file is None:
+            file = sys.stdout
+        text = self.format_help()
+        if hasattr(file, "isatty") and file.isatty():
+            lines = text.split("\n")
+            for i, line in enumerate(lines):
+                if line and not line[0].isspace() and line.endswith(":"):
+                    lines[i] = "\033[1;36m%s\033[0m" % line
+            text = "\n".join(lines)
+        file.write(text)
 
 
 def _raw_argv(argv):
@@ -85,10 +90,7 @@ def _validate_long_option_tokens(raw_argv):
 
 
 def _build_parser():
-    parser_kwargs = {
-        "add_help": False,
-        "formatter_class": _ColorHelpFormatter,
-    }
+    parser_kwargs = {"add_help": True}
     try:
         parser = _RaisingArgumentParser(allow_abbrev=False, **parser_kwargs)
     except TypeError:
@@ -101,9 +103,6 @@ def _build_parser():
                           help="comma-separated file paths to publish (required)")
     required.add_argument("--psk", required=True,
                           help="shared secret for v1 crypto (required)")
-    required.add_argument("-h", "--help", action="help",
-                          default=argparse.SUPPRESS,
-                          help="show this help message and exit")
 
     server = parser.add_argument_group("server")
     server.add_argument("--listen-addr", default="0.0.0.0:53",
@@ -142,7 +141,7 @@ def _build_parser():
                              help="sampling rate, 0..1 (default: %(default)s)")
     logging_grp.add_argument("--log-rate-limit-per-sec",
                              default=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
-                             help="rate limit per second (default: %(default)s)")
+                             help="rate limit per second, 0..1000000 (default: %(default)s)")
     logging_grp.add_argument("--log-output", default=DEFAULT_LOG_OUTPUT,
                              help="stdout|file (default: %(default)s)")
     logging_grp.add_argument("--log-file", default=DEFAULT_LOG_FILE,
