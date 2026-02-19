@@ -196,16 +196,16 @@ Remove these three calls and use the parameter directly. Remaining
 to `encode_ascii`. Other renames: `to_utf8_bytes` → `encode_utf8`,
 `to_ascii_int_bytes` → `encode_ascii_int`.
 
-### `dnsdle/client_generator.py` — rename, fix validation guard
+### `dnsdle/client_generator.py` — replace `to_ascii_text` validation, rename
 
-The validation guard at line 188 currently calls `decode_ascii(source)`. With
-`unicode_literals`, `source` is `text_type` on both Py2 and Py3, so `decode_ascii`
-is a no-op passthrough — no actual ASCII validation occurs. Replace with
-`encode_ascii(source)` which validates by encoding text to ASCII bytes (raises
-`UnicodeEncodeError` on non-ASCII):
+The validation guard at line 188 currently calls `to_ascii_text(source)`. With
+`unicode_literals`, `source` is `text_type` on both Py2 and Py3, so the renamed
+`decode_ascii` would be a no-op passthrough — no actual ASCII validation. Replace
+with `encode_ascii(source)` which validates by encoding text to ASCII bytes (raises
+`UnicodeEncodeError` on non-ASCII). This drops the `to_ascii_text` import entirely:
 
 ```python
-# imports — decode_ascii no longer needed
+# imports — only encode_ascii needed (to_ascii_text import removed)
 from dnsdle.compat import encode_ascii
 
 # line 188 (validation guard — encode validates ASCII, result discarded)
@@ -239,6 +239,7 @@ label = decode_ascii(raw)
 ### `dnsdle/mapping.py` — rename imports and calls
 
 ```python
+from dnsdle.compat import base32_lower_no_pad  # unchanged
 from dnsdle.compat import encode_ascii
 from dnsdle.compat import encode_ascii_int
 
@@ -270,8 +271,9 @@ expected_hash = decode_ascii(plaintext_sha256).lower()
 - `dnsdle/client_payload.py`: remove `to_ascii_bytes` passthrough call and import.
 - `dnsdle/cname_payload.py`: remove 3 passthrough calls on known-bytes values;
   rename remaining 5 conversion imports/calls.
-- `dnsdle/client_generator.py`: rename 1 import, change validation guard from
-  `decode_ascii` to `encode_ascii`, rename binary-write call.
+- `dnsdle/client_generator.py`: replace `to_ascii_text` import with `encode_ascii`
+  (drop `to_ascii_text`); validation guard changes from `to_ascii_text(source)` to
+  `encode_ascii(source)`; binary-write call renamed.
 - `dnsdle/__init__.py`: rename 1 import and 1 call site.
 - `dnsdle/dnswire.py`: rename 3 imports and 2 call sites.
 - `dnsdle/mapping.py`: rename 3 imports and 4 call sites.
