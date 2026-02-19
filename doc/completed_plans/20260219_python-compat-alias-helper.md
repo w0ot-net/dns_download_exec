@@ -104,3 +104,10 @@ Update architecture docs to codify compatibility implementation policy:
 - Repeated per-call compatibility branching is removed at migrated call sites when aliasing can pre-bind behavior.
 - Architecture docs explicitly define the centralized compat policy.
 - Protocol/runtime behavior remains deterministic and unchanged for existing valid flows.
+
+## Execution Notes
+- Completed creation of `dnsdle/compat.py` with import-time aliases and strict byte/text/int helpers used by runtime modules.
+- Verified runtime behavior with focused validation suite listed in this plan; all commands passed.
+- Updated `doc/architecture/CRYPTO.md` Python compatibility constraints to explicitly require centralized compat helpers.
+- No deviations from planned scope.
+- Implementation commit: `0fac3f5`.
