@@ -1162,6 +1162,19 @@ def _render_client_source(config, publish_item, target_os):
     for key, value in replacements.items():
         source = source.replace("@@%s@@" % key, repr(value))
 
+    unreplaced = re.search(r"@@[A-Z_]+@@", source)
+    if unreplaced:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "unreplaced template placeholder after substitution",
+            {
+                "file_id": publish_item.file_id,
+                "target_os": target_os,
+                "placeholder": unreplaced.group(0),
+            },
+        )
+
     try:
         source.encode("ascii")
     except Exception:
@@ -1195,6 +1208,7 @@ def _build_artifacts(runtime_state):
     config = runtime_state.config
     artifacts = []
     seen_names = set()
+    seen_identities = set()
 
     for publish_item in runtime_state.publish_items:
         for target_os in config.target_os:
@@ -1217,6 +1231,25 @@ def _build_artifacts(runtime_state):
                     },
                 )
             seen_names.add(filename)
+            identity = (
+                publish_item.file_id,
+                publish_item.publish_version,
+                publish_item.file_tag,
+                target_os,
+            )
+            if identity in seen_identities:
+                raise StartupError(
+                    "startup",
+                    "generator_invalid_contract",
+                    "duplicate artifact identity tuple",
+                    {
+                        "file_id": publish_item.file_id,
+                        "publish_version": publish_item.publish_version,
+                        "file_tag": publish_item.file_tag,
+                        "target_os": target_os,
+                    },
+                )
+            seen_identities.add(identity)
             source_text = _render_client_source(config, publish_item, target_os)
             artifacts.append(
                 {
@@ -1225,8 +1258,21 @@ def _build_artifacts(runtime_state):
                     "target_os": target_os,
                     "filename": filename,
                     "source": source_text,
+                    "publish_version": publish_item.publish_version,
                 }
             )
+
+    expected_count = len(runtime_state.publish_items) * len(config.target_os)
+    if len(artifacts) != expected_count:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "artifact count mismatch",
+            {
+                "expected": expected_count,
+                "realized": len(artifacts),
+            },
+        )
 
     return tuple(artifacts)
 
@@ -1426,6 +1472,7 @@ def generate_client_artifacts(runtime_state):
                 "file_id": artifact["file_id"],
                 "file_tag": artifact["file_tag"],
                 "target_os": artifact["target_os"],
+                "publish_version": artifact["publish_version"],
                 "path": os.path.join(managed_dir, artifact["filename"]),
             }
         )

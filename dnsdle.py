@@ -98,6 +98,7 @@ def main(argv=None):
                 "phase": "publish",
                 "reason_code": "generation_ok",
                 "file_id": artifact["file_id"],
+                "publish_version": artifact["publish_version"],
                 "file_tag": artifact["file_tag"],
                 "target_os": artifact["target_os"],
                 "path": artifact["path"],

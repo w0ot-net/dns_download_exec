@@ -220,6 +220,8 @@ Parity-core boundary:
    `<client_out_dir>/dnsdle_v1/`.
 5. Generation commit is transactional per run; failure leaves no newly emitted
    artifacts from that run.
+6. `artifact_count == file_count * target_os_count`; mismatch is
+   startup-fatal.
 
 Any invariant breach is fatal for the current operation context.
 

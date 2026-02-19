@@ -97,6 +97,27 @@ Add a generation-events subsection documenting:
 - `generation_summary` required fields: `managed_dir`, `artifact_count`,
   `target_os`, `file_ids`
 
+## Execution Notes
+
+Executed 2026-02-19. All five design items implemented as specified:
+
+1. **Unreplaced-placeholder invariant**: Added `re.search(r"@@[A-Z_]+@@", source)`
+   after substitution loop in `_render_client_source`, raising `StartupError`
+   with `generator_invalid_contract` and placeholder name in context.
+2. **Identity-tuple and cardinality post-conditions**: Added `seen_identities`
+   set in `_build_artifacts` checking `(file_id, publish_version, file_tag,
+   target_os)` uniqueness per iteration, plus cardinality assertion
+   `len(artifacts) == len(publish_items) * len(target_os)` after the loop.
+3. **`publish_version` threading**: Added to artifact dict in `_build_artifacts`
+   and propagated into returned `generated` list in `generate_client_artifacts`.
+4. **`generation_ok` logging**: Added `publish_version` field to the
+   `generation_ok` record in `dnsdle.py`.
+5. **Architecture docs**: Updated `CLIENT_GENERATION.md` (Output Artifacts and
+   Generator Failure Conditions sections), `ERRORS_AND_INVARIANTS.md` (Generator
+   Contract invariant #6), and `LOGGING.md` (Generation Events subsection).
+
+No deviations from plan.
+
 ## Affected Components
 - `dnsdle/generator.py`: unreplaced-placeholder check in
   `_render_client_source`; identity-tuple set and cardinality assertion in

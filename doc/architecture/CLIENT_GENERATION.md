@@ -50,6 +50,12 @@ Global input:
 For each published file and `target_os`, generate exactly one Python script
 artifact.
 
+Cardinality invariant:
+- `artifact_count = file_count * target_os_count`
+- Cardinality mismatch or identity-tuple
+  `(file_id, publish_version, file_tag, target_os)` duplication is
+  startup-fatal.
+
 Required properties:
 - standalone executable with only stdlib imports
 - ASCII-only source
@@ -258,6 +264,9 @@ Generation must fail before emitting client artifact when:
 - unsupported `TARGET_OS`
 - generation path would require more than one output file for the client
 - managed output commit/rollback steps fail at any point
+- unreplaced template placeholder after substitution
+- artifact count mismatch (`realized != file_count * target_os_count`)
+- duplicate identity tuple `(file_id, publish_version, file_tag, target_os)`
 
 Failure semantics:
 - generation is startup-fatal with stable reason codes
