@@ -78,9 +78,10 @@ Restructure `build_startup_state()` in `dnsdle/__init__.py`:
 
 ### 3. Stager template
 
-A new file `dnsdle/stager_template.py` containing a compact Python stager
-template string. The template implements the minimum viable DNS download
-protocol needed to retrieve one file.
+A new file `dnsdle/stager_template.py` containing a readable Python stager
+script with placeholder constants. This is the source-of-truth stager logic
+that gets minified and compressed at generation time. It implements the
+minimum viable DNS download protocol needed to retrieve one file.
 
 **Included in the stager:**
 - Raw UDP DNS query construction (A record, RD flag, EDNS OPT when
@@ -127,34 +128,37 @@ terminates the process with the client's exit code. The PSK and resolver
 used by the stager are forwarded to the client so it uses the same
 credentials and network path.
 
-**Shell quoting:** The stager Python code must avoid the quote character used
-by the outer shell wrapper. Linux one-liners use single-quote wrapping
-(`python3 -c '...'`), so stager code uses only double quotes. Windows
-one-liners use double-quote wrapping (`python -c "..."`), so stager code
-uses only single quotes. The stager template is parameterized on quote
-character.
-
 **Python 2.7/3.x compatibility:** The stager avoids `print` (no output),
 uses `b"..."` byte literals for all wire and crypto operations, and handles
 the str/bytes split for `sys.argv` values with a compact `encode` guard.
 
-### 4. Stager generation
+### 4. Stager generation and compression
 
-A new module `dnsdle/stager_generator.py` that:
+A new module `dnsdle/stager_generator.py` that produces the final one-liner
+through a multi-stage pipeline:
 
-- Takes a mapped client publish item, the config, and the target_os.
-- Substitutes embedded constants into the stager template.
-- Minifies the result (collapse whitespace, use semicolons for statement
-  separation, single-letter variable names throughout the template).
-- Produces a formatted one-liner string per (file, target_os).
-- Wraps in appropriate shell quoting:
-  - Linux: `python3 -c '...' RESOLVER PSK`
-  - Windows: `python -c "..." RESOLVER PSK`
+1. **Substitute** embedded constants into the readable stager template.
+2. **Minify** the result: strip comments, collapse whitespace, use
+   semicolons for statement separation, shorten variable names where the
+   template uses longer ones for readability.
+3. **Compress** the minified Python source with `zlib.compress()`.
+4. **Encode** the compressed bytes with `base64.b64encode()`.
+5. **Wrap** in a self-extracting bootstrap:
+   ```
+   python3 -c "import base64,zlib;exec(zlib.decompress(base64.b64decode('...')))" RESOLVER PSK
+   ```
+
+The bootstrap wrapper is fixed overhead (~65 chars). The payload is opaque
+base64, which completely sidesteps shell quoting -- no quotes from the inner
+stager code can leak through. The same wrapper works on both Linux and
+Windows (double-quote wrapping is safe because the payload contains no
+double quotes).
 
 The generation must verify:
 - The one-liner is valid ASCII.
-- The one-liner contains no unreplaced placeholders.
-- The inner Python code compiles (`compile()` check).
+- The decompressed inner code compiles (`compile()` check).
+- The one-liner round-trips: decompress(decode(payload)) equals the
+  minified source.
 
 ### 5. Stager output
 
@@ -163,7 +167,7 @@ the stager one-liners. One entry per (source file, target_os):
 
 ```
 <source_filename> (<target_os>):
-  python3 -c '...' RESOLVER PSK
+  python3 -c "import base64,zlib;exec(zlib.decompress(base64.b64decode('...')))" RESOLVER PSK
 ```
 
 `RESOLVER` and `PSK` are literal placeholder tokens. The operator fills in
