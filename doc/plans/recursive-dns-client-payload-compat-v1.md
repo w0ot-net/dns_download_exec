@@ -33,26 +33,28 @@ Update `extract_response_cname_labels()` in `dnsdle/client_payload.py`:
 - matching transaction ID
 - `RCODE=NOERROR` for slice-success path
 - `TC=0`
-- exactly one echoed question matching request qname/qtype/qclass
+- `QDCOUNT=1` (DNS protocol invariant: responses always echo exactly one question; the generated template's positional question parsing is structurally dependent on this)
+- echoed question matching request qname/qtype/qclass
 - exactly one matching `IN CNAME` answer for the requested owner name
 2. Remove checks that are resolver-topology-specific and break recursive compatibility:
 - `AA=1` requirement
 - `RA=0` requirement
-- exact section-count requirement (`QDCOUNT=1, ANCOUNT=1, NSCOUNT=0`)
-- exact EDNS-mode `ARCOUNT` requirement tied to request-side `dns_edns_size`
+- `ANCOUNT=1` and `NSCOUNT=0` requirements (recursive resolvers may inject additional answer RRs from CNAME chasing and authority/glue records)
+- exact EDNS-mode `ARCOUNT` requirement tied to request-side `dns_edns_size` (recursive resolvers may add, drop, or modify OPT records)
 3. Retain fail-fast behavior for ambiguity and malformed wire content:
 - no matching CNAME or multiple matching CNAME answers remains fatal parse error
 - compressed-name decode failures and payload suffix mismatch remain fatal parse errors
-4. Remove dead imports of `DNS_FLAG_AA` and `DNS_FLAG_RA` from `dnsdle/client_payload.py` since their only consumers are the checks being removed.
+4. In `client_payload.py` the header-level `qdcount != 1` check inside the combined section-count guard can be removed because `dnswire.parse_message()` parses exactly `qdcount` questions and the downstream `len(parsed["questions"]) != 1` check (line 165) provides equivalent coverage with a clean error path. In the generated template, `qdcount != 1` must be kept as a standalone check because the template's positional parser has no equivalent downstream guard.
+5. Remove dead imports of `DNS_FLAG_AA` and `DNS_FLAG_RA` from `dnsdle/client_payload.py` since their only consumers are the checks being removed.
 
 ### 2. Update generated client template with the same recursive-compatible invariants
 Update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` within `dnsdle/generator.py`:
 1. Remove the same authoritative-only checks removed from `client_payload.py`:
 - `AA=1` requirement (template line `if (flags & DNS_FLAG_AA) == 0`)
 - `RA=0` requirement (template line `if flags & DNS_FLAG_RA`)
-- exact section-count requirement `qdcount != 1 or ancount != 1 or nscount != 0`
+- `ANCOUNT=1` and `NSCOUNT=0` from the combined section-count check (replace `qdcount != 1 or ancount != 1 or nscount != 0` with `qdcount != 1`)
 - EDNS-driven ARCOUNT requirement (`expected_arcount` / `arcount != expected_arcount`)
-2. Keep the same recursive-compatible invariants: `QR=1`, opcode `QUERY`, matching ID, `RCODE=NOERROR`, `TC=0`, question echo, exactly one matching `IN CNAME` answer.
+2. Keep the same recursive-compatible invariants: `QR=1`, opcode `QUERY`, matching ID, `RCODE=NOERROR`, `TC=0`, `QDCOUNT=1`, question echo, exactly one matching `IN CNAME` answer. The `QDCOUNT=1` check is critical in the template because the positional question parser unconditionally decodes one question name and advances the wire offset; a mismatch would corrupt all subsequent section parsing.
 3. Remove dead constant definitions `DNS_FLAG_AA` and `DNS_FLAG_RA` from the template since their only consumers are the checks being removed. `DNS_EDNS_SIZE` stays because `_build_dns_query()` still uses it for request-side OPT construction.
 
 ### 3. Remove dead `dns_edns_size` parameter (clean break)
@@ -62,7 +64,7 @@ Update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` within `dnsdle/genera
 - Keep parse vs crypto failure boundaries intact:
 - envelope/CNAME/payload shape issues -> `ClientParseError`
 - MAC verification mismatch -> `ClientCryptoError`
-- Remove now-obsolete reason branches generated only by authoritative-only checks (`response_not_aa`, `response_ra_set`, `response_counts_invalid`, `response_arcount_invalid`).
+- Remove now-obsolete reason branches generated only by authoritative-only checks (`response_not_aa`, `response_ra_set`, `response_arcount_invalid`). The `response_counts_invalid` reason code in `client_payload.py` is removed entirely (the downstream `len(parsed["questions"]) != 1` check covers qdcount). In the generated template, the combined section-count check is replaced with a standalone `qdcount != 1` check.
 
 ### 4. Make recursive DNS support explicit in architecture docs
 Update docs so contracts are unambiguous and consistent with implementation:
@@ -80,7 +82,14 @@ Update docs so contracts are unambiguous and consistent with implementation:
 6. `doc/architecture/ERRORS_AND_INVARIANTS.md`
 - align parse-failure semantics so recursive-compatible envelopes are accepted and only true contract violations map to parse failure.
 
-### 5. Validation approach
+### 5. Test response construction for recursive-resolver scenarios
+The existing `_response_with_record` helper in `unit_tests/test_client_payload_parity.py` uses `dnswire.build_response`, which always sets `AA=1` and `RA=0` via `dnswire._response_flags()`. New acceptance tests need responses with recursive-resolver characteristics (`AA=0`, `RA=1`, extra authority/additional records, arbitrary `ARCOUNT`).
+
+Approach: build the base response with `dnswire.build_response` (which produces a valid wire message with correct compression pointers), then apply deterministic byte-level flag patching on the 12-byte DNS header to clear `AA` and set `RA`. For tests requiring extra authority/additional section records, append well-formed dummy RRs after the answer section and patch the header `NSCOUNT`/`ARCOUNT` fields accordingly. This avoids duplicating wire-encoding logic while giving full control over the envelope shape.
+
+Add a `_patch_response_flags(message, clear_flags=0, set_flags=0)` test helper that reads the 16-bit flags field at header offset 2, applies the mask operations, and returns the patched message. Add a `_append_authority_rrs(message, rr_bytes_list)` helper that patches `NSCOUNT` and inserts RR bytes at the correct offset (after answer section, before additional section). These helpers are test-only and live in `unit_tests/test_client_payload_parity.py`.
+
+### 6. Validation approach
 Use deterministic validation commands during execution:
 1. run parity/regression suites already covering parser/crypto paths:
 - `python -m unittest unit_tests.test_client_payload_parity`
@@ -97,7 +106,7 @@ Use deterministic validation commands during execution:
 ## Affected Components
 - `dnsdle/client_payload.py`: remove authoritative-only response gating, enforce recursive-compatible response invariants, remove dead `dns_edns_size` parameter from public entrypoints, remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` imports.
 - `dnsdle/generator.py`: update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` with the same recursive-compatible invariants; remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` constant definitions from template.
-- `unit_tests/test_client_payload_parity.py`: add deterministic recursive-envelope acceptance tests and ambiguity/missing-CNAME/TC negative tests; update call sites to remove `dns_edns_size` argument.
+- `unit_tests/test_client_payload_parity.py`: add `_patch_response_flags` and `_append_authority_rrs` test helpers for constructing recursive-resolver-style responses; add deterministic recursive-envelope acceptance tests and ambiguity/missing-CNAME/TC negative tests; update call sites to remove `dns_edns_size` argument.
 - `doc/architecture/ARCHITECTURE.md`: declare recursive DNS support as a MUST-level client runtime invariant and primary usage mode.
 - `doc/architecture/CONFIG.md`: clarify recursive/system resolver mode is the default expected deployment path.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: redefine client response-acceptance rules to be recursive-compatible.
