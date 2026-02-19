@@ -151,3 +151,33 @@ After implementation:
   valid inputs.
 - Architecture docs consistently describe startup config handling as a two-step
   parse + normalization flow.
+
+## Execution Notes
+- Implemented clean-break CLI/config separation:
+  - added `dnsdle/cli.py` with deterministic startup parsing, removed-flag
+    rejection, and no-abbrev enforcement compatible with Python 2.7/3.x.
+  - removed parser/argv handling from `dnsdle/config.py` and added
+    `build_config(parsed_args)` normalization entrypoint.
+  - rewired `dnsdle/__init__.py` startup path to `parse_cli_args(argv)` then
+    `build_config(parsed_args)`.
+- Updated all plan-listed `parse_cli_config` call sites in tests to explicit
+  parse/build flow and updated startup convergence stubs to the new call graph.
+- Added `unit_tests/test_cli.py` for parser contract coverage:
+  removed `--domain`, unknown/abbreviated options, StartupError parse-failure
+  behavior, and valid raw parse expectations.
+- Updated architecture docs (`ARCHITECTURE`, `SERVER_RUNTIME`, `CONFIG`) to
+  describe startup as explicit parse-then-normalize flow.
+- Validation executed:
+  - `python -m unittest unit_tests.test_cli unit_tests.test_config unit_tests.test_startup_state -v`
+  - `python -m unittest unit_tests.test_publish unit_tests.test_mapping unit_tests.test_server_runtime unit_tests.test_startup_convergence -v`
+  - `python -m unittest discover -s unit_tests -v`
+  - `python -m py_compile dnsdle/cli.py dnsdle/config.py dnsdle/__init__.py`
+  - bounded startup sanity script via `dnsdle.build_startup_state(argv)` for
+    valid multi-domain, removed `--domain`, duplicate-domain, and overlap-domain
+    cases.
+  - command-level CLI error contract checks through `dnsdle.py` for removed,
+    abbreviated, and unknown flags (non-zero exit + stable `startup_error`
+    record fields).
+  - `python2 -m py_compile dnsdle/cli.py dnsdle/config.py dnsdle/__init__.py`
+  - `python2 -m unittest -v unit_tests.test_cli unit_tests.test_config unit_tests.test_startup_state`
+- Execution commit hash: `e91a5e2`.
