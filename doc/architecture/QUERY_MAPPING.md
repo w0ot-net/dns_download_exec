@@ -27,7 +27,7 @@ Crypto binding for mapping fields is defined in `doc/architecture/CRYPTO.md`.
 ## Design Summary
 
 Mappings use a two-layer deterministic model:
-- identity layer: digest derivation from (`mapping_seed`, `file_version`,
+- identity layer: digest derivation from (`mapping_seed`, `publish_version`,
   `slice_index`)
 - materialization layer: token-string truncation/length constraints from config
   (`file_tag_len`, `dns_max_label_len`, DNS name limits)
@@ -52,7 +52,7 @@ A mapping entry is keyed by:
 
 Each key resolves to:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `slice_index`
 
 Invariant:
@@ -92,19 +92,20 @@ Allowed token alphabet:
 
 Deterministic inputs:
 - `mapping_seed` (operator config, default `0`)
-- `file_version` (content identity)
+- `publish_version` (compressed-publish identity)
 - `slice_index`
 
 Deterministic derivation:
 - `seed_bytes = ascii_bytes(mapping_seed)`
-- `file_version_bytes = ascii_bytes(file_version)` where `file_version` is
+- `publish_version_bytes = ascii_bytes(publish_version)` where
+  `publish_version` is
   exactly 64 lowercase hex chars
 - `slice_index_bytes = ascii_bytes(base10(slice_index))` with no sign and no
   leading zeros (except `0`)
 - `file_digest = HMAC_SHA256(seed_bytes,
-  b"dnsdle:file:v1|" + file_version_bytes)`
+  b"dnsdle:file:v1|" + publish_version_bytes)`
 - `slice_digest[i] = HMAC_SHA256(seed_bytes,
-  b"dnsdle:slice:v1|" + file_version_bytes + b"|" + slice_index_bytes)`
+  b"dnsdle:slice:v1|" + publish_version_bytes + b"|" + slice_index_bytes)`
 
 `trunc_token(...)` means:
 - encode digest with RFC 4648 base32
@@ -140,9 +141,10 @@ Length constraints:
 
 The server must fail startup if valid deterministic identifiers cannot be
 constructed within configured limits.
-The server must also fail startup if duplicate `file_version` values are
-present across configured files, because that would produce identical mapping
-inputs for different file entries.
+The server must also fail startup if duplicate `plaintext_sha256` values are
+present across configured files (duplicate-content rejection), because that
+would produce duplicate publish identity and mapping inputs for different file
+entries.
 
 ---
 
@@ -161,13 +163,26 @@ Requirements:
 6. Validate global uniqueness of every `(file_tag, slice_token)` key across
    the full launch before serving requests.
 
+Deterministic global collision resolution:
+1. establish canonical file order by ascending
+   `(file_tag, file_id, publish_version)`.
+2. select minimal per-file token length that resolves local collisions.
+3. detect global `(file_tag, slice_token)` collisions.
+4. when collisions exist, promote exactly one file: the earliest colliding file
+   in canonical order; increment only that file's token length by 1.
+5. recompute that file's tokens and repeat.
+6. fail startup if collisions remain when limits are reached.
+
 Grouping invariant:
 - mapping identity for one file depends only on
-  `(mapping_seed, file_version)`.
+  `(mapping_seed, publish_version)`.
 - token materialization output additionally depends on fixed length constraints
   for the launch (`file_tag_len`, `dns_max_label_len`, DNS name limits).
-- with duplicate `file_version` entries rejected at startup, one mapping key
-  always resolves to one canonical file context.
+- when global key collisions occur, final materialized slice tokens also depend
+  on deterministic promotion over the launch publish set.
+- with duplicate-content entries rejected at startup and `publish_version`
+  derived from compressed bytes, one mapping key always resolves to one
+  canonical file context.
 
 ---
 
@@ -175,7 +190,7 @@ Grouping invariant:
 
 Each generated client is file-specific and embeds:
 - `file_tag`
-- `file_id` and `file_version`
+- `file_id` and `publish_version`
 - `total_slices`
 - ordered token list indexed by expected `slice_index`
 
@@ -197,7 +212,7 @@ For each query:
 2. Reject if `file_tag` is unknown for current process.
 3. Resolve composite key `(file_tag, slice_token)` in deterministic mapping
    table.
-4. Retrieve canonical slice bytes for resolved file/version/index.
+4. Retrieve canonical slice bytes for resolved file/publish-version/index.
 5. Return deterministic CNAME answer for that slice.
 
 Unknown or malformed mapping keys must be rejected explicitly; no fallback to
@@ -212,7 +227,7 @@ question section; smaller QNAMEs leave more bytes for CNAME payload.
 
 Caching policy:
 - deterministic names come from mapping identity inputs plus fixed
-  materialization constraints
+  materialization constraints and deterministic global-collision promotion
 - keeping `mapping_seed` stable preserves client compatibility across restarts
 - changing `mapping_seed` remaps identifiers and invalidates old clients
 
@@ -242,14 +257,15 @@ To reduce cross-run linkability, rotate `mapping_seed`.
 
 ## Invariants
 
-1. same identity inputs `(mapping_seed, file_version, slice_index)` and same
+1. same identity inputs `(mapping_seed, publish_version, slice_index)` and same
    materialization constraints always yield the same `slice_token`.
-2. same identity inputs `(mapping_seed, file_version)` and same
+2. same identity inputs `(mapping_seed, publish_version)` and same
    materialization constraints always yield the same `file_tag`.
 3. `slice_token` is unique within one `file_tag` namespace.
 4. mapping tables are immutable while serving.
 5. one mapping key resolves to exactly one canonical slice identity.
 6. identical query name always produces the same slice payload for a running
    server instance.
-7. duplicate `file_version` entries are rejected at startup.
-8. all parse, bounds, and mapping failures are explicit hard failures.
+7. duplicate-content entries (`plaintext_sha256`) are rejected at startup.
+8. unresolved global collisions at token-length limits fail startup.
+9. all parse, bounds, and mapping failures are explicit hard failures.

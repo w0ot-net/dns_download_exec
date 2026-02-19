@@ -40,7 +40,7 @@ The pipeline emits one immutable publish object per input file.
 
 Required fields per publish object:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `file_tag`
 - `plaintext_sha256`
 - `compressed_size`
@@ -63,13 +63,14 @@ Invariants:
 For each configured file, process in this exact order:
 
 1. Read plaintext bytes from disk.
-2. Compute plaintext hash and identity fields.
-3. Validate `file_version` uniqueness across all configured files.
+2. Compute plaintext hash (`plaintext_sha256`).
+3. Validate `plaintext_sha256` uniqueness across all configured files.
 4. Compress plaintext with deterministic settings.
-5. Compute slice geometry from `max_ciphertext_slice_bytes`.
-6. Split compressed bytes into canonical ordered slices.
-7. Derive deterministic mapping identifiers (`file_tag`, `slice_tokens`).
-8. Build immutable publish object and lookup tables.
+5. Compute publish identity fields (`publish_version`, `file_id`).
+6. Compute slice geometry from `max_ciphertext_slice_bytes`.
+7. Split compressed bytes into canonical ordered slices.
+8. Derive deterministic mapping identifiers (`file_tag`, `slice_tokens`).
+9. Build immutable publish object and lookup tables.
 
 No step may be skipped or reordered.
 
@@ -81,23 +82,25 @@ No step may be skipped or reordered.
 
 - `plaintext_sha256 = sha256(plaintext_bytes).hexdigest().lower()`
 
-### File Version
+Within one launch, `plaintext_sha256` must be unique across configured files.
+This is the duplicate-content rejection invariant.
+
+### Publish Version
 
 v1 defines:
-- `file_version = plaintext_sha256`
+- `publish_version = sha256(compressed_bytes).hexdigest().lower()`
 
-This binds mapping identity to file content only.
-Within one launch, `file_version` must be unique across configured files.
-`file_version` is canonical lowercase hex (`[0-9a-f]{64}`).
+`publish_version` is canonical lowercase hex (`[0-9a-f]{64}`).
+All mapping and wire-serving identity must bind to `publish_version`.
 
 ### File ID
 
-`file_id` must be deterministic from `file_version` only (not from input path,
+`file_id` must be deterministic from `publish_version` only (not from input path,
 input order, or total file set).
 
 v1 rule:
 - `file_id_input = ascii_bytes("dnsdle:file-id:v1|") +
-  ascii_bytes(file_version)`
+  ascii_bytes(publish_version)`
 - `file_id = sha256(file_id_input).hexdigest().lower()[:16]`
 
 Launch invariant:
@@ -123,6 +126,11 @@ Determinism rule:
 - fixed plaintext bytes + fixed `compression_level` must produce identical
   `compressed_bytes` across runs with the same implementation profile.
 - cross-profile byte-identical compression is not guaranteed in v1.
+
+Identity consequence:
+- if implementation profile changes `compressed_bytes`, then
+  `publish_version` changes, and therefore `file_id`, `file_tag`, and
+  `slice_token` change for that file.
 
 Failure rules:
 - compression failure is a fatal startup error.
@@ -177,16 +185,19 @@ Rules:
 After slices are built, derive mapping identifiers from
 `doc/architecture/QUERY_MAPPING.md`:
 
-- derive deterministic `file_tag` from `(mapping_seed, file_version)`
+- derive deterministic `file_tag` from `(mapping_seed, publish_version)`
 - derive deterministic `slice_token[i]` from
-  `(mapping_seed, file_version, i)`
+  `(mapping_seed, publish_version, i)`
 
 Required properties:
 - mapping identity for one file depends only on
-  `(mapping_seed, file_version)`
+  `(mapping_seed, publish_version)`
 - token materialization additionally depends on fixed length constraints for
   the launch (`file_tag_len`, `dns_max_label_len`, DNS name limits)
-- mapping does not depend on file path, startup time, or other hosted files
+- mapping identity does not depend on file path, startup time, or other hosted
+  files
+- final materialized token lengths may depend on deterministic global-collision
+  promotion across the launch publish set
 - token cardinality/order matches slice array cardinality/order
 
 ---
@@ -209,7 +220,7 @@ No runtime mutation of published slice bytes is allowed after freeze.
 Any of the following must fail startup:
 - unreadable file or read failure
 - hash/compression/slicing failure
-- duplicate `file_version` across configured files
+- duplicate `plaintext_sha256` across configured files
 - `max_ciphertext_slice_bytes <= 0`
 - empty compressed output
 - any manifest length mismatch
@@ -225,7 +236,7 @@ Partial publish state must not be served.
 
 Minimum per-file startup log fields:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `file_tag`
 - `compressed_size`
 - `total_slices`

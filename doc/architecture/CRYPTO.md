@@ -27,7 +27,7 @@ then reassembles and verifies output.
 This design protects against:
 - accidental corruption
 - malicious tampering of slice content or metadata
-- replay of stale slices from a different file version
+- replay of stale slices from a different publish version
 
 This design does not attempt to hide:
 - query timing
@@ -60,12 +60,12 @@ Any verification mismatch is a hard failure, not a warning.
 Each hosted file has immutable identity metadata embedded in the generated
 client and enforced by the server:
 - `file_id` (stable small integer or fixed tag)
-- `file_version` (content/version discriminator)
+- `publish_version` (compressed-publish discriminator)
 - `total_slices`
 - `compressed_size`
 - `plaintext_sha256` (hex)
 
-`file_version` must change whenever served content changes.
+`publish_version` must change whenever served ciphertext changes.
 
 ---
 
@@ -74,14 +74,14 @@ client and enforced by the server:
 Inputs:
 - `psk`: operator-provided shared secret (non-empty)
 - `file_id`
-- `file_version`
+- `publish_version`
 
 Derive per-file keys (HKDF-like expansion using HMAC-SHA256):
-- `enc_key = HMAC_SHA256(psk, "dnsdle-enc-v1|" + file_id + "|" + file_version)`
-- `mac_key = HMAC_SHA256(psk, "dnsdle-mac-v1|" + file_id + "|" + file_version)`
+- `enc_key = HMAC_SHA256(psk, "dnsdle-enc-v1|" + file_id + "|" + publish_version)`
+- `mac_key = HMAC_SHA256(psk, "dnsdle-mac-v1|" + file_id + "|" + publish_version)`
 
 Invariant:
-- A key context is bound to exactly one `(file_id, file_version)`.
+- A key context is bound to exactly one `(file_id, publish_version)`.
 
 ---
 
@@ -92,11 +92,11 @@ on send order.
 
 Per-slice nonce input:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `slice_index`
 
 Invariant:
-- For a given `(file_id, file_version, slice_index)`, encryption output is
+- For a given `(file_id, publish_version, slice_index)`, encryption output is
   deterministic and stable across retries.
 
 ---
@@ -107,7 +107,7 @@ Each served slice includes ciphertext plus authentication data.
 
 MAC input must bind metadata and payload:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `slice_index`
 - `total_slices`
 - `compressed_size`
@@ -141,7 +141,7 @@ After all indices are present:
 1. Reject out-of-range slice requests.
 2. For valid requests, return canonical bytes for requested index only.
 3. Never emit variant encodings for the same slice index in one
-   `(file_id, file_version)` context.
+   `(file_id, publish_version)` context.
 4. If runtime state violates invariants (missing slice table, wrong bounds,
    key context mismatch), fail request path immediately.
 

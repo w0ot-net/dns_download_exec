@@ -84,7 +84,7 @@ Invariants:
 
 The transmitted MAC field authenticates:
 - `file_id`
-- `file_version`
+- `publish_version`
 - `slice_index`
 - `total_slices`
 - `compressed_size`
@@ -178,7 +178,8 @@ Required property:
 - same `(file_tag, slice_token)` in one server process always yields the same
   CNAME target text and TTL.
 - with unchanged mapping, crypto, and wire inputs (`mapping_seed`,
-  `file_version`, `compression_level`, `psk`, `base_domain`, `response_label`,
+  `publish_version`, `compression_level`, `psk`, `base_domain`,
+  `response_label`,
   `dns_max_label_len`, profile ids, `ttl`, and implementation profile from
   `doc/architecture/PUBLISH_PIPELINE.md`), derived `(file_tag, slice_token)`
   and CNAME target text/TTL remain stable across restarts.

@@ -25,7 +25,7 @@ For each published file, generator input is:
 - `mapping_seed`
 - `file_tag`
 - `file_id`
-- `file_version`
+- `publish_version`
 - `total_slices`
 - `compressed_size`
 - `plaintext_sha256`
@@ -89,7 +89,7 @@ The following constants are required in generated code:
 - `BASE_DOMAIN`
 - `FILE_TAG`
 - `FILE_ID`
-- `FILE_VERSION`
+- `PUBLISH_VERSION`
 - `TARGET_OS`
 - `TOTAL_SLICES`
 - `COMPRESSED_SIZE`
@@ -123,7 +123,7 @@ Generated client should expose a small, stable CLI:
 `--psk` is mandatory and must be non-empty.
 
 If `--out` is omitted, write to a process temp directory with a deterministic
-name derived from `(file_id, file_version, plaintext_sha256)`.
+name derived from `(file_id, publish_version, plaintext_sha256)`.
 
 No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 

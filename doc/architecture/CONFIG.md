@@ -91,11 +91,13 @@ No runtime flag for execution is allowed in v1.
 
 These are computed at startup from validated config and file metadata.
 
-- `file_version`: content identity hash for published file bytes.
+- `plaintext_sha256`: content identity hash for source plaintext bytes.
+- `publish_version`: publish identity hash for compressed bytes.
 - `file_tag`: deterministic identifier derived from
-  `(mapping_seed, file_version)` with length `file_tag_len`.
+  `(mapping_seed, publish_version)` with length `file_tag_len`.
 - `slice_token_len`: shortest collision-safe token length satisfying:
   - total-slice coverage for the file
+  - global `(file_tag, slice_token)` uniqueness for the launch
   - `slice_token_len <= dns_max_label_len`
   - DNS name length constraints with `domain` and `file_tag`
   - digest-encoding capacity from
@@ -123,8 +125,8 @@ Startup fails if any derived value cannot be computed within constraints.
 - `files` list must be non-empty after parsing.
 - file paths must be unique after normalization.
 - every file must exist and be readable at startup.
-- file content identities (`file_version`) must be unique across `files` for a
-  single launch; duplicate content is a startup error in v1.
+- plaintext content identities (`plaintext_sha256`) must be unique across
+  `files` for a single launch; duplicate content is a startup error in v1.
 
 ### Crypto/Wire
 
@@ -164,7 +166,7 @@ Detailed runtime error semantics are defined in
 ## Caching and TTL Guidance
 
 - `ttl` should stay low to reduce stale cache impact.
-- deterministic mapping comes from `(mapping_seed, file_version)`.
+- deterministic mapping comes from `(mapping_seed, publish_version)`.
 - keeping `mapping_seed` stable preserves old-client compatibility.
 - rotating `mapping_seed` breaks cross-run mapping continuity and old clients.
 - do not depend on resolver honoring very low TTL exactly.

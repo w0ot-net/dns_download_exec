@@ -90,23 +90,25 @@ Fail-fast invariants:
 
 Runs once at startup per file:
 1. read plaintext bytes
-2. compute plaintext SHA-256 (`file_version`)
-3. enforce unique `file_version` across configured files
+2. compute plaintext SHA-256 (`plaintext_sha256`)
+3. enforce unique `plaintext_sha256` across configured files
 4. compress with deterministic settings
-5. split compressed bytes into fixed-size slices
-6. build file manifest and slice table
+5. compute `publish_version` from compressed bytes
+6. split compressed bytes into fixed-size slices
+7. build file manifest and slice table
 
 Output per file:
 - `file_id`
-- `file_version`
-- `file_tag` (derived from `mapping_seed` and `file_version`)
+- `publish_version`
+- `file_tag` (derived from `mapping_seed` and `publish_version`)
 - `total_slices`
 - `compressed_size`
 - `plaintext_sha256`
 - slice table indexed by `slice_index`
 
 Design rule:
-- the same `(file_id, file_version, slice_index)` must always map to the same
+- the same `(file_id, publish_version, slice_index)` must always map to the
+  same
   served bytes for the life of the process
 
 Detailed pipeline contract:

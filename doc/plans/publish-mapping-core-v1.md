@@ -11,7 +11,7 @@ request handler and client generator in later phases.
 ## Problem
 The repository currently has architecture contracts but no code implementing the
 publish/mapping pipeline. Without this layer, there is no deterministic
-`file_version`/`file_id` derivation, no compression/slicing, no mapping token
+`publish_version`/`file_id` derivation, no compression/slicing, no mapping token
 materialization, and no global lookup namespace for request resolution. This
 blocks all runtime behavior because DNS serving and generated clients depend on
 these artifacts.
@@ -20,7 +20,7 @@ these artifacts.
 After implementation:
 - startup enforces full startup-time config/input validation for the core
   publish/mapping phase and builds publish artifacts for all files
-- duplicate-content files are rejected (`file_version` uniqueness invariant)
+- duplicate-content files are rejected (`plaintext_sha256` uniqueness invariant)
 - deterministic mapping outputs are generated from canonical inputs
 - global `(file_tag, slice_token)` uniqueness is enforced before serving
 - immutable publish state is returned for downstream DNS/client components
@@ -44,7 +44,7 @@ This phase validates all startup-time config invariants from
 - `response_label` syntax and non-token-character rule
 - `mapping_seed` printable ASCII
 - files list non-empty, path uniqueness, existence/readability
-- duplicate-content rejection (`file_version` uniqueness)
+- duplicate-content rejection (`plaintext_sha256` uniqueness)
 - `psk` non-empty
 - numeric bounds (`ttl`, `dns_edns_size`, `dns_max_label_len`,
   `file_tag_len`, `compression_level`, retry/timeout defaults as applicable)
@@ -64,22 +64,23 @@ Non-goals for this phase (explicitly deferred):
 For each input file:
 1. read plaintext bytes
 2. compute `plaintext_sha256`
-3. set `file_version = plaintext_sha256`
-4. derive deterministic `file_id`
-5. compress with configured zlib level
-6. compute slice geometry from `max_ciphertext_slice_bytes`
-7. split compressed bytes into canonical ordered slices
-8. derive `file_tag` and `slice_tokens`
-9. build per-file immutable publish object
+3. enforce unique `plaintext_sha256` across configured files
+4. compress with configured zlib level
+5. set `publish_version = sha256(compressed_bytes).hexdigest().lower()`
+6. derive deterministic `file_id` from `publish_version`
+7. compute slice geometry from `max_ciphertext_slice_bytes`
+8. split compressed bytes into canonical ordered slices
+9. derive `file_tag` and `slice_tokens`
+10. build per-file immutable publish object
 
 Cross-file startup checks:
 - unique normalized paths
-- unique `file_version`
+- unique `plaintext_sha256`
 - unique `file_id`
 
 ### 4. Implement exact mapping derivation + collision resolution contract
 Implement canonical derivation from `doc/architecture/QUERY_MAPPING.md`:
-- canonical ASCII input encoding for `mapping_seed`, `file_version`,
+- canonical ASCII input encoding for `mapping_seed`, `publish_version`,
   `slice_index`
 - HMAC-SHA256 with domain-separated labels
 - RFC4648 base32 lowercase no-padding materialization
@@ -88,7 +89,7 @@ Implement canonical derivation from `doc/architecture/QUERY_MAPPING.md`:
 
 Deterministic collision-resolution algorithm:
 1. Canonicalize file processing order by ascending
-   `(file_tag, file_id, file_version)`.
+   `(file_tag, file_id, publish_version)`.
 2. For each file in that order, compute the minimal local `slice_token_len`
    that resolves intra-file token collisions.
 3. Build global key set over `(file_tag, slice_token)`.
@@ -123,14 +124,14 @@ Deliver explicit startup taxonomy aligned to
 - classification: `startup_error`
 - phase: `startup`, `config`, `publish`, `mapping`, `budget`
 - stable reason codes (for example `invalid_config`, `unreadable_file`,
-  `duplicate_file_version`, `budget_unusable`, `mapping_collision`)
+  `duplicate_plaintext_sha256`, `budget_unusable`, `mapping_collision`)
 
 Required startup log fields:
 - `phase`
 - `classification`
 - `reason_code`
-- request-independent key context when available (`file_id`, `file_version`,
-  `file_tag`, counts)
+- request-independent key context when available (`file_id`, `publish_version`,
+  `plaintext_sha256`, `file_tag`, counts)
 
 No sensitive logging (PSK, derived keys, raw plaintext bytes).
 
@@ -172,9 +173,10 @@ change (clean break, no shim behavior), especially:
 
 ## Validation Matrix
 - Case 1 (deterministic baseline): same inputs/run twice -> identical
-  `file_id`, `file_version`, `file_tag`, token lengths, and lookup cardinality.
+  `file_id`, `publish_version`, `file_tag`, token lengths, and lookup
+  cardinality.
 - Case 2 (duplicate content): two different paths with identical file content ->
-  startup fails with `duplicate_file_version`.
+  startup fails with `duplicate_plaintext_sha256`.
 - Case 3 (collision pressure): constrained label limits that force token
   promotion -> deterministic promoted lengths and stable outputs across runs.
 - Case 4 (unsatisfiable collisions): constraints too tight to resolve collisions

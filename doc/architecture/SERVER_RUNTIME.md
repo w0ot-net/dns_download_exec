@@ -46,12 +46,13 @@ the socket.
 
 For each configured file:
 1. Read plaintext bytes.
-2. Compute `file_version` and `plaintext_sha256`.
-3. Enforce unique `file_version` across configured files.
+2. Compute `plaintext_sha256`.
+3. Enforce unique `plaintext_sha256` across configured files.
 4. Compress deterministically.
-5. Split compressed bytes into slices.
-6. Derive deterministic `file_tag` and `slice_token` mapping.
-7. Build immutable manifest/slice tables.
+5. Compute `publish_version` and `file_id` from compressed bytes.
+6. Split compressed bytes into slices.
+7. Derive deterministic `file_tag` and `slice_token` mapping.
+8. Build immutable manifest/slice tables.
 
 All publish tables become read-only before entering serve mode.
 Publish pipeline details are defined in
