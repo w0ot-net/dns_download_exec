@@ -99,6 +99,57 @@ In `_parse_response_for_cname()` inside `_CLIENT_TEMPLATE`:
   recursive DNS is the primary transport path and client-side parsing must
   not depend on authoritative-only response properties.
 
+## Execution Notes
+
+Executed 2026-02-19.
+
+### Prior plan overlap
+
+The majority of this plan's scope was already implemented by
+`20260219_recursive-dns-client-payload-compat-v1.md`, which was executed
+immediately before this plan. That plan covered:
+- Design 1: all client_payload.py changes (AA/RA removal, section-count
+  removal, dns_edns_size parameter removal, dead import cleanup)
+- Design 2: most template changes (AA/RA removal, section-count replacement,
+  dead constant removal)
+- Design 3: most architecture doc updates (5 of 6 planned docs)
+
+### Deviation: generator.py split
+
+The plan references `dnsdle/generator.py`. This file was split into
+`dnsdle/client_template.py` and `dnsdle/client_generator.py` by commit
+`57ae1adf`. Template changes were applied to `dnsdle/client_template.py`.
+
+### Deviation: ancount < 1 check not added
+
+The plan called for adding `ancount < 1` as a header-level check. The prior
+plan took a different approach: no header-level ancount check at all,
+relying on the downstream "exactly one matching IN CNAME" check which
+provides equivalent coverage with a cleaner error path.
+
+### Residual items implemented
+
+Three items from this plan were not covered by the prior plan:
+
+1. **Rcode check reordering in template** (Design 2): Moved
+   `rcode != DNS_RCODE_NOERROR` check to immediately after rcode extraction
+   and before qdcount check. This ensures SERVFAIL/NXDOMAIN responses produce
+   the diagnostic "unexpected DNS rcode=N" message instead of being caught
+   by qdcount or question validation first.
+
+2. **Response Header Contract clarification** (Design 3): Added note to
+   DNS_MESSAGE_FORMAT.md clarifying that `AA=1` and `RA=0` describe server
+   emission behavior only and that client-side parsing must not gate on them.
+
+3. **Client Assembly invariant** (Design 3): Added invariant 8 to
+   ERRORS_AND_INVARIANTS.md stating clients must accept valid responses
+   regardless of resolver topology.
+
+### Validation
+
+- All modules import cleanly
+- `python -m unittest unit_tests.test_client_payload_parity`: 9 tests OK
+
 ## Affected Components
 - `dnsdle/client_payload.py`: remove AA/RA checks, remove strict section-count and arcount checks, remove `dns_edns_size` parameter from `extract_response_cname_labels()` and `decode_response_slice()`, remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` imports.
 - `dnsdle/generator.py`: update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` with recursive-compatible invariants, remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` template constants, reorder rcode check before section counts.

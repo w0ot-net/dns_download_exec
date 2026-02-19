@@ -69,6 +69,10 @@ All parseable responses emitted by the server set:
 - `RA = 0`
 - `TC = 0`
 
+Note: `AA=1` and `RA=0` describe server emission behavior only. Client-side
+parsing MUST NOT gate on these flags since recursive resolvers may clear `AA`
+and set `RA`. See "Parsing Rules (Client Side)" below.
+
 ID handling:
 - response `ID` must equal request `ID`.
 

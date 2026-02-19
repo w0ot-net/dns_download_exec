@@ -288,6 +288,8 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
     rcode = flags & 0x000F
+    if rcode != DNS_RCODE_NOERROR:
+        raise ClientError(EXIT_PARSE, "parse", "unexpected DNS rcode=%d" % rcode)
     if qdcount != 1:
         raise ClientError(EXIT_PARSE, "parse", "response qdcount is not 1")
 
@@ -303,9 +305,6 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response question name mismatch")
     if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
         raise ClientError(EXIT_PARSE, "parse", "response question type/class mismatch")
-
-    if rcode != DNS_RCODE_NOERROR:
-        raise ClientError(EXIT_PARSE, "parse", "unexpected DNS rcode=%d" % rcode)
 
     cname_labels = None
     cname_matches = 0

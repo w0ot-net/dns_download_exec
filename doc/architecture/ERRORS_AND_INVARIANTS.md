@@ -216,6 +216,9 @@ Parity-core boundary:
 5. Final compressed length must equal embedded `COMPRESSED_SIZE`.
 6. Final plaintext hash must equal embedded `PLAINTEXT_SHA256_HEX`.
 7. Client never executes downloaded bytes in v1.
+8. Client must accept valid responses regardless of resolver topology
+   (recursive or direct); response-envelope validation must not depend on
+   `AA`, `RA`, or exact section-count shape.
 
 ### Generator Contract
 
