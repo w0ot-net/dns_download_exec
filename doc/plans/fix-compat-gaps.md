@@ -2,11 +2,10 @@
 
 ## Summary
 
-Two source files bypass `compat.py` helpers where they should not. `client_generator.py`
-calls `.encode("ascii")` directly instead of `to_ascii_bytes()`, causing an unnecessary
-decode-then-re-encode roundtrip on Python 2 `str` values. `mapping.py` uses
-`to_ascii_bytes(str(slice_index))` instead of `to_ascii_int_bytes()`, diverging from the
-pattern used consistently in `cname_payload.py`. Both are fixed in a single small change.
+Three concerns: two files call `.encode("ascii")` directly instead of `to_ascii_bytes()`
+(`client_generator.py` and `__init__.py`); `mapping.py` uses `to_ascii_bytes(str(x))`
+instead of `to_ascii_int_bytes()`; and `compat.py` exports `string_types` which is never
+imported by any module and should be removed. All changes are in a single small commit.
 
 ## Problem
 
@@ -16,18 +15,27 @@ pattern used consistently in `cname_payload.py`. Both are fixed in a single smal
   this by short-circuiting on `binary_type` values. Neither call imports anything from
   `compat`.
 
+- **`dnsdle/__init__.py` line 98**: same raw `.encode("ascii")` pattern, also unguarded by
+  `to_ascii_bytes()`:
+  ```python
+  (artifact["filename"], artifact["source"].encode("ascii"))
+  ```
+
 - **`dnsdle/mapping.py` line 30**: `to_ascii_bytes(str(slice_index))` converts an integer to
   ASCII bytes by going through Python's `str()` first instead of using
   `to_ascii_int_bytes(slice_index, "slice_index")`. Every analogous conversion in
   `cname_payload.py` uses `to_ascii_int_bytes`; `mapping.py` is the only outlier.
 
+- **`dnsdle/compat.py` `string_types`**: defined as `(str, unicode)` / `(str, bytes)` but
+  never imported by any other module. It is dead export surface with no callers.
+
 ## Goal
 
-- `client_generator.py` uses `to_ascii_bytes()` for both ASCII-encoding sites; no raw
-  `.encode("ascii")` calls remain in server-side code.
-- `mapping.py` uses `to_ascii_int_bytes()` for the `slice_index` → bytes conversion,
-  consistent with `cname_payload.py`.
-- No behaviour change in Python 3; Python 2 avoids the unnecessary str encode roundtrip.
+- No raw `.encode("ascii")` calls remain in server-side code outside of `compat.py` itself.
+- `mapping.py` uses `to_ascii_int_bytes()` for integer → bytes conversion, consistent with
+  `cname_payload.py`.
+- `compat.py` no longer exports `string_types`; its definition is removed entirely.
+- No behaviour change on Python 3; Python 2 avoids the unnecessary str encode roundtrip.
 
 ## Design
 
@@ -50,6 +58,18 @@ handle.write(source_text.encode("ascii"))
 handle.write(to_ascii_bytes(source_text))
 ```
 
+### `dnsdle/__init__.py`
+
+Add `to_ascii_bytes` to the imports from `dnsdle.compat`. Replace the one call site:
+
+```python
+# line 98 — build sources list for client publish items
+# before:
+(artifact["filename"], artifact["source"].encode("ascii"))
+# after:
+(artifact["filename"], to_ascii_bytes(artifact["source"]))
+```
+
 ### `dnsdle/mapping.py`
 
 Add `to_ascii_int_bytes` to the imports from `dnsdle.compat`. Replace the one call site:
@@ -65,9 +85,24 @@ slice_index_bytes = to_ascii_int_bytes(slice_index, "slice_index")
 The behaviour is identical for the non-negative ints that arrive from `range()`; the only
 change is using the canonical helper.
 
+### `dnsdle/compat.py`
+
+Remove the `string_types` assignment from both branches of the `if PY2` block. No other
+file imports it.
+
+```python
+# remove from the PY2 branch:
+string_types = (str, unicode)
+
+# remove from the else branch:
+string_types = (str, bytes)
+```
+
 ## Affected Components
 
+- `dnsdle/compat.py`: remove dead `string_types` export from both `if PY2` / `else` branches.
 - `dnsdle/client_generator.py`: add `to_ascii_bytes` import; replace two raw
   `.encode("ascii")` calls.
+- `dnsdle/__init__.py`: add `to_ascii_bytes` import; replace one raw `.encode("ascii")` call.
 - `dnsdle/mapping.py`: add `to_ascii_int_bytes` import; replace one
   `to_ascii_bytes(str(...))` call with `to_ascii_int_bytes`.
