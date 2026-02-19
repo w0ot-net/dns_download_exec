@@ -1,9 +1,7 @@
 from __future__ import absolute_import
 
-import argparse
 import os
 import re
-import sys
 from collections import namedtuple
 
 from dnsdle.constants import ALLOWED_TARGET_OS
@@ -325,72 +323,61 @@ def _normalize_listen_addr(raw_value):
     return value, host, port
 
 
-class _RaisingArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        raise StartupError(
-            "config",
-            "invalid_config",
-            "argument parsing failed: %s" % message,
-        )
+def _arg_value(parsed_args, name):
+    if hasattr(parsed_args, name):
+        return getattr(parsed_args, name)
+    if isinstance(parsed_args, dict) and name in parsed_args:
+        return parsed_args[name]
+    raise StartupError(
+        "config",
+        "invalid_config",
+        "missing parsed CLI argument: %s" % name,
+        {"field": name},
+    )
 
 
-def parse_cli_config(argv=None):
-    raw_argv = sys.argv[1:] if argv is None else list(argv)
-    for token in raw_argv:
-        if token == "--domain" or token.startswith("--domain="):
-            raise StartupError(
-                "config",
-                "invalid_config",
-                "--domain is removed; use --domains",
-            )
-
-    parser = _RaisingArgumentParser(add_help=True)
-    parser.add_argument("--domains", required=True)
-    parser.add_argument("--files", required=True)
-    parser.add_argument("--psk", required=True)
-    parser.add_argument("--listen-addr", default="0.0.0.0:53")
-    parser.add_argument("--ttl", default="30")
-    parser.add_argument("--dns-edns-size", default="1232")
-    parser.add_argument("--dns-max-label-len", default="63")
-    parser.add_argument("--response-label", default="r-x")
-    parser.add_argument("--mapping-seed", default="0")
-    parser.add_argument("--file-tag-len", default="6")
-    parser.add_argument("--target-os", default="windows,linux")
-    parser.add_argument("--client-out-dir", default="./generated_clients")
-    parser.add_argument("--compression-level", default="9")
-    args = parser.parse_args(raw_argv)
-
+def build_config(parsed_args):
     (
         domains,
         domain_labels_by_domain,
         longest_domain,
         longest_domain_labels,
         longest_domain_wire_len,
-    ) = _normalize_domains(args.domains)
-    files = _normalize_files(args.files)
+    ) = _normalize_domains(_arg_value(parsed_args, "domains"))
+    files = _normalize_files(_arg_value(parsed_args, "files"))
 
-    psk = args.psk
+    psk = _arg_value(parsed_args, "psk")
     if psk is None or psk == "":
         raise StartupError("config", "invalid_config", "psk must be non-empty")
 
-    listen_addr, listen_host, listen_port = _normalize_listen_addr(args.listen_addr)
-    ttl = _parse_int_in_range("ttl", args.ttl, 1, 300)
+    listen_addr, listen_host, listen_port = _normalize_listen_addr(
+        _arg_value(parsed_args, "listen_addr")
+    )
+    ttl = _parse_int_in_range("ttl", _arg_value(parsed_args, "ttl"), 1, 300)
     dns_edns_size = _parse_int_in_range(
         "dns_edns_size",
-        args.dns_edns_size,
+        _arg_value(parsed_args, "dns_edns_size"),
         MIN_DNS_EDNS_SIZE,
         MAX_DNS_EDNS_SIZE,
     )
     dns_max_label_len = _parse_int_in_range(
-        "dns_max_label_len", args.dns_max_label_len, 16, 63
+        "dns_max_label_len",
+        _arg_value(parsed_args, "dns_max_label_len"),
+        16,
+        63,
     )
-    response_label = _normalize_response_label(args.response_label)
-    mapping_seed = _normalize_mapping_seed(args.mapping_seed)
-    file_tag_len = _parse_int_in_range("file_tag_len", args.file_tag_len, 4, 16)
-    target_os, target_os_csv = _normalize_target_os(args.target_os)
-    client_out_dir = _normalize_client_out_dir(args.client_out_dir)
+    response_label = _normalize_response_label(_arg_value(parsed_args, "response_label"))
+    mapping_seed = _normalize_mapping_seed(_arg_value(parsed_args, "mapping_seed"))
+    file_tag_len = _parse_int_in_range(
+        "file_tag_len", _arg_value(parsed_args, "file_tag_len"), 4, 16
+    )
+    target_os, target_os_csv = _normalize_target_os(_arg_value(parsed_args, "target_os"))
+    client_out_dir = _normalize_client_out_dir(_arg_value(parsed_args, "client_out_dir"))
     compression_level = _parse_int_in_range(
-        "compression_level", args.compression_level, 0, 9
+        "compression_level",
+        _arg_value(parsed_args, "compression_level"),
+        0,
+        9,
     )
 
     if file_tag_len > dns_max_label_len:

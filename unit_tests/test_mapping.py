@@ -6,7 +6,8 @@ import tempfile
 import unittest
 
 import dnsdle.mapping as mapping_module
-from dnsdle.config import parse_cli_config
+from dnsdle.cli import parse_cli_args
+from dnsdle.config import build_config
 from dnsdle.mapping import apply_mapping
 from dnsdle.state import StartupError
 
@@ -43,17 +44,19 @@ class MappingTests(unittest.TestCase):
         shutil.rmtree(self.tmpdir)
 
     def _parse_config(self, mapping_seed="0"):
-        return parse_cli_config(
-            [
-                "--domains",
-                "example.com",
-                "--files",
-                self.file_path,
-                "--psk",
-                "k",
-                "--mapping-seed",
-                mapping_seed,
-            ]
+        return build_config(
+            parse_cli_args(
+                [
+                    "--domains",
+                    "example.com",
+                    "--files",
+                    self.file_path,
+                    "--psk",
+                    "k",
+                    "--mapping-seed",
+                    mapping_seed,
+                ]
+            )
         )
 
     def test_deterministic_for_same_input(self):
@@ -116,17 +119,19 @@ class MappingTests(unittest.TestCase):
 
     def test_rejects_when_qname_limits_disallow_even_shortest_token(self):
         longest_domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 52))
-        cfg = parse_cli_config(
-            [
-                "--domains",
-                longest_domain,
-                "--files",
-                self.file_path,
-                "--psk",
-                "k",
-                "--file-tag-len",
-                "16",
-            ]
+        cfg = build_config(
+            parse_cli_args(
+                [
+                    "--domains",
+                    longest_domain,
+                    "--files",
+                    self.file_path,
+                    "--psk",
+                    "k",
+                    "--file-tag-len",
+                    "16",
+                ]
+            )
         )
 
         items = [_publish_item("1" * 16, "d" * 64, 1)]
@@ -140,17 +145,19 @@ class MappingTests(unittest.TestCase):
 
     def test_multi_domain_mapping_clamps_to_longest_domain(self):
         longest_domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 52))
-        cfg = parse_cli_config(
-            [
-                "--domains",
-                "example.com,%s" % longest_domain,
-                "--files",
-                self.file_path,
-                "--psk",
-                "k",
-                "--file-tag-len",
-                "16",
-            ]
+        cfg = build_config(
+            parse_cli_args(
+                [
+                    "--domains",
+                    "example.com,%s" % longest_domain,
+                    "--files",
+                    self.file_path,
+                    "--psk",
+                    "k",
+                    "--file-tag-len",
+                    "16",
+                ]
+            )
         )
         self.assertEqual(tuple(sorted(("example.com", longest_domain))), cfg.domains)
         self.assertEqual(longest_domain, cfg.longest_domain)

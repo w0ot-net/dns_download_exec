@@ -6,7 +6,8 @@ import dnsdle as startup_module
 
 
 _PATCHABLE = (
-    "parse_cli_config",
+    "parse_cli_args",
+    "build_config",
     "compute_max_ciphertext_slice_bytes",
     "build_publish_items",
     "apply_mapping",
@@ -24,8 +25,17 @@ class StartupConvergenceTests(unittest.TestCase):
         for name in _PATCHABLE:
             setattr(startup_module, name, self._originals[name])
 
-    def _install(self, parse_stub, budget_stub, publish_stub, mapping_stub, runtime_stub):
-        startup_module.parse_cli_config = parse_stub
+    def _install(
+        self,
+        parse_stub,
+        build_config_stub,
+        budget_stub,
+        publish_stub,
+        mapping_stub,
+        runtime_stub,
+    ):
+        startup_module.parse_cli_args = parse_stub
+        startup_module.build_config = build_config_stub
         startup_module.compute_max_ciphertext_slice_bytes = budget_stub
         startup_module.build_publish_items = publish_stub
         startup_module.apply_mapping = mapping_stub
@@ -44,6 +54,11 @@ class StartupConvergenceTests(unittest.TestCase):
 
         def parse_stub(argv):
             call_log.append(("parse", tuple(argv or ())))
+            return "parsed-args"
+
+        def build_config_stub(parsed_args):
+            self.assertEqual("parsed-args", parsed_args)
+            call_log.append(("config", parsed_args))
             return fake_config
 
         def budget_stub(config, query_token_len=1):
@@ -80,7 +95,14 @@ class StartupConvergenceTests(unittest.TestCase):
                 ),
             }
 
-        self._install(parse_stub, budget_stub, publish_stub, mapping_stub, runtime_stub)
+        self._install(
+            parse_stub,
+            build_config_stub,
+            budget_stub,
+            publish_stub,
+            mapping_stub,
+            runtime_stub,
+        )
         runtime_state = startup_module.build_startup_state(["--dummy"])
 
         budget_queries = [entry[1] for entry in call_log if entry[0] == "budget"]
@@ -109,6 +131,10 @@ class StartupConvergenceTests(unittest.TestCase):
         }
 
         def parse_stub(_argv):
+            return "parsed-args"
+
+        def build_config_stub(parsed_args):
+            self.assertEqual("parsed-args", parsed_args)
             return fake_config
 
         def budget_stub(config, query_token_len=1):
@@ -131,7 +157,14 @@ class StartupConvergenceTests(unittest.TestCase):
                 tuple(item["slice_token_len"] for item in mapped_publish_items),
             )
 
-        self._install(parse_stub, budget_stub, publish_stub, mapping_stub, runtime_stub)
+        self._install(
+            parse_stub,
+            build_config_stub,
+            budget_stub,
+            publish_stub,
+            mapping_stub,
+            runtime_stub,
+        )
         runtime_state = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual([1, 4], budget_calls)
@@ -142,6 +175,10 @@ class StartupConvergenceTests(unittest.TestCase):
         captured = {}
 
         def parse_stub(_argv):
+            return "parsed-args"
+
+        def build_config_stub(parsed_args):
+            self.assertEqual("parsed-args", parsed_args)
             return fake_config
 
         def budget_stub(_config, query_token_len=1):
@@ -164,7 +201,14 @@ class StartupConvergenceTests(unittest.TestCase):
             captured["lens"] = tuple(item["slice_token_len"] for item in mapped_publish_items)
             return "ok"
 
-        self._install(parse_stub, budget_stub, publish_stub, mapping_stub, runtime_stub)
+        self._install(
+            parse_stub,
+            build_config_stub,
+            budget_stub,
+            publish_stub,
+            mapping_stub,
+            runtime_stub,
+        )
         result = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual("ok", result)

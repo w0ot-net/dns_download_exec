@@ -31,8 +31,9 @@ The listener must not accept requests before phases 1 and 2 complete.
 ## Startup Validation
 
 At startup, server must:
-1. Parse CLI config.
-2. Validate all config constraints from `doc/architecture/CONFIG.md`.
+1. Parse CLI arguments into raw startup fields.
+2. Normalize parsed fields into immutable config and validate all constraints
+   from `doc/architecture/CONFIG.md`.
 3. Validate every input file exists and is readable.
 4. Validate deterministic mapping inputs (`mapping_seed`, tag/token bounds) and
    longest-domain-derived name constraints.

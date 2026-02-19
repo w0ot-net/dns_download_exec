@@ -70,8 +70,8 @@ Primary launch form:
 - `dnsdle.py --domains example.com,hello.com --files /etc/passwd,/tmp/a.bin --psk <secret>`
 
 Responsibilities:
-- parse and validate operator input
-- normalize domain set and file list
+- parse CLI arguments into raw startup fields
+- normalize and validate parsed config fields
 - reject empty or duplicate entries
 - build immutable runtime config
 
@@ -153,10 +153,11 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 ### Startup Flow
 
 1. Operator starts server with domains, file list, and PSK.
-2. Server validates all inputs.
-3. Server builds in-memory publish artifacts for each file.
-4. Server validates runtime-serving invariants for DNS response construction.
-5. Server binds DNS socket and begins serving queries.
+2. Server parses CLI arguments.
+3. Server normalizes/validates config invariants.
+4. Server builds in-memory publish artifacts for each file.
+5. Server validates runtime-serving invariants for DNS response construction.
+6. Server binds DNS socket and begins serving queries.
 
 ### Download Flow
 

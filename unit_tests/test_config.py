@@ -5,8 +5,13 @@ import shutil
 import tempfile
 import unittest
 
-from dnsdle.config import parse_cli_config
+from dnsdle.cli import parse_cli_args
+from dnsdle.config import build_config
 from dnsdle.state import StartupError
+
+
+def _build_config(argv):
+    return build_config(parse_cli_args(argv))
 
 
 class ConfigParsingTests(unittest.TestCase):
@@ -30,7 +35,7 @@ class ConfigParsingTests(unittest.TestCase):
         ]
 
     def test_parses_and_normalizes_domains_and_defaults(self):
-        cfg = parse_cli_config(
+        cfg = _build_config(
             [
                 "--domains",
                 "Example.COM.,api.Example.net.",
@@ -60,7 +65,7 @@ class ConfigParsingTests(unittest.TestCase):
         args[1] = "example.com,sub.example.com"
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("config", ctx.exception.phase)
         self.assertEqual("overlapping_domains", ctx.exception.reason_code)
@@ -70,7 +75,7 @@ class ConfigParsingTests(unittest.TestCase):
         args[1] = "EXAMPLE.com,example.com."
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("config", ctx.exception.phase)
         self.assertEqual("duplicate_domain", ctx.exception.reason_code)
@@ -81,7 +86,7 @@ class ConfigParsingTests(unittest.TestCase):
         args[1] = "example.com,,hello.com"
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("config", ctx.exception.phase)
         self.assertEqual("invalid_domains", ctx.exception.reason_code)
@@ -89,7 +94,7 @@ class ConfigParsingTests(unittest.TestCase):
 
     def test_rejects_legacy_domain_flag(self):
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(
+            _build_config(
                 [
                     "--domain",
                     "example.com",
@@ -106,7 +111,7 @@ class ConfigParsingTests(unittest.TestCase):
 
     def test_selects_longest_domain_even_when_not_first_in_canonical_order(self):
         longer = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.com"
-        cfg = parse_cli_config(
+        cfg = _build_config(
             [
                 "--domains",
                 "a.com,%s" % longer,
@@ -129,7 +134,7 @@ class ConfigParsingTests(unittest.TestCase):
         args[1] = longest_domain
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("config", ctx.exception.phase)
         self.assertEqual("invalid_config", ctx.exception.reason_code)
@@ -140,7 +145,7 @@ class ConfigParsingTests(unittest.TestCase):
         args = self._base_args() + ["--response-label", "abc123"]
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("invalid_config", ctx.exception.reason_code)
 
@@ -148,7 +153,7 @@ class ConfigParsingTests(unittest.TestCase):
         args = self._base_args() + ["--mapping-seed", "bad\nseed"]
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("invalid_config", ctx.exception.reason_code)
 
@@ -156,7 +161,7 @@ class ConfigParsingTests(unittest.TestCase):
         args = self._base_args() + ["--dns-max-label-len", "15"]
 
         with self.assertRaises(StartupError) as ctx:
-            parse_cli_config(args)
+            _build_config(args)
 
         self.assertEqual("invalid_config", ctx.exception.reason_code)
 

@@ -4,6 +4,10 @@ This document defines v1 configuration for server runtime and generated clients.
 
 Configuration is immutable after server startup validation completes.
 
+Processing flow is two-step:
+1. parse CLI arguments into raw values
+2. normalize/validate raw values into immutable config
+
 ---
 
 ## Goals

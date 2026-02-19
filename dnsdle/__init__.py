@@ -1,7 +1,8 @@
 from __future__ import absolute_import
 
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
-from dnsdle.config import parse_cli_config
+from dnsdle.cli import parse_cli_args
+from dnsdle.config import build_config
 from dnsdle.mapping import apply_mapping
 from dnsdle.publish import build_publish_items
 from dnsdle.server import serve_runtime
@@ -18,7 +19,8 @@ def _max_slice_token_len(mapped_publish_items):
 
 
 def build_startup_state(argv=None):
-    config = parse_cli_config(argv)
+    parsed_args = parse_cli_args(argv)
+    config = build_config(parsed_args)
 
     query_token_len = 1
     while True:

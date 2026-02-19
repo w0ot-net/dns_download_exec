@@ -6,7 +6,8 @@ import tempfile
 import unittest
 import zlib
 
-from dnsdle.config import parse_cli_config
+from dnsdle.cli import parse_cli_args
+from dnsdle.config import build_config
 from dnsdle.publish import build_publish_items
 from dnsdle.state import StartupError
 
@@ -25,17 +26,19 @@ class PublishTests(unittest.TestCase):
         return path
 
     def _parse_config(self, paths, compression_level=9):
-        return parse_cli_config(
-            [
-                "--domains",
-                "example.com",
-                "--files",
-                ",".join(paths),
-                "--psk",
-                "k",
-                "--compression-level",
-                str(compression_level),
-            ]
+        return build_config(
+            parse_cli_args(
+                [
+                    "--domains",
+                    "example.com",
+                    "--files",
+                    ",".join(paths),
+                    "--psk",
+                    "k",
+                    "--compression-level",
+                    str(compression_level),
+                ]
+            )
         )
 
     def test_build_publish_items_chunks_and_metadata(self):

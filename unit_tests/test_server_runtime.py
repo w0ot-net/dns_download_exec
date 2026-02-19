@@ -11,7 +11,8 @@ import unittest
 import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
 import dnsdle.server as server_module
-from dnsdle.config import parse_cli_config
+from dnsdle.cli import parse_cli_args
+from dnsdle.config import build_config
 from dnsdle.constants import DNS_QCLASS_IN
 from dnsdle.constants import DNS_QTYPE_A
 from dnsdle.constants import DNS_QTYPE_CNAME
@@ -88,17 +89,19 @@ class ServerRuntimeTests(unittest.TestCase):
         shutil.rmtree(self.tmpdir)
 
     def _config(self, dns_edns_size=1232):
-        return parse_cli_config(
-            [
-                "--domains",
-                "example.com",
-                "--files",
-                self.file_path,
-                "--psk",
-                "k",
-                "--dns-edns-size",
-                str(dns_edns_size),
-            ]
+        return build_config(
+            parse_cli_args(
+                [
+                    "--domains",
+                    "example.com",
+                    "--files",
+                    self.file_path,
+                    "--psk",
+                    "k",
+                    "--dns-edns-size",
+                    str(dns_edns_size),
+                ]
+            )
         )
 
     def _runtime_state(self, dns_edns_size=1232):
