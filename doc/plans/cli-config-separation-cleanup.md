@@ -4,8 +4,9 @@
 Refactor startup configuration handling so CLI argument parsing and config
 normalization are separate responsibilities. Keep startup behavior and reason
 codes deterministic while reducing coupling and parser-specific logic in
-`dnsdle/config.py`. Clean up remaining config wording/structure issues so the
-module is easier to review and maintain.
+`dnsdle/config.py`. Execute as a clean break: remove the legacy
+`parse_cli_config(argv)` compatibility path and update all call sites in the
+same change.
 
 ## Problem
 `dnsdle/config.py` currently mixes two concerns:
@@ -42,10 +43,10 @@ After implementation:
 - Keep existing normalization helpers and fail-fast invariant checks in
   `dnsdle/config.py` (domains, files, numeric bounds, derived longest-domain
   fields, response suffix constraints).
-- Add one clear entrypoint that converts parsed args into immutable `Config`.
-- Keep `parse_cli_config(argv)` as a thin compatibility wrapper that delegates to
-  CLI parse + config build entrypoints, so existing internal call sites continue
-  to work during this cleanup without reintroducing parser logic into config.
+- Add one clear entrypoint that converts parsed args into immutable `Config`
+  (for example, `build_config(parsed_args)`).
+- Clean break requirement: remove `parse_cli_config(argv)` entirely and update
+  all call sites to the explicit parse-then-build flow in the same change.
 - Normalize remaining singular-domain wording in config validation messages to
   match the multi-domain contract where applicable.
 
@@ -54,6 +55,8 @@ After implementation:
   1) parse argv via `dnsdle/cli.py`
   2) normalize/build config via `dnsdle/config.py`
   3) proceed with unchanged budget/publish/mapping pipeline
+- Update direct call sites/imports that currently use `parse_cli_config` (tests
+  and any runtime/module code) to the new explicit two-step flow.
 - Keep runtime output/log shape unchanged unless a wording fix is required by
   the config cleanup.
 
@@ -63,17 +66,33 @@ After implementation:
 - Keep external config surface unchanged (`--domains`, etc.); this is a
   structural refactor, not a config-contract expansion.
 
-### 5. Validation approach (no test-file edits in this plan)
-- Run startup command sanity checks that cover:
-  - valid multi-domain launch
-  - removed `--domain` rejection
-  - duplicate/overlap domain failures
-- Run existing focused unit test modules (without editing test files):
+### 5. Validation approach
+- Add/update unit tests for parser/config split behavior:
+  - `unit_tests/test_cli.py` (new):
+    - removed `--domain` rejected with `StartupError`
+    - invalid/unknown flags raise `StartupError` (no `SystemExit`)
+    - abbreviated long options are rejected deterministically
+    - valid argument set parses successfully and preserves raw values expected by
+      config normalization
+  - `unit_tests/test_config.py`:
+    - validate new `build_config(parsed_args)` entrypoint directly
+    - preserve existing domain/normalization invariant checks
+  - `unit_tests/test_startup_state.py`:
+    - startup path still succeeds with parse-then-build flow
+- Run bounded startup sanity checks (no hanging serve-loop dependency):
+  - call `dnsdle.build_startup_state(argv)` for:
+    - valid multi-domain launch
+    - removed `--domain` rejection
+    - duplicate/overlap domain failures
+- Run targeted module tests:
+  - `python -m unittest unit_tests.test_cli`
   - `python -m unittest unit_tests.test_config`
   - `python -m unittest unit_tests.test_startup_state`
-- Run Python syntax checks for touched runtime modules:
+- Run syntax checks for touched modules:
   - `python -m py_compile dnsdle/cli.py dnsdle/config.py dnsdle/__init__.py`
-- Do not modify files under `unit_tests/` in this plan execution.
+- Python compatibility gate:
+  - where both interpreters are available, run syntax + targeted tests under
+    both Python 2.7 and Python 3.x before completion.
 
 ## Affected Components
 - `dnsdle/cli.py`: new module containing startup CLI parsing and removed-flag
@@ -82,6 +101,12 @@ After implementation:
   config construction.
 - `dnsdle/__init__.py`: startup wiring updated to parse args before config
   normalization.
+- `unit_tests/test_cli.py` (new): parser behavior invariants (`StartupError`
+  surfaces, removed flag rejection, no-abbrev behavior).
+- `unit_tests/test_config.py`: switch to config-build entrypoint and keep
+  normalization invariant coverage.
+- `unit_tests/test_startup_state.py`: ensure startup integration path remains
+  stable after call-site rewiring.
 - `doc/architecture/ARCHITECTURE.md`: clarify component boundary between CLI
   parsing and config normalization.
 - `doc/architecture/SERVER_RUNTIME.md`: update startup validation sequence to
@@ -91,8 +116,12 @@ After implementation:
 
 ## Success Criteria
 - `dnsdle/config.py` has no `argparse` usage and no direct raw-argv parsing.
+- `parse_cli_config(argv)` is removed; no compatibility wrapper remains.
+- All call sites are updated to explicit parse-then-build flow in the same
+  change.
 - CLI parsing behavior is centralized in `dnsdle/cli.py` with deterministic
-  fail-fast behavior for removed flags and invalid syntax.
+  fail-fast behavior for removed flags, invalid syntax, and abbreviated long
+  options.
 - CLI parse errors continue to surface as `StartupError` with stable startup
   logging semantics (no parser-driven process exit path).
 - Startup path still produces identical config-derived behavior for equivalent
