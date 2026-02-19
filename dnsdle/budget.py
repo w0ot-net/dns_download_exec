@@ -10,6 +10,8 @@ from dnsdle.constants import MAX_DNS_NAME_TEXT_LENGTH
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.constants import OPT_RR_BYTES
 from dnsdle.constants import QUESTION_FIXED_BYTES
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
@@ -131,7 +133,7 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
         query_token_len,
         _dns_name_wire_length(chosen_payload_labels + suffix_labels),
     )
-    return max_ciphertext_slice_bytes, {
+    budget_info = {
         "domains": tuple(config.domains),
         "longest_domain": config.longest_domain,
         "longest_domain_wire_len": config.longest_domain_wire_len,
@@ -143,3 +145,15 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
         "response_size_estimate": response_size_estimate,
         "query_token_len": query_token_len,
     }
+    if logger_enabled("debug", "budget"):
+        log_event(
+            "debug",
+            "budget",
+            {
+                "phase": "budget",
+                "classification": "diagnostic",
+                "reason_code": "budget_computed",
+            },
+            context_fn=lambda: dict(budget_info, max_ciphertext_slice_bytes=max_ciphertext_slice_bytes),
+        )
+    return max_ciphertext_slice_bytes, budget_info

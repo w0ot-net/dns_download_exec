@@ -5,7 +5,16 @@ import re
 from collections import namedtuple
 
 from dnsdle.constants import ALLOWED_TARGET_OS
+from dnsdle.constants import DEFAULT_LOG_CATEGORIES_CSV
+from dnsdle.constants import DEFAULT_LOG_FILE
+from dnsdle.constants import DEFAULT_LOG_FOCUS
+from dnsdle.constants import DEFAULT_LOG_LEVEL
+from dnsdle.constants import DEFAULT_LOG_OUTPUT
+from dnsdle.constants import DEFAULT_LOG_RATE_LIMIT_PER_SEC
+from dnsdle.constants import DEFAULT_LOG_SAMPLE_RATE
 from dnsdle.constants import FIXED_CONFIG
+from dnsdle.constants import LOG_CATEGORIES
+from dnsdle.constants import LOG_LEVELS
 from dnsdle.constants import MAX_DNS_EDNS_SIZE
 from dnsdle.constants import MIN_DNS_EDNS_SIZE
 from dnsdle.constants import TOKEN_ALPHABET_CHARS
@@ -39,6 +48,13 @@ Config = namedtuple(
         "target_os_csv",
         "client_out_dir",
         "compression_level",
+        "log_level",
+        "log_categories",
+        "log_sample_rate",
+        "log_rate_limit_per_sec",
+        "log_output",
+        "log_file",
+        "log_focus",
         "fixed",
     ],
 )
@@ -206,6 +222,26 @@ def _parse_int_in_range(name, raw_value, min_value, max_value):
     return value
 
 
+def _parse_float_in_range(name, raw_value, min_value, max_value):
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "%s is not a valid number" % name,
+            {"field": name},
+        )
+    if value < min_value or value > max_value:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "%s is out of range" % name,
+            {"field": name, "min": min_value, "max": max_value},
+        )
+    return value
+
+
 def _normalize_files(raw_value):
     if raw_value is None:
         raise StartupError("config", "invalid_config", "files is required")
@@ -301,6 +337,72 @@ def _normalize_client_out_dir(raw_value):
     return value
 
 
+def _normalize_log_level(raw_value):
+    value = (raw_value or "").strip().lower()
+    if value in LOG_LEVELS:
+        return value
+    raise StartupError(
+        "config",
+        "invalid_config",
+        "log_level is unsupported",
+        {"field": "log_level", "value": value},
+    )
+
+
+def _normalize_log_categories(raw_value):
+    value = (raw_value or "").strip().lower()
+    if not value:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "log_categories is empty",
+            {"field": "log_categories"},
+        )
+    if value == "all":
+        return tuple(LOG_CATEGORIES)
+
+    categories = []
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            raise StartupError(
+                "config",
+                "invalid_config",
+                "log_categories contains an empty entry",
+                {"field": "log_categories"},
+            )
+        if token not in LOG_CATEGORIES:
+            raise StartupError(
+                "config",
+                "invalid_config",
+                "log_categories contains an unsupported value",
+                {"field": "log_categories", "value": token},
+            )
+        if token not in categories:
+            categories.append(token)
+    return tuple(categories)
+
+
+def _normalize_log_output(raw_value):
+    value = (raw_value or "").strip().lower()
+    if value in ("stdout", "file"):
+        return value
+    raise StartupError(
+        "config",
+        "invalid_config",
+        "log_output is unsupported",
+        {"field": "log_output", "value": value},
+    )
+
+
+def _normalize_log_file(raw_value):
+    return (raw_value or "").strip()
+
+
+def _normalize_log_focus(raw_value):
+    return (raw_value or "").strip()
+
+
 def _normalize_listen_addr(raw_value):
     value = (raw_value or "").strip()
     if not value:
@@ -334,6 +436,14 @@ def _arg_value(parsed_args, name):
         "missing parsed CLI argument: %s" % name,
         {"field": name},
     )
+
+
+def _arg_value_default(parsed_args, name, default):
+    if hasattr(parsed_args, name):
+        return getattr(parsed_args, name)
+    if isinstance(parsed_args, dict) and name in parsed_args:
+        return parsed_args[name]
+    return default
 
 
 def build_config(parsed_args):
@@ -379,6 +489,37 @@ def build_config(parsed_args):
         0,
         9,
     )
+    log_level = _normalize_log_level(
+        _arg_value_default(parsed_args, "log_level", DEFAULT_LOG_LEVEL)
+    )
+    log_categories = _normalize_log_categories(
+        _arg_value_default(parsed_args, "log_categories", DEFAULT_LOG_CATEGORIES_CSV)
+    )
+    log_sample_rate = _parse_float_in_range(
+        "log_sample_rate",
+        _arg_value_default(parsed_args, "log_sample_rate", DEFAULT_LOG_SAMPLE_RATE),
+        0.0,
+        1.0,
+    )
+    log_rate_limit_per_sec = _parse_int_in_range(
+        "log_rate_limit_per_sec",
+        _arg_value_default(
+            parsed_args,
+            "log_rate_limit_per_sec",
+            DEFAULT_LOG_RATE_LIMIT_PER_SEC,
+        ),
+        0,
+        1000000,
+    )
+    log_output = _normalize_log_output(
+        _arg_value_default(parsed_args, "log_output", DEFAULT_LOG_OUTPUT)
+    )
+    log_file = _normalize_log_file(
+        _arg_value_default(parsed_args, "log_file", DEFAULT_LOG_FILE)
+    )
+    log_focus = _normalize_log_focus(
+        _arg_value_default(parsed_args, "log_focus", DEFAULT_LOG_FOCUS)
+    )
 
     if file_tag_len > dns_max_label_len:
         raise StartupError(
@@ -393,6 +534,21 @@ def build_config(parsed_args):
             "invalid_config",
             "response suffix exceeds DNS name-length limits for longest domain",
             {"longest_domain": longest_domain},
+        )
+
+    if log_output == "file" and not log_file:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "log_file is required when log_output=file",
+            {"field": "log_file"},
+        )
+    if log_output != "file" and log_file:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "log_file is only valid when log_output=file",
+            {"field": "log_file"},
         )
 
     return Config(
@@ -416,5 +572,12 @@ def build_config(parsed_args):
         target_os_csv=target_os_csv,
         client_out_dir=client_out_dir,
         compression_level=compression_level,
+        log_level=log_level,
+        log_categories=log_categories,
+        log_sample_rate=log_sample_rate,
+        log_rate_limit_per_sec=log_rate_limit_per_sec,
+        log_output=log_output,
+        log_file=log_file,
+        log_focus=log_focus,
         fixed=FIXED_CONFIG.copy(),
     )

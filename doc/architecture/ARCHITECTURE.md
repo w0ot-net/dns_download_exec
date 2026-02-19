@@ -86,6 +86,12 @@ Fail-fast invariants:
 - PSK must be present and non-empty before server starts
 - configuration is immutable after startup
 
+### Compatibility Layer
+
+Python 2.7/3.x compatibility helpers are centralized in `dnsdle/compat.py`.
+Runtime modules should consume compat aliases/helpers instead of reimplementing
+per-module byte/text/int branching.
+
 ### 2. File Publish Pipeline
 
 Runs once at startup per file:

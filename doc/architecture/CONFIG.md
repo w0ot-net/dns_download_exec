@@ -47,6 +47,18 @@ Processing flow is two-step:
   files, default `./generated_clients`.
 - `compression_level` (`--compression-level`): compressed payload level,
   default `9`, valid `0..9`.
+- `log_level` (`--log-level`): logging threshold
+  (`error|warn|info|debug|trace`), default `info`.
+- `log_categories` (`--log-categories`): comma-separated logging categories or
+  `all`, default `startup,publish,server`.
+- `log_sample_rate` (`--log-sample-rate`): diagnostics sampling rate in `0..1`,
+  default `1.0`.
+- `log_rate_limit_per_sec` (`--log-rate-limit-per-sec`): diagnostics rate limit
+  per second, default `200`.
+- `log_output` (`--log-output`): `stdout` or `file`, default `stdout`.
+- `log_file` (`--log-file`): required when `log_output=file`; invalid
+  otherwise.
+- `log_focus` (`--log-focus`): optional deterministic request focus key.
 
 ---
 
@@ -158,6 +170,18 @@ Startup fails if any derived value cannot be computed within constraints.
 - `dns_edns_size` controls whether OPT is emitted:
   - `> 512` emits OPT (EDNS enabled)
   - `= 512` omits OPT (DNS classic size)
+- `log_sample_rate` must be within `0..1`.
+- `log_rate_limit_per_sec` must be a non-negative integer.
+
+### Logging
+
+- `log_level` must be one of:
+  `error`, `warn`, `info`, `debug`, `trace`.
+- `log_categories` entries must be valid known categories, or the literal
+  `all`.
+- `log_output` must be `stdout` or `file`.
+- `log_file` is required when `log_output=file`.
+- `log_file` is invalid when `log_output=stdout`.
 
 ### Generation
 

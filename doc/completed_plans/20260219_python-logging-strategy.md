@@ -156,3 +156,45 @@ Add a dedicated architecture logging document and update existing architecture d
   suppressed by category filtering.
 - Diagnostics mode provides deep introspection without changing runtime correctness behavior.
 - Architecture docs clearly define logging behavior, invariants, and safety policy.
+
+## Execution Notes
+- Implemented centralized logging runtime in `dnsdle/logging_runtime.py` with:
+  deterministic single-line JSON output (`sort_keys=True`), explicit
+  `ts_unix_ms/level/category`, category+level gating, context_fn lazy
+  evaluation, sampling/rate-limit controls, lifecycle/error unsuppressed paths,
+  and redaction of sensitive keys.
+- Extended CLI and config contracts for logging controls:
+  `--log-level`, `--log-categories`, `--log-sample-rate`,
+  `--log-rate-limit-per-sec`, `--log-output`, `--log-file`, `--log-focus`.
+  Added fail-fast validation in `build_config(...)` including `log_output` /
+  `log_file` combination rules.
+- Migrated startup/runtime emission path to centralized logger:
+  `dnsdle.py` now emits via logging facade; `dnsdle/__init__.py` configures the
+  active logger after config build; `serve_runtime(...)` callback contract is
+  preserved.
+- Added gated diagnostics in `budget`, `publish`, `mapping`, `dnswire`, and
+  `server` paths with disabled-path-safe `context_fn` usage.
+- Updated architecture docs with dedicated logging contract:
+  added `doc/architecture/LOGGING.md` and updated `ARCHITECTURE`, `CONFIG`,
+  `SERVER_RUNTIME`, `PUBLISH_PIPELINE`, and `ERRORS_AND_INVARIANTS`.
+- Added/updated unit coverage:
+  `unit_tests/test_logging_runtime.py` (new),
+  `unit_tests/test_server_runtime.py`,
+  `unit_tests/test_state.py`,
+  `unit_tests/test_cli.py`,
+  `unit_tests/test_config.py`,
+  `unit_tests/test_startup_convergence.py`.
+- Validation run:
+  - `python -m unittest unit_tests.test_cli` (pass)
+  - `python -m unittest unit_tests.test_config` (pass)
+  - `python -m unittest unit_tests.test_state` (pass)
+  - `python -m unittest unit_tests.test_server_runtime` (pass)
+  - `python -m unittest unit_tests.test_logging_runtime` (pass)
+  - `python -m py_compile dnsdle.py dnsdle/logging_runtime.py dnsdle/server.py dnsdle/state.py` (pass)
+  - CLI checks:
+    - removed flag `--domain` -> non-zero + startup_error (pass)
+    - invalid logging combo `--log-output file` without `--log-file` ->
+      non-zero + invalid_config (pass)
+    - valid run emitted startup records; full serve-loop start could not be
+      validated in sandbox due UDP bind restriction (`[Errno 1] Operation not permitted`).
+- Execution commit hash: pending (added after commit creation).

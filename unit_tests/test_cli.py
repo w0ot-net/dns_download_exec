@@ -97,13 +97,40 @@ class CliParsingTests(unittest.TestCase):
         self.assertIn("argument parsing failed", ctx.exception.message)
 
     def test_valid_parse_preserves_raw_values(self):
-        parsed = parse_cli_args(self._valid_args() + ["--ttl", "42"])
+        parsed = parse_cli_args(
+            self._valid_args()
+            + [
+                "--ttl",
+                "42",
+                "--log-level",
+                "debug",
+                "--log-categories",
+                "startup,server",
+                "--log-sample-rate",
+                "0.25",
+                "--log-rate-limit-per-sec",
+                "7",
+                "--log-output",
+                "file",
+                "--log-file",
+                "/tmp/dnsdle.log",
+                "--log-focus",
+                "tag001",
+            ]
+        )
 
         self.assertEqual("Example.COM.,api.Example.net.", parsed.domains)
         self.assertEqual(self.sample_file, parsed.files)
         self.assertEqual("secret", parsed.psk)
         self.assertEqual("42", parsed.ttl)
         self.assertEqual("1232", parsed.dns_edns_size)
+        self.assertEqual("debug", parsed.log_level)
+        self.assertEqual("startup,server", parsed.log_categories)
+        self.assertEqual("0.25", parsed.log_sample_rate)
+        self.assertEqual("7", parsed.log_rate_limit_per_sec)
+        self.assertEqual("file", parsed.log_output)
+        self.assertEqual("/tmp/dnsdle.log", parsed.log_file)
+        self.assertEqual("tag001", parsed.log_focus)
 
 
 if __name__ == "__main__":

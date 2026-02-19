@@ -3,6 +3,9 @@ from __future__ import absolute_import
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.cli import parse_cli_args
 from dnsdle.config import build_config
+from dnsdle.logging_runtime import configure_active_logger
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 from dnsdle.mapping import apply_mapping
 from dnsdle.publish import build_publish_items
 from dnsdle.server import serve_runtime
@@ -21,6 +24,7 @@ def _max_slice_token_len(mapped_publish_items):
 def build_startup_state(argv=None):
     parsed_args = parse_cli_args(argv)
     config = build_config(parsed_args)
+    configure_active_logger(config)
 
     query_token_len = 1
     while True:
@@ -31,6 +35,21 @@ def build_startup_state(argv=None):
         mapped_items = apply_mapping(publish_items, config)
 
         realized_max_token_len = _max_slice_token_len(mapped_items)
+        if logger_enabled("debug", "startup"):
+            log_event(
+                "debug",
+                "startup",
+                {
+                    "phase": "startup",
+                    "classification": "diagnostic",
+                    "reason_code": "startup_iteration",
+                },
+                context_fn=lambda: {
+                    "query_token_len": query_token_len,
+                    "realized_max_token_len": realized_max_token_len,
+                    "max_ciphertext_slice_bytes": max_ciphertext_slice_bytes,
+                },
+            )
         if realized_max_token_len <= query_token_len:
             break
         query_token_len = realized_max_token_len

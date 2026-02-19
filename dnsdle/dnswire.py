@@ -2,6 +2,9 @@ from __future__ import absolute_import
 
 import struct
 
+from dnsdle.compat import byte_value
+from dnsdle.compat import to_ascii_bytes
+from dnsdle.compat import to_ascii_text
 from dnsdle.constants import DNS_HEADER_BYTES
 from dnsdle.constants import DNS_FLAG_AA
 from dnsdle.constants import DNS_FLAG_QR
@@ -15,6 +18,8 @@ from dnsdle.constants import DNS_QTYPE_A
 from dnsdle.constants import DNS_QTYPE_CNAME
 from dnsdle.constants import DNS_QTYPE_OPT
 from dnsdle.constants import SYNTHETIC_A_RDATA
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 
 
 class DnsParseError(Exception):
@@ -26,16 +31,11 @@ def _message_length(message):
 
 
 def _ord_byte(value):
-    if isinstance(value, int):
-        return value
-    return ord(value)
+    return byte_value(value)
 
 
 def _to_label_bytes(label):
-    if isinstance(label, bytes):
-        raw = label
-    else:
-        raw = label.encode("ascii")
+    raw = to_ascii_bytes(label)
     if not raw:
         raise ValueError("label must be non-empty")
     if len(raw) > 63:
@@ -93,10 +93,7 @@ def _decode_name(message, start_offset):
             raise DnsParseError("label extends past message")
         raw = message[offset:end_offset]
         try:
-            if isinstance(raw, str):
-                label = raw
-            else:
-                label = raw.decode("ascii")
+            label = to_ascii_text(raw)
         except Exception:
             raise DnsParseError("label is not ASCII")
         labels.append(label.lower())
@@ -130,7 +127,7 @@ def parse_request(message):
             "qclass": qclass,
         }
 
-    return {
+    parsed = {
         "id": request_id,
         "flags": flags,
         "opcode": (flags & DNS_OPCODE_MASK),
@@ -140,6 +137,24 @@ def parse_request(message):
         "arcount": arcount,
         "question": question,
     }
+    if logger_enabled("trace", "dnswire"):
+        log_event(
+            "trace",
+            "dnswire",
+            {
+                "phase": "server",
+                "classification": "diagnostic",
+                "reason_code": "dns_request_parsed",
+            },
+            context_fn=lambda: {
+                "qdcount": qdcount,
+                "ancount": ancount,
+                "nscount": nscount,
+                "arcount": arcount,
+                "has_question": question is not None,
+            },
+        )
+    return parsed
 
 
 def _pack_pointer(offset):
@@ -229,4 +244,23 @@ def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_si
         parts.append(answer_bytes)
     if include_opt:
         parts.append(_encode_opt_record(edns_size))
-    return b"".join(parts)
+    response = b"".join(parts)
+    if logger_enabled("trace", "dnswire"):
+        log_event(
+            "trace",
+            "dnswire",
+            {
+                "phase": "server",
+                "classification": "diagnostic",
+                "reason_code": "dns_response_built",
+            },
+            context_fn=lambda: {
+                "rcode": rcode,
+                "qdcount": qdcount,
+                "ancount": ancount,
+                "arcount": arcount,
+                "include_opt": include_opt,
+                "response_len": len(response),
+            },
+        )
+    return response

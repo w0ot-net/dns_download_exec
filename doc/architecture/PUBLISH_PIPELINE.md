@@ -240,6 +240,8 @@ Partial publish state must not be served.
 ## Logging Requirements
 
 Minimum per-file startup log fields:
+- `level = INFO`
+- `category = publish`
 - `file_id`
 - `publish_version`
 - `file_tag`
@@ -247,10 +249,16 @@ Minimum per-file startup log fields:
 - `total_slices`
 - `max_ciphertext_slice_bytes`
 
+Diagnostics logs for publish internals are optional and must use
+`DEBUG/TRACE` with disabled-path gating defined in
+`doc/architecture/LOGGING.md`.
+
 Sensitive data that must not be logged:
 - raw plaintext bytes
 - raw PSK or derived keys
 - full source path in network-facing request logs
+
+General logging schema/rules are defined in `doc/architecture/LOGGING.md`.
 
 ---
 

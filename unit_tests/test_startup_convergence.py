@@ -8,6 +8,7 @@ import dnsdle as startup_module
 _PATCHABLE = (
     "parse_cli_args",
     "build_config",
+    "configure_active_logger",
     "compute_max_ciphertext_slice_bytes",
     "build_publish_items",
     "apply_mapping",
@@ -29,6 +30,7 @@ class StartupConvergenceTests(unittest.TestCase):
         self,
         parse_stub,
         build_config_stub,
+        configure_logger_stub,
         budget_stub,
         publish_stub,
         mapping_stub,
@@ -36,6 +38,7 @@ class StartupConvergenceTests(unittest.TestCase):
     ):
         startup_module.parse_cli_args = parse_stub
         startup_module.build_config = build_config_stub
+        startup_module.configure_active_logger = configure_logger_stub
         startup_module.compute_max_ciphertext_slice_bytes = budget_stub
         startup_module.build_publish_items = publish_stub
         startup_module.apply_mapping = mapping_stub
@@ -60,6 +63,10 @@ class StartupConvergenceTests(unittest.TestCase):
             self.assertEqual("parsed-args", parsed_args)
             call_log.append(("config", parsed_args))
             return fake_config
+
+        def configure_logger_stub(config):
+            self.assertIs(fake_config, config)
+            call_log.append(("configure_logger", "ok"))
 
         def budget_stub(config, query_token_len=1):
             self.assertIs(fake_config, config)
@@ -98,6 +105,7 @@ class StartupConvergenceTests(unittest.TestCase):
         self._install(
             parse_stub,
             build_config_stub,
+            configure_logger_stub,
             budget_stub,
             publish_stub,
             mapping_stub,
@@ -137,6 +145,9 @@ class StartupConvergenceTests(unittest.TestCase):
             self.assertEqual("parsed-args", parsed_args)
             return fake_config
 
+        def configure_logger_stub(config):
+            self.assertIs(fake_config, config)
+
         def budget_stub(config, query_token_len=1):
             self.assertIs(fake_config, config)
             budget_calls.append(query_token_len)
@@ -160,6 +171,7 @@ class StartupConvergenceTests(unittest.TestCase):
         self._install(
             parse_stub,
             build_config_stub,
+            configure_logger_stub,
             budget_stub,
             publish_stub,
             mapping_stub,
@@ -180,6 +192,9 @@ class StartupConvergenceTests(unittest.TestCase):
         def build_config_stub(parsed_args):
             self.assertEqual("parsed-args", parsed_args)
             return fake_config
+
+        def configure_logger_stub(config):
+            self.assertIs(fake_config, config)
 
         def budget_stub(_config, query_token_len=1):
             if query_token_len == 1:
@@ -204,6 +219,7 @@ class StartupConvergenceTests(unittest.TestCase):
         self._install(
             parse_stub,
             build_config_stub,
+            configure_logger_stub,
             budget_stub,
             publish_stub,
             mapping_stub,

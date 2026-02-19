@@ -59,6 +59,13 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual("0", cfg.mapping_seed)
         self.assertEqual(("windows", "linux"), cfg.target_os)
         self.assertEqual("windows,linux", cfg.target_os_csv)
+        self.assertEqual("info", cfg.log_level)
+        self.assertEqual(("startup", "publish", "server"), cfg.log_categories)
+        self.assertEqual(1.0, cfg.log_sample_rate)
+        self.assertEqual(200, cfg.log_rate_limit_per_sec)
+        self.assertEqual("stdout", cfg.log_output)
+        self.assertEqual("", cfg.log_file)
+        self.assertEqual("", cfg.log_focus)
 
     def test_rejects_overlapping_domains(self):
         args = self._base_args()
@@ -164,6 +171,76 @@ class ConfigParsingTests(unittest.TestCase):
             _build_config(args)
 
         self.assertEqual("invalid_config", ctx.exception.reason_code)
+
+    def test_accepts_explicit_logging_configuration(self):
+        log_file = os.path.join(self.tmpdir, "dnsdle.log")
+        cfg = _build_config(
+            self._base_args()
+            + [
+                "--log-level",
+                "debug",
+                "--log-categories",
+                "all",
+                "--log-sample-rate",
+                "0.5",
+                "--log-rate-limit-per-sec",
+                "17",
+                "--log-output",
+                "file",
+                "--log-file",
+                log_file,
+                "--log-focus",
+                "tag001",
+            ]
+        )
+
+        self.assertEqual("debug", cfg.log_level)
+        self.assertIn("server", cfg.log_categories)
+        self.assertEqual(0.5, cfg.log_sample_rate)
+        self.assertEqual(17, cfg.log_rate_limit_per_sec)
+        self.assertEqual("file", cfg.log_output)
+        self.assertEqual(log_file, cfg.log_file)
+        self.assertEqual("tag001", cfg.log_focus)
+
+    def test_rejects_invalid_log_level(self):
+        args = self._base_args() + ["--log-level", "verbose"]
+        with self.assertRaises(StartupError) as ctx:
+            _build_config(args)
+
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertIn("log_level", ctx.exception.message)
+
+    def test_rejects_invalid_log_categories(self):
+        args = self._base_args() + ["--log-categories", "startup,unknown"]
+        with self.assertRaises(StartupError) as ctx:
+            _build_config(args)
+
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertEqual("log_categories", ctx.exception.context.get("field"))
+
+    def test_rejects_file_output_without_log_file(self):
+        args = self._base_args() + ["--log-output", "file"]
+        with self.assertRaises(StartupError) as ctx:
+            _build_config(args)
+
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertEqual("log_file", ctx.exception.context.get("field"))
+
+    def test_rejects_log_file_when_output_is_stdout(self):
+        args = self._base_args() + ["--log-file", "/tmp/not-used.log"]
+        with self.assertRaises(StartupError) as ctx:
+            _build_config(args)
+
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertEqual("log_file", ctx.exception.context.get("field"))
+
+    def test_rejects_invalid_log_sample_rate(self):
+        args = self._base_args() + ["--log-sample-rate", "1.5"]
+        with self.assertRaises(StartupError) as ctx:
+            _build_config(args)
+
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertEqual("log_sample_rate", ctx.exception.context.get("field"))
 
 
 if __name__ == "__main__":

@@ -3,15 +3,12 @@ from __future__ import absolute_import
 import hashlib
 import zlib
 
+from dnsdle.compat import to_ascii_bytes
 from dnsdle.constants import FILE_ID_PREFIX
 from dnsdle.constants import PROFILE_V1
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
-
-
-def _ascii_bytes(value):
-    if isinstance(value, bytes):
-        return value
-    return value.encode("ascii")
 
 
 def _sha256_hex(data):
@@ -19,7 +16,7 @@ def _sha256_hex(data):
 
 
 def _derive_file_id(publish_version):
-    file_id_input = _ascii_bytes(FILE_ID_PREFIX) + _ascii_bytes(publish_version)
+    file_id_input = to_ascii_bytes(FILE_ID_PREFIX) + to_ascii_bytes(publish_version)
     return _sha256_hex(file_id_input)[:16]
 
 
@@ -120,5 +117,23 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                 "wire_profile": PROFILE_V1,
             }
         )
+        if logger_enabled("debug", "publish"):
+            log_event(
+                "debug",
+                "publish",
+                {
+                    "phase": "publish",
+                    "classification": "diagnostic",
+                    "reason_code": "publish_item_built",
+                    "file_id": file_id,
+                    "publish_version": publish_version,
+                },
+                context_fn=lambda: {
+                    "plaintext_sha256": plaintext_sha256,
+                    "compressed_size": compressed_size,
+                    "total_slices": total_slices,
+                    "file_index": file_index,
+                },
+            )
 
     return publish_items

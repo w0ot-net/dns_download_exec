@@ -1,31 +1,21 @@
 from __future__ import absolute_import
 
-import base64
 import hashlib
 import hmac
 
+from dnsdle.compat import base32_lower_no_pad
+from dnsdle.compat import to_ascii_bytes
 from dnsdle.constants import DIGEST_TEXT_CAPACITY
 from dnsdle.constants import MAPPING_FILE_LABEL
 from dnsdle.constants import MAPPING_SLICE_LABEL
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
+from dnsdle.logging_runtime import log_event
+from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
-
-
-def _ascii_bytes(value):
-    if isinstance(value, bytes):
-        return value
-    return value.encode("ascii")
 
 
 def _dns_name_wire_length(labels):
     return 1 + sum(1 + len(label) for label in labels)
-
-
-def _base32_lower_no_pad(raw_bytes):
-    encoded = base64.b32encode(raw_bytes)
-    if not isinstance(encoded, str):
-        encoded = encoded.decode("ascii")
-    return encoded.rstrip("=").lower()
 
 
 def _hmac_sha256(key_bytes, message_bytes):
@@ -37,7 +27,7 @@ def _derive_file_digest(seed_bytes, publish_version_bytes):
 
 
 def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
-    slice_index_bytes = _ascii_bytes(str(slice_index))
+    slice_index_bytes = to_ascii_bytes(str(slice_index))
     return _hmac_sha256(
         seed_bytes,
         MAPPING_SLICE_LABEL + publish_version_bytes + b"|" + slice_index_bytes,
@@ -45,16 +35,16 @@ def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
 
 
 def _derive_file_tag(seed_bytes, publish_version, file_tag_len):
-    publish_version_bytes = _ascii_bytes(publish_version)
-    digest_text = _base32_lower_no_pad(
+    publish_version_bytes = to_ascii_bytes(publish_version)
+    digest_text = base32_lower_no_pad(
         _derive_file_digest(seed_bytes, publish_version_bytes)
     )
     return digest_text[:file_tag_len]
 
 
 def _derive_slice_token(seed_bytes, publish_version, slice_index, token_len):
-    publish_version_bytes = _ascii_bytes(publish_version)
-    digest_text = _base32_lower_no_pad(
+    publish_version_bytes = to_ascii_bytes(publish_version)
+    digest_text = base32_lower_no_pad(
         _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index)
     )
     return digest_text[:token_len]
@@ -107,7 +97,7 @@ def _find_colliding_files(entries):
 
 
 def apply_mapping(publish_items, config):
-    seed_bytes = _ascii_bytes(config.mapping_seed)
+    seed_bytes = to_ascii_bytes(config.mapping_seed)
 
     entries = []
     for item in publish_items:
@@ -207,5 +197,20 @@ def apply_mapping(publish_items, config):
 
     for entry in entries:
         entry.pop("slice_token_len_max", None)
+
+    if logger_enabled("debug", "mapping"):
+        log_event(
+            "debug",
+            "mapping",
+            {
+                "phase": "mapping",
+                "classification": "diagnostic",
+                "reason_code": "mapping_applied",
+            },
+            context_fn=lambda: {
+                "file_count": len(entries),
+                "total_slice_tokens": sum(len(item["slice_tokens"]) for item in entries),
+            },
+        )
 
     return entries

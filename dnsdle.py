@@ -1,23 +1,35 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import json
 import sys
 
 from dnsdle import build_startup_state
 from dnsdle import serve_runtime
+from dnsdle.logging_runtime import emit_structured_record
+from dnsdle.logging_runtime import reset_active_logger
 from dnsdle.state import StartupError
 
 
-def _emit_record(record):
-    print(json.dumps(record, sort_keys=True))
+def _emit_record(record, level=None, category=None, required=False):
+    emit_structured_record(
+        record,
+        level=level,
+        category=category,
+        required=required,
+    )
 
 
 def main(argv=None):
+    reset_active_logger()
     try:
         runtime_state = build_startup_state(argv)
     except StartupError as exc:
-        _emit_record(exc.to_log_record())
+        _emit_record(
+            exc.to_log_record(),
+            level="error",
+            category=exc.phase,
+            required=True,
+        )
         return 1
     except Exception as exc:
         _emit_record(
@@ -26,7 +38,10 @@ def main(argv=None):
                 "phase": "startup",
                 "reason_code": "unexpected_exception",
                 "message": str(exc),
-            }
+            },
+            level="error",
+            category="startup",
+            required=True,
         )
         return 1
 
@@ -43,7 +58,9 @@ def main(argv=None):
             "dns_max_label_len": config.dns_max_label_len,
             "compression_level": config.compression_level,
             "target_os": config.target_os_csv,
-        }
+        },
+        level="info",
+        category="startup",
     )
 
     for publish_item in runtime_state.publish_items:
@@ -58,13 +75,20 @@ def main(argv=None):
                 "compressed_size": publish_item.compressed_size,
                 "total_slices": publish_item.total_slices,
                 "slice_token_len": publish_item.slice_token_len,
-            }
+            },
+            level="info",
+            category="publish",
         )
 
     try:
         return serve_runtime(runtime_state, _emit_record)
     except StartupError as exc:
-        _emit_record(exc.to_log_record())
+        _emit_record(
+            exc.to_log_record(),
+            level="error",
+            category=exc.phase,
+            required=True,
+        )
         return 1
     except Exception as exc:
         _emit_record(
@@ -73,7 +97,10 @@ def main(argv=None):
                 "phase": "server",
                 "reason_code": "unexpected_exception",
                 "message": str(exc),
-            }
+            },
+            level="error",
+            category="server",
+            required=True,
         )
         return 1
 

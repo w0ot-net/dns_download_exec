@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import base64
+import json
 import os
 import shutil
 import socket
@@ -10,6 +11,7 @@ import unittest
 
 import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
+import dnsdle.logging_runtime as logging_runtime
 import dnsdle.server as server_module
 from dnsdle.cli import parse_cli_args
 from dnsdle.config import build_config
@@ -49,6 +51,22 @@ class _FakeSocket(object):
 
     def close(self):
         self.closed = True
+
+
+class _CaptureStream(object):
+    def __init__(self):
+        self._buffer = ""
+        self.lines = []
+
+    def write(self, text):
+        self._buffer += text
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            if line:
+                self.lines.append(line)
+
+    def flush(self):
+        return None
 
 
 def _query_message(labels, qtype=DNS_QTYPE_A, qclass=DNS_QCLASS_IN, qdcount=1):
@@ -310,6 +328,38 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertTrue(fake_socket.closed)
         self.assertEqual(1, len(shutdown_records))
         self.assertEqual("stop_callback", shutdown_records[0]["reason_code"])
+
+    def test_lifecycle_logs_are_not_suppressed_by_logger_controls(self):
+        runtime_state = self._runtime_state(dns_edns_size=1232)
+        fake_socket = _FakeSocket()
+        capture = _CaptureStream()
+        logger = logging_runtime.RuntimeLogger(
+            level="info",
+            categories=("startup",),
+            sample_rate=0.0,
+            rate_limit_per_sec=0,
+            output="stdout",
+            stream=capture,
+        )
+        original_socket_factory = server_module.socket.socket
+
+        try:
+            server_module.socket.socket = lambda *_args, **_kwargs: fake_socket
+            exit_code = server_module.serve_runtime(
+                runtime_state,
+                logger.emit_record,
+                stop_requested=lambda: True,
+            )
+        finally:
+            server_module.socket.socket = original_socket_factory
+            logger.close()
+
+        records = [json.loads(line) for line in capture.lines]
+        classifications = [record.get("classification") for record in records]
+
+        self.assertEqual(0, exit_code)
+        self.assertIn("server_start", classifications)
+        self.assertIn("shutdown", classifications)
 
 
 if __name__ == "__main__":

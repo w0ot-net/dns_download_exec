@@ -3,6 +3,13 @@ from __future__ import absolute_import
 import argparse
 import sys
 
+from dnsdle.constants import DEFAULT_LOG_CATEGORIES_CSV
+from dnsdle.constants import DEFAULT_LOG_FILE
+from dnsdle.constants import DEFAULT_LOG_FOCUS
+from dnsdle.constants import DEFAULT_LOG_LEVEL
+from dnsdle.constants import DEFAULT_LOG_OUTPUT
+from dnsdle.constants import DEFAULT_LOG_RATE_LIMIT_PER_SEC
+from dnsdle.constants import DEFAULT_LOG_SAMPLE_RATE
 from dnsdle.state import StartupError
 
 
@@ -20,6 +27,13 @@ _LONG_OPTIONS = (
     "--target-os",
     "--client-out-dir",
     "--compression-level",
+    "--log-level",
+    "--log-categories",
+    "--log-sample-rate",
+    "--log-rate-limit-per-sec",
+    "--log-output",
+    "--log-file",
+    "--log-focus",
     "--help",
 )
 _KNOWN_LONG_OPTIONS = set(_LONG_OPTIONS)
@@ -82,6 +96,16 @@ def _build_parser():
     parser.add_argument("--target-os", default="windows,linux")
     parser.add_argument("--client-out-dir", default="./generated_clients")
     parser.add_argument("--compression-level", default="9")
+    parser.add_argument("--log-level", default=DEFAULT_LOG_LEVEL)
+    parser.add_argument("--log-categories", default=DEFAULT_LOG_CATEGORIES_CSV)
+    parser.add_argument("--log-sample-rate", default=DEFAULT_LOG_SAMPLE_RATE)
+    parser.add_argument(
+        "--log-rate-limit-per-sec",
+        default=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
+    )
+    parser.add_argument("--log-output", default=DEFAULT_LOG_OUTPUT)
+    parser.add_argument("--log-file", default=DEFAULT_LOG_FILE)
+    parser.add_argument("--log-focus", default=DEFAULT_LOG_FOCUS)
     return parser
 
 
