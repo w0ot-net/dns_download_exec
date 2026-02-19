@@ -136,11 +136,7 @@ def _parse_cname(msg, qid, qname_labels):
         rdata_off = off
         off += rdlen
         if rr_type == 5 and rr_class == 1 and rr_name == expected:
-            if cname is not None:
-                raise ValueError()
-            cname, ce = _decode_name(msg, rdata_off)
-            if ce != rdata_off + rdlen:
-                raise ValueError()
+            cname, _ce = _decode_name(msg, rdata_off)
     if cname is None:
         raise ValueError()
     return cname
