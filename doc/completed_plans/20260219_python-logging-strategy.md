@@ -197,4 +197,4 @@ Add a dedicated architecture logging document and update existing architecture d
       non-zero + invalid_config (pass)
     - valid run emitted startup records; full serve-loop start could not be
       validated in sandbox due UDP bind restriction (`[Errno 1] Operation not permitted`).
-- Execution commit hash: pending (added after commit creation).
+- Execution commit hash: a03d295 (added after commit creation).
