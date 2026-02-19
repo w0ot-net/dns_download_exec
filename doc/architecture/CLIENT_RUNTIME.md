@@ -40,12 +40,14 @@ Optional runtime inputs:
 - `--timeout seconds`
 - `--no-progress-timeout seconds`
 - `--max-rounds n`
+- `--query-interval ms` (milliseconds between queries; default `50`; `0` disables)
 - `--verbose` (enable progress and diagnostic logging to stderr)
 
 Validation rules:
 - `--psk` must be present and non-empty.
 - if `--out` is provided, it must be a valid non-empty path argument.
-- numeric overrides must parse and be positive.
+- numeric overrides must parse and be positive (except `--query-interval` which
+  allows `0`).
 - unsupported flags are usage errors.
 
 CLI validation failures exit with code `2`.
@@ -97,7 +99,7 @@ Per-iteration steps:
 4. build query name `<slice_token>.<file_tag>.<selected_base_domain>`
 5. send DNS query (include OPT when `DNS_EDNS_SIZE > 512`, default `1232`)
 6. wait for response subject to request timeout
-7. on timeout/no-response, update retry state and continue
+7. on timeout/no-response/TC, update retry state and continue
 8. on response, validate expected CNAME answer contract
 9. explicit DNS miss responses (for example, `NXDOMAIN` or no required CNAME
    answer) are contract violations
@@ -105,6 +107,8 @@ Per-iteration steps:
 11. verify crypto and decrypt slice
 12. store slice if new index; verify equality if duplicate index
 13. when a new index is stored, reset no-progress timer
+14. sleep `query_interval_ms` before the next iteration (skipped after retryable
+    errors, which have their own sleep)
 
 Loop termination failures:
 - max-rounds exhausted
@@ -121,6 +125,15 @@ Domain-selection policy:
 - on valid DNS responses (new slice or valid duplicate), keep `domain_index`
   unchanged
 - on restart, reset `domain_index` to `0`
+
+Query pacing:
+- after each successful query-response cycle (new slice or valid duplicate),
+  sleep `query_interval_ms` milliseconds before the next query
+- default interval is `50` ms (~20 queries/sec), overridable via
+  `--query-interval`
+- set to `0` to disable pacing (no inter-query delay)
+- retryable errors use their own sleep (`_retry_sleep`) and do not add the
+  pacing delay
 
 ---
 
@@ -150,7 +163,7 @@ For each received response:
 6. validate duplicate-slice consistency if index already stored
 
 Parity helper ownership:
-- `dnsdle/client_payload.py` enforces response-envelope rules (`ID`, `QR/TC`,
+- `dnsdle/client_payload.py` enforces response-envelope rules (`ID`, `QR`,
   opcode, `RCODE`, question echo), selects exactly one matching IN CNAME
   answer, validates payload record invariants, verifies MAC, and decrypts
   ciphertext. Envelope validation is recursive-DNS-compatible: `AA`, `RA`,
@@ -161,6 +174,8 @@ Parity helper ownership:
 
 Classification:
 - transport timeout/no-response: retryable
+- TC (truncated) response: retryable (triggers retry sleep and domain rotation,
+  same as timeout; recursive resolvers may set TC under load)
 - DNS miss response or parse/format mismatch: fatal (exit `4`)
 - crypto mismatch: fatal (exit `5`)
 

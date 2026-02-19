@@ -11,6 +11,7 @@ from dnsdle.constants import ALLOWED_TARGET_OS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
+from dnsdle.constants import GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
@@ -161,6 +162,7 @@ def _render_client_source(config, publish_item, target_os):
         "RETRY_SLEEP_JITTER_MS": int(
             GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
         ),
+        "QUERY_INTERVAL_MS": int(GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS),
     }
 
     source = build_client_template(target_os)

