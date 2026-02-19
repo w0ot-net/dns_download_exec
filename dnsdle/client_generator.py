@@ -478,6 +478,8 @@ def generate_client_artifacts(runtime_state):
                 "target_os": artifact["target_os"],
                 "publish_version": artifact["publish_version"],
                 "path": os.path.join(managed_dir, artifact["filename"]),
+                "source": artifact["source"],
+                "filename": artifact["filename"],
             }
         )
 

@@ -29,7 +29,82 @@ def _chunk_bytes(data, chunk_size):
     )
 
 
-def build_publish_items(config, max_ciphertext_slice_bytes):
+def _build_single_publish_item(
+    source_filename,
+    plaintext_bytes,
+    compression_level,
+    max_ciphertext_slice_bytes,
+    seen_plaintext_sha256,
+    seen_file_ids,
+    item_context,
+):
+    plaintext_sha256 = _sha256_hex(plaintext_bytes)
+    if plaintext_sha256 in seen_plaintext_sha256:
+        ctx = {"plaintext_sha256": plaintext_sha256}
+        ctx.update(item_context)
+        raise StartupError(
+            "publish",
+            "duplicate_plaintext_sha256",
+            "duplicate file content detected",
+            ctx,
+        )
+    seen_plaintext_sha256.add(plaintext_sha256)
+
+    try:
+        compressed_bytes = zlib.compress(plaintext_bytes, compression_level)
+    except Exception as exc:
+        ctx = dict(item_context)
+        raise StartupError(
+            "publish",
+            "compression_failed",
+            "compression failed: %s" % exc,
+            ctx,
+        )
+
+    if not compressed_bytes:
+        raise StartupError(
+            "publish",
+            "compression_empty",
+            "compression produced empty output",
+            dict(item_context),
+        )
+
+    publish_version = _sha256_hex(compressed_bytes)
+    file_id = _derive_file_id(publish_version)
+    if file_id in seen_file_ids:
+        ctx = {"file_id": file_id}
+        ctx.update(item_context)
+        raise StartupError(
+            "publish",
+            "file_id_collision",
+            "file_id collision detected across publish set",
+            ctx,
+        )
+    seen_file_ids.add(file_id)
+
+    compressed_size = len(compressed_bytes)
+    slice_bytes_by_index = _chunk_bytes(compressed_bytes, max_ciphertext_slice_bytes)
+    total_slices = len(slice_bytes_by_index)
+
+    return {
+        "file_id": file_id,
+        "publish_version": publish_version,
+        "plaintext_sha256": plaintext_sha256,
+        "compressed_size": compressed_size,
+        "total_slices": total_slices,
+        "slice_bytes_by_index": slice_bytes_by_index,
+        "crypto_profile": PROFILE_V1,
+        "wire_profile": PROFILE_V1,
+        "source_filename": source_filename,
+    }
+
+
+def build_publish_items(
+    config,
+    max_ciphertext_slice_bytes,
+    seen_plaintext_sha256=None,
+    seen_file_ids=None,
+):
     if max_ciphertext_slice_bytes <= 0:
         raise StartupError(
             "publish",
@@ -37,9 +112,12 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
             "max_ciphertext_slice_bytes must be positive",
         )
 
+    if seen_plaintext_sha256 is None:
+        seen_plaintext_sha256 = set()
+    if seen_file_ids is None:
+        seen_file_ids = set()
+
     publish_items = []
-    seen_plaintext_sha256 = set()
-    seen_file_ids = set()
 
     for file_index, path in enumerate(config.files):
         try:
@@ -53,62 +131,16 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                 {"file_index": file_index},
             )
 
-        plaintext_sha256 = _sha256_hex(plaintext_bytes)
-        if plaintext_sha256 in seen_plaintext_sha256:
-            raise StartupError(
-                "publish",
-                "duplicate_plaintext_sha256",
-                "duplicate file content detected",
-                {"plaintext_sha256": plaintext_sha256},
-            )
-        seen_plaintext_sha256.add(plaintext_sha256)
-
-        try:
-            compressed_bytes = zlib.compress(plaintext_bytes, config.compression_level)
-        except Exception as exc:
-            raise StartupError(
-                "publish",
-                "compression_failed",
-                "compression failed: %s" % exc,
-                {"file_index": file_index},
-            )
-
-        if not compressed_bytes:
-            raise StartupError(
-                "publish",
-                "compression_empty",
-                "compression produced empty output",
-                {"file_index": file_index},
-            )
-
-        publish_version = _sha256_hex(compressed_bytes)
-        file_id = _derive_file_id(publish_version)
-        if file_id in seen_file_ids:
-            raise StartupError(
-                "publish",
-                "file_id_collision",
-                "file_id collision detected across publish set",
-                {"file_id": file_id},
-            )
-        seen_file_ids.add(file_id)
-
-        compressed_size = len(compressed_bytes)
-        slice_bytes_by_index = _chunk_bytes(compressed_bytes, max_ciphertext_slice_bytes)
-        total_slices = len(slice_bytes_by_index)
-
-        publish_items.append(
-            {
-                "file_id": file_id,
-                "publish_version": publish_version,
-                "plaintext_sha256": plaintext_sha256,
-                "compressed_size": compressed_size,
-                "total_slices": total_slices,
-                "slice_bytes_by_index": slice_bytes_by_index,
-                "crypto_profile": PROFILE_V1,
-                "wire_profile": PROFILE_V1,
-                "source_filename": os.path.basename(path),
-            }
+        item = _build_single_publish_item(
+            source_filename=os.path.basename(path),
+            plaintext_bytes=plaintext_bytes,
+            compression_level=config.compression_level,
+            max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
+            seen_plaintext_sha256=seen_plaintext_sha256,
+            seen_file_ids=seen_file_ids,
+            item_context={"file_index": file_index},
         )
+        publish_items.append(item)
         if logger_enabled("debug"):
             log_event(
                 "debug",
@@ -117,14 +149,69 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                     "phase": "publish",
                     "classification": "diagnostic",
                     "reason_code": "publish_item_built",
-                    "file_id": file_id,
-                    "publish_version": publish_version,
+                    "file_id": item["file_id"],
+                    "publish_version": item["publish_version"],
                 },
                 context_fn=lambda: {
-                    "plaintext_sha256": plaintext_sha256,
-                    "compressed_size": compressed_size,
-                    "total_slices": total_slices,
+                    "plaintext_sha256": item["plaintext_sha256"],
+                    "compressed_size": item["compressed_size"],
+                    "total_slices": item["total_slices"],
                     "file_index": file_index,
+                },
+            )
+
+    return publish_items
+
+
+def build_publish_items_from_sources(
+    sources,
+    compression_level,
+    max_ciphertext_slice_bytes,
+    seen_plaintext_sha256=None,
+    seen_file_ids=None,
+):
+    if max_ciphertext_slice_bytes <= 0:
+        raise StartupError(
+            "publish",
+            "budget_unusable",
+            "max_ciphertext_slice_bytes must be positive",
+        )
+
+    if seen_plaintext_sha256 is None:
+        seen_plaintext_sha256 = set()
+    if seen_file_ids is None:
+        seen_file_ids = set()
+
+    publish_items = []
+
+    for source_index, (source_filename, plaintext_bytes) in enumerate(sources):
+        item = _build_single_publish_item(
+            source_filename=source_filename,
+            plaintext_bytes=plaintext_bytes,
+            compression_level=compression_level,
+            max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
+            seen_plaintext_sha256=seen_plaintext_sha256,
+            seen_file_ids=seen_file_ids,
+            item_context={"source_filename": source_filename},
+        )
+        publish_items.append(item)
+        if logger_enabled("debug"):
+            log_event(
+                "debug",
+                "publish",
+                {
+                    "phase": "publish",
+                    "classification": "diagnostic",
+                    "reason_code": "publish_item_built",
+                    "file_id": item["file_id"],
+                    "publish_version": item["publish_version"],
+                },
+                context_fn=lambda: {
+                    "plaintext_sha256": item["plaintext_sha256"],
+                    "compressed_size": item["compressed_size"],
+                    "total_slices": item["total_slices"],
+                    "source_index": source_index,
+                    "source_filename": source_filename,
                 },
             )
 
