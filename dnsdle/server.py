@@ -27,13 +27,11 @@ def _labels_is_suffix(suffix_labels, full_labels):
 
 
 def _selected_domain(config, qname_labels):
-    domains = tuple(config.domains)
-    labels_by_domain = tuple(config.domain_labels_by_domain)
-    for index, labels in enumerate(labels_by_domain):
+    for index, labels in enumerate(config.domain_labels_by_domain):
         if _labels_is_suffix(labels, qname_labels):
             prefix_len = len(qname_labels) - len(labels)
-            return domains[index], labels, tuple(qname_labels[:prefix_len])
-    return None, None, None
+            return config.domains[index], tuple(qname_labels[:prefix_len])
+    return None, None
 
 
 def _build_log(classification, reason_code, context=None):
@@ -84,6 +82,38 @@ def _invalid_additional_count(config, arcount):
     return arcount > 1
 
 
+def _query_section_counts(request):
+    return {
+        "qdcount": request["qdcount"],
+        "ancount": request["ancount"],
+        "nscount": request["nscount"],
+        "arcount": request["arcount"],
+    }
+
+
+def _envelope_miss_reason(request, config):
+    if request["flags"] & DNS_FLAG_QR:
+        return "invalid_query_flags", {"flags": request["flags"]}
+    if request["opcode"] != DNS_OPCODE_QUERY:
+        return "unsupported_opcode", {"opcode": request["opcode"]}
+    if request["qdcount"] != 1 or request["ancount"] != 0 or request["nscount"] != 0:
+        return "invalid_query_section_counts", _query_section_counts(request)
+    if _invalid_additional_count(config, request["arcount"]):
+        return "invalid_additional_count", {
+            "arcount": request["arcount"],
+            "dns_edns_size": config.dns_edns_size,
+        }
+    return None, None
+
+
+def _mapped_request_context(selected_domain, file_tag, slice_token):
+    return {
+        "selected_base_domain": selected_domain,
+        "file_tag": file_tag,
+        "slice_token": slice_token,
+    }
+
+
 def handle_request_message(runtime_state, request_bytes):
     config = runtime_state.config
     try:
@@ -105,54 +135,9 @@ def handle_request_message(runtime_state, request_bytes):
             },
         )
 
-    if request["flags"] & DNS_FLAG_QR:
-        return _miss_response(
-            request,
-            config,
-            "invalid_query_flags",
-            {"flags": request["flags"]},
-        )
-    if request["opcode"] != DNS_OPCODE_QUERY:
-        return _miss_response(
-            request,
-            config,
-            "unsupported_opcode",
-            {"opcode": request["opcode"]},
-        )
-    if request["qdcount"] != 1:
-        return _miss_response(
-            request,
-            config,
-            "invalid_query_section_counts",
-            {
-                "qdcount": request["qdcount"],
-                "ancount": request["ancount"],
-                "nscount": request["nscount"],
-                "arcount": request["arcount"],
-            },
-        )
-    if request["ancount"] != 0 or request["nscount"] != 0:
-        return _miss_response(
-            request,
-            config,
-            "invalid_query_section_counts",
-            {
-                "qdcount": request["qdcount"],
-                "ancount": request["ancount"],
-                "nscount": request["nscount"],
-                "arcount": request["arcount"],
-            },
-        )
-    if _invalid_additional_count(config, request["arcount"]):
-        return _miss_response(
-            request,
-            config,
-            "invalid_additional_count",
-            {
-                "arcount": request["arcount"],
-                "dns_edns_size": config.dns_edns_size,
-            },
-        )
+    miss_reason, miss_context = _envelope_miss_reason(request, config)
+    if miss_reason is not None:
+        return _miss_response(request, config, miss_reason, miss_context)
 
     question = request.get("question")
     if question is None:
@@ -169,7 +154,7 @@ def handle_request_message(runtime_state, request_bytes):
         )
 
     qname_labels = question["qname_labels"]
-    selected_domain, selected_domain_labels, prefix_labels = _selected_domain(config, qname_labels)
+    selected_domain, prefix_labels = _selected_domain(config, qname_labels)
     if selected_domain is None:
         return _miss_response(request, config, "unknown_domain", None)
 
@@ -201,19 +186,11 @@ def handle_request_message(runtime_state, request_bytes):
 
     slice_token = prefix_labels[0]
     file_tag = prefix_labels[1]
+    request_context = _mapped_request_context(selected_domain, file_tag, slice_token)
     key = (file_tag, slice_token)
     identity_value = runtime_state.lookup_by_key.get(key)
     if identity_value is None:
-        return _miss_response(
-            request,
-            config,
-            "mapping_not_found",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-            },
-        )
+        return _miss_response(request, config, "mapping_not_found", request_context)
 
     file_id, publish_version, slice_index = identity_value
     if logger_enabled("debug", "server"):
@@ -236,41 +213,17 @@ def handle_request_message(runtime_state, request_bytes):
     identity = (file_id, publish_version)
     slice_table = runtime_state.slice_bytes_by_identity.get(identity)
     if slice_table is None:
-        return _runtime_fault_response(
-            request,
-            config,
-            "identity_missing",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-            },
-        )
+        return _runtime_fault_response(request, config, "identity_missing", request_context)
     if slice_index < 0 or slice_index >= len(slice_table):
         return _runtime_fault_response(
             request,
             config,
             "slice_index_out_of_bounds",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-                "slice_index": slice_index,
-                "slice_count": len(slice_table),
-            },
+            dict(request_context, slice_index=slice_index, slice_count=len(slice_table)),
         )
     publish_meta = runtime_state.publish_meta_by_identity.get(identity)
     if publish_meta is None:
-        return _runtime_fault_response(
-            request,
-            config,
-            "publish_meta_missing",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-            },
-        )
+        return _runtime_fault_response(request, config, "publish_meta_missing", request_context)
 
     total_slices, compressed_size = publish_meta
     if total_slices != len(slice_table):
@@ -278,13 +231,7 @@ def handle_request_message(runtime_state, request_bytes):
             request,
             config,
             "slice_table_length_mismatch",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-                "total_slices": total_slices,
-                "slice_count": len(slice_table),
-            },
+            dict(request_context, total_slices=total_slices, slice_count=len(slice_table)),
         )
 
     slice_bytes = slice_table[slice_index]
@@ -318,12 +265,7 @@ def handle_request_message(runtime_state, request_bytes):
             request,
             config,
             "encode_failure",
-            {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-                "message": str(exc),
-            },
+            dict(request_context, message=str(exc)),
         )
 
     return response, _build_log(
