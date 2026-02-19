@@ -91,17 +91,18 @@ Loop condition:
 Per-iteration steps:
 1. choose next missing index
 2. map index to `slice_token`
-3. build query name `<slice_token>.<file_tag>.<base_domain>`
-4. send DNS query (include OPT when `DNS_EDNS_SIZE > 512`, default `1232`)
-5. wait for response subject to request timeout
-6. on timeout/no-response, update retry state and continue
-7. on response, validate expected CNAME answer contract
-8. explicit DNS miss responses (for example, `NXDOMAIN` or no required CNAME
+3. select domain suffix from `BASE_DOMAINS` using deterministic index policy
+4. build query name `<slice_token>.<file_tag>.<selected_base_domain>`
+5. send DNS query (include OPT when `DNS_EDNS_SIZE > 512`, default `1232`)
+6. wait for response subject to request timeout
+7. on timeout/no-response, update retry state and continue
+8. on response, validate expected CNAME answer contract
+9. explicit DNS miss responses (for example, `NXDOMAIN` or no required CNAME
    answer) are contract violations
-9. decode CNAME payload record
-10. verify crypto and decrypt slice
-11. store slice if new index; verify equality if duplicate index
-12. when a new index is stored, reset no-progress timer
+10. decode CNAME payload record
+11. verify crypto and decrypt slice
+12. store slice if new index; verify equality if duplicate index
+13. when a new index is stored, reset no-progress timer
 
 Loop termination failures:
 - max-rounds exhausted
@@ -109,6 +110,15 @@ Loop termination failures:
 - no-progress timeout reached
 
 These failures exit with code `3`.
+
+Domain-selection policy:
+- initialize `domain_index = 0` at process start
+- each request uses `BASE_DOMAINS[domain_index]`
+- on retryable transport events only, advance:
+  `domain_index = (domain_index + 1) % len(BASE_DOMAINS)`
+- on valid DNS responses (new slice or valid duplicate), keep `domain_index`
+  unchanged
+- on restart, reset `domain_index` to `0`
 
 ---
 

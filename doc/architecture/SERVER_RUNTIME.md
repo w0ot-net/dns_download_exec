@@ -34,7 +34,8 @@ At startup, server must:
 1. Parse CLI config.
 2. Validate all config constraints from `doc/architecture/CONFIG.md`.
 3. Validate every input file exists and is readable.
-4. Validate deterministic mapping inputs (`mapping_seed`, tag/token bounds).
+4. Validate deterministic mapping inputs (`mapping_seed`, tag/token bounds) and
+   longest-domain-derived name constraints.
 5. Validate CNAME payload budget can support at least one ciphertext byte.
 
 Any failure is fatal startup error and process exits non-zero before binding
@@ -79,7 +80,7 @@ Changing any of the following may break old clients:
 - implementation profile (python implementation/version and zlib runtime
   version; see `doc/architecture/PUBLISH_PIPELINE.md`)
 - relevant mapping/wire config (`file_tag_len`, `dns_max_label_len`,
-  `domain`, `response_label`, profile values)
+  configured domain set, `response_label`, profile values)
 
 ---
 
@@ -115,11 +116,12 @@ equivalence for wire behavior and invariants.
 
 For each parseable request:
 1. Parse DNS envelope and question.
-2. Validate qtype/qclass/qname shape for v1 contract.
-3. Extract `slice_token`, `file_tag`, `base_domain`.
-4. Resolve mapping key to canonical slice identity.
-5. Build binary slice record.
-6. Encode CNAME target and write response.
+2. Match one configured base-domain suffix.
+3. Validate qtype/qclass/qname shape for v1 contract.
+4. Extract `slice_token`, `file_tag`, and matched `base_domain`.
+5. Resolve mapping key to canonical slice identity.
+6. Build binary slice record.
+7. Encode CNAME target using matched `base_domain` and write response.
 
 Response behavior must follow `doc/architecture/ERRORS_AND_INVARIANTS.md`:
 - valid mapped request -> `NOERROR` + one CNAME answer
@@ -149,7 +151,7 @@ Runtime must not mutate published slice bytes.
 ## Observability
 
 Minimum runtime logs:
-- startup summary (domain, file count, listen address)
+- startup summary (domains, file count, listen address)
 - per-file publish summary (`file_id`, `file_tag`, `total_slices`,
   ciphertext slice budget)
 - request outcomes (`served`, `miss`, `runtime_fault`)

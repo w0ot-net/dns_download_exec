@@ -29,33 +29,13 @@ def _payload_labels_for_chars(char_count, label_cap):
 
 def _domain_labels(config):
     labels = getattr(config, "longest_domain_labels", None)
-    if labels is not None:
-        return tuple(labels)
-    labels = getattr(config, "domain_labels", None)
-    if labels is not None:
-        return tuple(labels)
-    raise StartupError(
-        "budget",
-        "budget_unusable",
-        "config does not expose domain labels",
-    )
-
-
-def _domain_metadata(config, resolved_domain_labels):
-    domains = getattr(config, "domains", None)
-    if domains is None:
-        domain = getattr(config, "domain", None)
-        domains = (domain,) if domain is not None else ()
-
-    longest_domain = getattr(config, "longest_domain", None)
-    if longest_domain is None:
-        longest_domain = domains[0] if domains else None
-
-    longest_domain_wire_len = getattr(config, "longest_domain_wire_len", None)
-    if longest_domain_wire_len is None:
-        longest_domain_wire_len = _dns_name_wire_length(resolved_domain_labels)
-
-    return tuple(domains), longest_domain, longest_domain_wire_len
+    if labels is None:
+        raise StartupError(
+            "budget",
+            "budget_unusable",
+            "config does not expose longest_domain_labels",
+        )
+    return tuple(labels)
 
 
 def _validate_query_token_len(config, query_token_len):
@@ -151,12 +131,10 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
         query_token_len,
         _dns_name_wire_length(chosen_payload_labels + suffix_labels),
     )
-    domains, longest_domain, longest_domain_wire_len = _domain_metadata(config, domain_labels)
-
     return max_ciphertext_slice_bytes, {
-        "domains": domains,
-        "longest_domain": longest_domain,
-        "longest_domain_wire_len": longest_domain_wire_len,
+        "domains": tuple(config.domains),
+        "longest_domain": config.longest_domain,
+        "longest_domain_wire_len": config.longest_domain_wire_len,
         "max_payload_chars": max_payload_chars,
         "max_record_bytes": max_record_bytes,
         "binary_record_overhead": BINARY_RECORD_OVERHEAD,

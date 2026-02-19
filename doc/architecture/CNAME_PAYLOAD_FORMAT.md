@@ -41,12 +41,12 @@ encodes exactly one slice record.
 
 The CNAME target has this shape:
 
-`<payload_labels>.<response_label>.<base_domain>`
+`<payload_labels>.<response_label>.<selected_base_domain>`
 
 Where:
 - `<payload_labels>` is base32 text for the binary slice record
 - `<response_label>` is a fixed discriminator label for responses
-- `<base_domain>` is operator configured
+- `<selected_base_domain>` is one configured domain from `domains`
 
 `<response_label>` must never be valid as a client `slice_token` so resolver
 follow-up traffic cannot be misparsed as client slice requests.
@@ -104,10 +104,12 @@ Encoding steps:
 2. Strip padding (`=`) characters.
 3. Lowercase output text.
 4. Split into labels of at most `effective_label_cap` characters.
-5. Append `.<response_label>.<base_domain>`.
+5. Append `.<response_label>.<selected_base_domain>` where selected domain is
+   the matched request suffix from configured `domains`.
 
 Decoding steps:
-1. Validate suffix `.<response_label>.<base_domain>`.
+1. Validate suffix `.<response_label>.<selected_base_domain>` for one
+   configured domain.
 2. Join payload labels.
 3. Base32-decode (accept lowercase form).
 4. Parse binary record and validate invariants.
@@ -126,14 +128,15 @@ Inputs:
 - maximum DNS name length (255 bytes including label lengths)
 - configured `effective_label_cap` (16..63)
 - configured `dns_edns_size` (default `1232`)
-- fixed suffix length for `.<response_label>.<base_domain>`
+- fixed suffix length for `.<response_label>.<selected_base_domain>`
+  using longest configured domain
 - DNS message envelope terms (header, echoed question, one CNAME answer,
   optional OPT additional RR)
 - binary record overhead (4-byte header + 16-byte MAC)
 
 Startup algorithm:
 1. Compute max payload base32 characters that fit remaining CNAME target-name
-   budget.
+   budget under longest configured domain.
 2. Compute packet-size estimate for slice responses and enforce:
    - packet limit is `dns_edns_size` when `dns_edns_size > 512`
    - packet limit is `512` when `dns_edns_size = 512` (classic mode)
@@ -191,7 +194,7 @@ Required property:
 - same `(file_tag, slice_token)` in one server process always yields the same
   CNAME target text and TTL.
 - with unchanged mapping, crypto, and wire inputs (`mapping_seed`,
-  `publish_version`, `compression_level`, `psk`, `base_domain`,
+  `publish_version`, `compression_level`, `psk`, configured domain set,
   `response_label`,
   `dns_max_label_len`, profile ids, `ttl`, and implementation profile from
   `doc/architecture/PUBLISH_PIPELINE.md`), derived `(file_tag, slice_token)`

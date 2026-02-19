@@ -25,7 +25,8 @@ Required validated inputs:
 - `files` list from `doc/architecture/CONFIG.md`
 - `compression_level` (`0..9`)
 - mapping config (`mapping_seed`, `file_tag_len`, `dns_max_label_len`)
-- wire config (`domain`, `response_label`, `dns_edns_size`)
+- wire config (`domains`, `longest_domain_labels`, `response_label`,
+  `dns_edns_size`)
 - `max_ciphertext_slice_bytes` from
   `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - fixed profile ids (`crypto_profile=v1`, `wire_profile=v1`)
@@ -196,6 +197,8 @@ Required properties:
   `(mapping_seed, publish_version)`
 - token materialization additionally depends on fixed length constraints for
   the launch (`file_tag_len`, `dns_max_label_len`, DNS name limits)
+- request/QNAME constraints must be satisfiable under `longest_domain_labels`
+  so every configured domain is valid at runtime
 - mapping identity does not depend on file path, startup time, or other hosted
   files
 - final materialized token lengths may depend on deterministic global-collision

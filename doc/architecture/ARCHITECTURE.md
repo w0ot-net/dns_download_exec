@@ -28,9 +28,9 @@ The system uses a simple DNS request/response flow:
 ```
 Generated Client                                   DNSDL Server
 ----------------                                   ------------
-query: <slice_token>.<file_tag>.<domain> ---->    parse + validate query
-query: <slice_token>.<file_tag>.<domain> ---->    read canonical slice bytes
-query: <slice_token>.<file_tag>.<domain> ---->    encode CNAME payload
+query: <slice_token>.<file_tag>.<selected_base_domain> --> parse + validate query
+query: <slice_token>.<file_tag>.<selected_base_domain> --> read canonical slice bytes
+query: <slice_token>.<file_tag>.<selected_base_domain> --> encode CNAME payload
                                                   return CNAME response
 ```
 
@@ -46,7 +46,7 @@ Client behavior:
 ```
 ┌─────────────────────────────────────────────┐
 │ CLI / Config                                │
-│ (domain, files, bind addr, crypto options)  │
+│ (domains, files, bind addr, crypto options) │
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────┴──────────────────────┐
@@ -72,16 +72,16 @@ Client behavior:
 ### 1. CLI and Config
 
 Primary launch form:
-- `dnsdle.py --domain example.com --files /etc/passwd,/tmp/a.bin --psk <secret>`
+- `dnsdle.py --domains example.com,hello.com --files /etc/passwd,/tmp/a.bin --psk <secret>`
 
 Responsibilities:
 - parse and validate operator input
-- normalize domain and file list
+- normalize domain set and file list
 - reject empty or duplicate entries
 - build immutable runtime config
 
 Fail-fast invariants:
-- domain must be valid for DNS label composition
+- each configured domain must be valid for DNS label composition
 - all input files must exist and be readable before server starts
 - PSK must be present and non-empty before server starts
 - configuration is immutable after startup
@@ -118,7 +118,7 @@ Detailed pipeline contract:
 
 Responsibilities:
 - parse QNAME into routing fields
-- validate domain suffix and mapping tokens
+- validate configured-domain suffix and mapping tokens
 - fetch canonical slice payload
 - encode payload into CNAME target
 - return standards-compliant DNS response
@@ -136,7 +136,7 @@ Fail-fast behavior:
 At server startup, generate Python clients per hosted file and target OS.
 
 Generated client embeds:
-- target domain
+- target domain set
 - target OS profile
 - deterministic `file_tag`
 - file identity metadata
@@ -175,7 +175,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 ### Startup Flow
 
-1. Operator starts server with domain, file list, and PSK.
+1. Operator starts server with domains, file list, and PSK.
 2. Server validates all inputs.
 3. Server builds in-memory publish artifacts for each file.
 4. Server generates downloader client artifacts per file and target OS.

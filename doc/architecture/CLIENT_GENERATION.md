@@ -21,7 +21,7 @@ for one target OS profile.
 ## Inputs
 
 For each published file, generator input is:
-- `base_domain`
+- `base_domains` (canonical ordered list)
 - `mapping_seed`
 - `file_tag`
 - `file_id`
@@ -86,7 +86,7 @@ multi-file layouts are not allowed in v1.
 ## Embedded Constants Contract
 
 The following constants are required in generated code:
-- `BASE_DOMAIN`
+- `BASE_DOMAINS` (ordered list)
 - `FILE_TAG`
 - `FILE_ID`
 - `PUBLISH_VERSION`
@@ -136,7 +136,8 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 3. While missing set not empty:
    - choose next index from missing set (strategy is implementation detail)
    - map `index -> slice_token`
-   - query `<slice_token>.<file_tag>.<base_domain>`
+   - select domain suffix from `BASE_DOMAINS` by fixed deterministic policy
+   - query `<slice_token>.<file_tag>.<selected_base_domain>`
    - parse and validate response format
    - verify MAC/decrypt with embedded metadata
    - store bytes for index if first valid receipt
@@ -151,6 +152,13 @@ Required semantics:
 - out-of-order receive accepted
 - duplicate responses accepted only if identical
 - any parse/verification violation is fatal for that run
+- domain-selection policy for v1:
+  - initialize `domain_index = 0` at process start
+  - use `BASE_DOMAINS[domain_index]` for each request
+  - advance on retryable transport events only:
+    `domain_index = (domain_index + 1) % len(BASE_DOMAINS)`
+  - keep index unchanged on valid DNS responses
+  - reset to `0` on process restart
 
 ---
 

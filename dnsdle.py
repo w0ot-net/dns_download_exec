@@ -34,7 +34,8 @@ def main(argv=None):
         {
             "classification": "startup_ok",
             "phase": "startup",
-            "domain": config.domain,
+            "domains": list(config.domains),
+            "longest_domain": config.longest_domain,
             "file_count": len(runtime_state.publish_items),
             "max_ciphertext_slice_bytes": runtime_state.max_ciphertext_slice_bytes,
             "dns_edns_size": config.dns_edns_size,

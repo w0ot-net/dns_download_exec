@@ -31,6 +31,7 @@ A request miss is a valid DNS request that does not map to a served slice.
 Misses are not process-fatal.
 
 Examples:
+- unknown/unconfigured base domain
 - unknown `file_tag`
 - unknown `slice_token` under a known `file_tag`
 - unsupported qname shape for mapping
@@ -79,7 +80,8 @@ For parseable DNS requests in v1:
 
 2. **CNAME-chase follow-up request**
 - Detection: qname matches
-  `<payload_labels>.<response_label>.<base_domain>` with qtype `A`
+  `<payload_labels>.<response_label>.<selected_base_domain>` with qtype `A`,
+  where selected base domain is configured
 - Response: `RCODE=NOERROR`
 - Answer section: exactly one IN `A` answer
 - TTL: configured `ttl`
@@ -107,8 +109,8 @@ No fallback remap is allowed for any miss path.
 For each incoming request:
 1. Parse DNS message envelope.
 2. Classify follow-up shape
-   (`<payload_labels>.<response_label>.<base_domain>`, qtype `A`) before
-   slice-mapping evaluation.
+   (`<payload_labels>.<response_label>.<selected_base_domain>`, qtype `A`) for
+   configured domains before slice-mapping evaluation.
 3. Validate qname/class/qtype shape for v1 slice flow.
 4. Validate suffix and mapping fields (`slice_token`, `file_tag`).
 5. Resolve mapping to canonical slice identity.
@@ -173,14 +175,15 @@ Retry policy:
    when
    mapping materialization constraints are unchanged.
 3. Mapping keys resolve to exactly one canonical slice identity.
-4. No silent fallback to other file/version/index is allowed.
+4. Base domain is a route qualifier and is not part of mapping identity.
+5. No silent fallback to other file/version/index is allowed.
 
 ### Slice Serving
 
 1. Same mapped slice identity always yields the same CNAME payload text within
    a running process.
 2. With unchanged mapping, crypto, and wire inputs (`mapping_seed`,
-   `publish_version`, `compression_level`, `psk`, `base_domain`,
+   `publish_version`, `compression_level`, `psk`, configured domain set,
    `response_label`, `dns_max_label_len`, profile ids, `ttl`, and
    implementation profile from `doc/architecture/PUBLISH_PIPELINE.md`), payload
    identity is stable across restarts.

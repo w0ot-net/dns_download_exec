@@ -74,7 +74,7 @@ def _max_token_len_for_file(config, file_tag):
         max_candidate = DIGEST_TEXT_CAPACITY
 
     for token_len in range(1, max_candidate + 1):
-        labels = ("a" * token_len, file_tag) + tuple(config.domain_labels)
+        labels = ("a" * token_len, file_tag) + tuple(config.longest_domain_labels)
         if _dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
             max_by_qname = token_len
 

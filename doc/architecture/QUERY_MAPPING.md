@@ -65,16 +65,16 @@ Invariant:
 
 v1 request name:
 
-`<slice_token>.<file_tag>.<base_domain>`
+`<slice_token>.<file_tag>.<selected_base_domain>`
 
 Where:
 - `slice_token` is opaque and deterministic
 - `file_tag` is opaque and deterministic
-- `base_domain` is operator configured
+- `selected_base_domain` is one configured domain from `domains`
 
 Normalization rules:
 - lowercase only
-- no trailing dot in stored `base_domain`
+- no trailing dot in stored configured domains
 - DNS label and full-name length limits must always be enforced
 
 Configurable label cap:
@@ -135,7 +135,9 @@ Length selection:
 Length constraints:
 - `len(file_tag) <= dns_max_label_len`
 - `len(slice_token) <= dns_max_label_len`
-- full QNAME must satisfy DNS name-length limits
+- full QNAME must satisfy DNS name-length limits for every configured domain
+- startup sizing uses longest configured domain (`longest_domain_labels`) as the
+  hard bound for all request-name capacity checks
 - base32 text length from one SHA-256 digest is 52 chars; if required token
   length exceeds available digest text length, startup fails
 
@@ -197,7 +199,7 @@ Each generated client is file-specific and embeds:
 Download loop behavior:
 - pick missing `slice_index`
 - map to `slice_token`
-- query `<slice_token>.<file_tag>.<base_domain>`
+- query `<slice_token>.<file_tag>.<selected_base_domain>`
 - verify returned slice against embedded metadata and crypto rules
 
 This supports out-of-order fetch and repeat retries without exposing index
@@ -208,7 +210,8 @@ values in QNAMEs.
 ## Server Lookup Flow
 
 For each query:
-1. Parse labels and match `<slice_token>.<file_tag>.<base_domain>`.
+1. Parse labels and match `<slice_token>.<file_tag>.<selected_base_domain>`
+   where selected domain is in configured `domains`.
 2. Reject if `file_tag` is unknown for current process.
 3. Resolve composite key `(file_tag, slice_token)` in deterministic mapping
    table.
@@ -248,7 +251,7 @@ This mapping scheme reduces direct metadata leakage in query names:
 It does not hide:
 - total query count
 - timing patterns
-- target base domain
+- target configured domain set
 - long-term linkability when `mapping_seed` stays constant
 
 To reduce cross-run linkability, rotate `mapping_seed`.

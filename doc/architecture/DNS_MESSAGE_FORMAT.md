@@ -37,7 +37,8 @@ Generated client emits requests with:
 - `ARCOUNT = 0` only when `dns_edns_size=512` (EDNS disabled)
 - `QCLASS = IN`
 - `QTYPE = A` (fixed in v1)
-- `QNAME = <slice_token>.<file_tag>.<base_domain>`
+- `QNAME = <slice_token>.<file_tag>.<selected_base_domain>`
+  where selected base domain is one configured domain from `domains`
 
 Query flags:
 - `RD = 1`
@@ -88,7 +89,8 @@ Answer RR:
 
 v1 requires DNS name compression for served CNAME responses:
 - answer owner name uses pointer to question qname
-- CNAME target suffix uses pointer to base-domain location in question qname
+- CNAME target suffix uses pointer to selected-base-domain location in question
+  qname
   when constructing compressed RDATA form
 
 Reason:
@@ -96,7 +98,7 @@ Reason:
 
 Startup invariant:
 - if required compression-pointer layout cannot be constructed safely for the
-  configured domain/suffix rules, startup fails.
+  longest configured domain/suffix rules, startup fails.
 
 Parser safety:
 - name decoder must detect invalid pointers and pointer loops.
@@ -108,7 +110,8 @@ Parser safety:
 Recursive resolvers may issue follow-up A queries for CNAME targets.
 
 Detection:
-- request qname matches `<payload_labels>.<response_label>.<base_domain>`
+- request qname matches `<payload_labels>.<response_label>.<selected_base_domain>`
+  where selected base domain is configured
 - request qtype is `A`
 
 Follow-up response behavior:

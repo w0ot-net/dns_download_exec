@@ -209,3 +209,34 @@ After implementation:
   request-handler implementation to enforce cross-domain routing contract.
 - Plan scope remains executable in current codebase by limiting runtime-routing
   outcomes to documented contract + startup-state prerequisites.
+
+## Execution Notes
+- Implemented multi-domain startup/config contract in `dnsdle/config.py`:
+  added required `--domains`, normalize-then-reject duplicate semantics,
+  non-overlap checks, canonical domain ordering, longest-domain derivations,
+  and explicit failure for removed legacy `--domain`.
+- Updated startup/core derivations to clamp against longest configured domain:
+  `dnsdle/budget.py` and `dnsdle/mapping.py` now use
+  `longest_domain_labels`; startup summary output in `dnsdle.py` now reports
+  `domains` and `longest_domain`.
+- Updated architecture contracts to the multi-domain model across affected docs
+  (`CONFIG`, `ARCHITECTURE`, `QUERY_MAPPING`, `PUBLISH_PIPELINE`,
+  `CNAME_PAYLOAD_FORMAT`, `DNS_MESSAGE_FORMAT`, `SERVER_RUNTIME`,
+  `CLIENT_GENERATION`, `CLIENT_RUNTIME`, `ERRORS_AND_INVARIANTS`).
+- Validation matrix execution:
+  - Case 1: baseline `--domains example.com,hello.com` startup succeeded.
+  - Case 2: duplicate normalized domain rejected with `duplicate_domain`.
+  - Case 3: overlapping domains rejected with `overlapping_domains`.
+  - Case 4: docs classify unknown/unconfigured base domain as deterministic miss.
+  - Case 5: longest-domain clamp enforced; 220-char domain case failed startup
+    with `budget_unusable` (`max_ciphertext_slice_bytes is not positive`).
+  - Case 6: docs/state contract defines base domain as route qualifier, not
+    mapping identity.
+  - Case 7: canonical ordering deterministic; reversed CSV order produced
+    byte-identical startup logs.
+  - Case 8: contract-only deterministic `BASE_DOMAINS` rotation/reset policy
+    defined in client architecture/runtime docs.
+- Deviation: `dnsdle/state.py` and `dnsdle/__init__.py` required no code
+  changes because existing startup-state wiring already carries updated config
+  and budget structures after config/budget/module updates.
+- Execution commit hash: pending (added after commit creation).

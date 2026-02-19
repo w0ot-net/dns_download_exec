@@ -19,7 +19,7 @@ Configuration is immutable after server startup validation completes.
 
 ### Required
 
-- `domain` (`--domain`): DNS base domain for hosted queries.
+- `domains` (`--domains`): comma-separated DNS base domains for hosted queries.
 - `files` (`--files`): comma-separated file paths to publish.
 - `psk` (`--psk`): non-empty shared secret for v1 crypto profile.
 
@@ -93,13 +93,20 @@ These are computed at startup from validated config and file metadata.
 
 - `plaintext_sha256`: content identity hash for source plaintext bytes.
 - `publish_version`: publish identity hash for compressed bytes.
+- `domains`: canonical ordered tuple of normalized base domains.
+- `domain_labels_by_domain`: canonical ordered tuple of label-tuples aligned to
+  `domains`.
+- `longest_domain`: canonical domain string with maximum DNS wire length for the
+  launch (ties broken by canonical domain order).
+- `longest_domain_labels`: labels for `longest_domain`.
+- `longest_domain_wire_len`: DNS wire length for `longest_domain_labels`.
 - `file_tag`: deterministic identifier derived from
   `(mapping_seed, publish_version)` with length `file_tag_len`.
 - `slice_token_len`: shortest collision-safe token length satisfying:
   - total-slice coverage for the file
   - global `(file_tag, slice_token)` uniqueness for the launch
   - `slice_token_len <= dns_max_label_len`
-  - DNS name length constraints with `domain` and `file_tag`
+  - DNS name length constraints with `longest_domain` and `file_tag`
   - digest-encoding capacity from
     `doc/architecture/QUERY_MAPPING.md`
 - `max_ciphertext_slice_bytes`: from CNAME payload size budget per
@@ -113,8 +120,15 @@ Startup fails if any derived value cannot be computed within constraints.
 
 ### Domain and Labels
 
-- `domain` must normalize to lowercase and strip trailing dot.
-- `domain` must satisfy DNS label syntax and full-name length limits.
+- `domains` must parse as a comma-separated list with no empty entries.
+- each domain in `domains` must normalize to lowercase and strip trailing dot.
+- each normalized domain must satisfy DNS label syntax and full-name length
+  limits.
+- duplicate normalized domains are startup errors (no silent dedupe).
+- configured domains must be non-overlapping on label boundaries (for example,
+  `example.com` and `sub.example.com` together are invalid).
+- canonical stored `domains` order is ascending ASCII lexicographic order of
+  normalized domain strings.
 - `response_label` must satisfy DNS label syntax.
 - `response_label` must contain at least one non-token character so it cannot
   be parsed as a `slice_token` from the `[a-z0-9]` alphabet.
