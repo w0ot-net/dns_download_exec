@@ -22,6 +22,14 @@ class _CaptureStream(object):
         return None
 
 
+class _BrokenStream(object):
+    def write(self, _text):
+        raise IOError("write failed")
+
+    def flush(self):
+        raise IOError("flush failed")
+
+
 class LoggingRuntimeTests(unittest.TestCase):
     def test_context_fn_not_evaluated_when_disabled(self):
         capture = _CaptureStream()
@@ -145,6 +153,66 @@ class LoggingRuntimeTests(unittest.TestCase):
         self.assertEqual("[redacted]", record["psk"])
         self.assertEqual("[redacted]", record["payload_bytes"])
         self.assertEqual("[redacted]", record["user_key"])
+
+    def test_required_event_write_failure_raises(self):
+        logger = logging_runtime.RuntimeLogger(
+            level="info",
+            categories=("startup",),
+            sample_rate=1.0,
+            rate_limit_per_sec=10,
+            output="stdout",
+            stream=_BrokenStream(),
+        )
+        try:
+            with self.assertRaises(logging_runtime.RequiredLogEmissionError):
+                logger.emit_record(
+                    {
+                        "classification": "startup_error",
+                        "phase": "startup",
+                        "reason_code": "required_write_failed",
+                        "message": "primary sink unavailable",
+                    }
+                )
+        finally:
+            logger.close()
+
+    def test_warn_non_diagnostic_event_bypasses_category_filter(self):
+        capture = _CaptureStream()
+        logger = logging_runtime.RuntimeLogger(
+            level="info",
+            categories=("startup",),
+            sample_rate=1.0,
+            rate_limit_per_sec=10,
+            output="stdout",
+            stream=capture,
+        )
+        try:
+            miss_emitted = logger.emit_record(
+                {
+                    "classification": "miss",
+                    "phase": "server",
+                    "reason_code": "mapping_not_found",
+                }
+            )
+            diagnostic_emitted = logger.emit(
+                "info",
+                "server",
+                {
+                    "classification": "diagnostic",
+                    "phase": "server",
+                    "reason_code": "suppressed_by_category",
+                },
+            )
+        finally:
+            logger.close()
+
+        self.assertTrue(miss_emitted)
+        self.assertFalse(diagnostic_emitted)
+        self.assertEqual(1, len(capture.lines))
+        record = json.loads(capture.lines[0])
+        self.assertEqual("miss", record["classification"])
+        self.assertEqual("WARN", record["level"])
+        self.assertEqual("server", record["category"])
 
 
 if __name__ == "__main__":

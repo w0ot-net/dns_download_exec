@@ -59,6 +59,8 @@ _SENSITIVE_EXACT_KEYS = frozenset(
     )
 )
 _SENSITIVE_KEY_PARTS = ("psk", "key", "payload")
+
+
 def _now_unix_ms():
     return int(time.time() * 1000)
 
@@ -131,6 +133,35 @@ def _record_is_required(record, level_name):
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
 
+def _record_is_diagnostic(record):
+    classification = str(record.get("classification", "")).lower()
+    return classification == "diagnostic"
+
+
+def _apply_category_filter(level_name, record):
+    if level_name in ("debug", "trace"):
+        return True
+    if level_name != "info":
+        return False
+    if record is None:
+        return True
+    return _record_is_diagnostic(record)
+
+
+def _write_line(stream, line):
+    try:
+        stream.write(line)
+        stream.write("\n")
+        stream.flush()
+    except Exception:
+        return False
+    return True
+
+
+class RequiredLogEmissionError(Exception):
+    pass
+
+
 class RuntimeLogger(object):
     def __init__(
         self,
@@ -176,14 +207,14 @@ class RuntimeLogger(object):
             self._stream = None
             self._owns_stream = False
 
-    def enabled(self, level, category, required=False):
+    def enabled(self, level, category, required=False, event=None):
         level_name = _normalize_level_name(level)
         category_name = _normalize_category_name(category)
         if required:
             return True
         if _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
             return False
-        if category_name not in self.category_set:
+        if _apply_category_filter(level_name, event) and category_name not in self.category_set:
             return False
         return True
 
@@ -223,20 +254,19 @@ class RuntimeLogger(object):
 
     def _write_record(self, record):
         line = json.dumps(record, sort_keys=True)
-        try:
-            self._stream.write(line)
-            self._stream.write("\n")
-            self._stream.flush()
-        except Exception:
-            return False
-        return True
+        return _write_line(self._stream, line)
 
     def emit(self, level, category, event, context_fn=None, required=False):
         level_name = _normalize_level_name(level)
         category_name = _normalize_category_name(category)
         base_event = dict(event or {})
         event_required = required or _record_is_required(base_event, level_name)
-        if not self.enabled(level_name, category_name, required=event_required):
+        if not self.enabled(
+            level_name,
+            category_name,
+            required=event_required,
+            event=base_event,
+        ):
             return False
         if not event_required:
             if not self._passes_focus(level_name, base_event):
@@ -261,7 +291,10 @@ class RuntimeLogger(object):
         for key, value in _redact_map(base_event).items():
             if key not in output:
                 output[key] = value
-        return self._write_record(output)
+        emitted = self._write_record(output)
+        if event_required and not emitted:
+            raise RequiredLogEmissionError("required log emission failed")
+        return emitted
 
     def emit_record(self, record, level=None, category=None, required=False):
         base = dict(record or {})
