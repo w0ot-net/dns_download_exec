@@ -90,10 +90,11 @@ Fail-fast invariants:
 
 Runs once at startup per file:
 1. read plaintext bytes
-2. compress with deterministic settings
-3. compute plaintext SHA-256
-4. split compressed bytes into fixed-size slices
-5. build file manifest and slice table
+2. compute plaintext SHA-256 (`file_version`)
+3. enforce unique `file_version` across configured files
+4. compress with deterministic settings
+5. split compressed bytes into fixed-size slices
+6. build file manifest and slice table
 
 Output per file:
 - `file_id`

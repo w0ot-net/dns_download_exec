@@ -46,9 +46,9 @@ the socket.
 
 For each configured file:
 1. Read plaintext bytes.
-2. Compress deterministically.
-3. Compute `file_version` and `plaintext_sha256`.
-4. Enforce unique `file_version` across configured files.
+2. Compute `file_version` and `plaintext_sha256`.
+3. Enforce unique `file_version` across configured files.
+4. Compress deterministically.
 5. Split compressed bytes into slices.
 6. Derive deterministic `file_tag` and `slice_token` mapping.
 7. Build immutable manifest/slice tables.
@@ -74,6 +74,7 @@ No persisted mapping state file is required for compatibility.
 Changing any of the following may break old clients:
 - `mapping_seed`
 - file content
+- `compression_level`
 - relevant mapping/wire config (`file_tag_len`, `dns_max_label_len`,
   `domain`, `response_label`, profile values)
 
