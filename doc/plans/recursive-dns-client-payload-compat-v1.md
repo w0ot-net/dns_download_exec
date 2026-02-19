@@ -4,7 +4,7 @@
 Fix the client parity response-envelope validation so generated clients work through recursive DNS, which is the primary deployment path. The current parser is overly strict on authoritative-only header/count assumptions and rejects legitimate recursive-resolver responses. This plan narrows validation to protocol invariants that must hold end-to-end while removing resolver-topology-specific checks. It also updates architecture documentation to make recursive DNS support an explicit MUST-level contract.
 
 ## Problem
-`dnsdle/client_payload.py` currently enforces authoritative-response constraints (`AA=1`, `RA=0`, exact section-count shape, EDNS-driven `ARCOUNT`) that are not guaranteed when queries traverse recursive resolvers. As a result, valid recursive DNS responses can be rejected as parse failures before CNAME payload validation/MAC verification runs. This conflicts with documented runtime defaults (`resolver_mode = system`) and with intended real-world usage where recursive DNS is expected for most client traffic.
+`dnsdle/client_payload.py` and the generated client template in `dnsdle/generator.py` (`_parse_response_for_cname()`) currently enforce authoritative-response constraints (`AA=1`, `RA=0`, exact section-count shape, EDNS-driven `ARCOUNT`) that are not guaranteed when queries traverse recursive resolvers. As a result, valid recursive DNS responses can be rejected as parse failures before CNAME payload validation/MAC verification runs. This conflicts with documented runtime defaults (`resolver_mode = system`) and with intended real-world usage where recursive DNS is expected for most client traffic.
 
 ## Goal
 After implementation:
@@ -43,15 +43,28 @@ Update `extract_response_cname_labels()` in `dnsdle/client_payload.py`:
 3. Retain fail-fast behavior for ambiguity and malformed wire content:
 - no matching CNAME or multiple matching CNAME answers remains fatal parse error
 - compressed-name decode failures and payload suffix mismatch remain fatal parse errors
+4. Remove dead imports of `DNS_FLAG_AA` and `DNS_FLAG_RA` from `dnsdle/client_payload.py` since their only consumers are the checks being removed.
 
-### 2. Keep parser API and error model simple
-- Keep existing client payload public entrypoints stable (`decode_response_slice`, `extract_response_cname_labels`) to avoid unnecessary call-site churn in this phase.
+### 2. Update generated client template with the same recursive-compatible invariants
+Update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` within `dnsdle/generator.py`:
+1. Remove the same authoritative-only checks removed from `client_payload.py`:
+- `AA=1` requirement (template line `if (flags & DNS_FLAG_AA) == 0`)
+- `RA=0` requirement (template line `if flags & DNS_FLAG_RA`)
+- exact section-count requirement `qdcount != 1 or ancount != 1 or nscount != 0`
+- EDNS-driven ARCOUNT requirement (`expected_arcount` / `arcount != expected_arcount`)
+2. Keep the same recursive-compatible invariants: `QR=1`, opcode `QUERY`, matching ID, `RCODE=NOERROR`, `TC=0`, question echo, exactly one matching `IN CNAME` answer.
+3. Remove dead constant definitions `DNS_FLAG_AA` and `DNS_FLAG_RA` from the template since their only consumers are the checks being removed. `DNS_EDNS_SIZE` stays because `_build_dns_query()` still uses it for request-side OPT construction.
+
+### 3. Remove dead `dns_edns_size` parameter (clean break)
+- Remove the `dns_edns_size` parameter from `extract_response_cname_labels()` and `decode_response_slice()` in `dnsdle/client_payload.py`. With the ARCOUNT check removed, this parameter has no remaining use.
+- Update all call sites: `decode_response_slice()` internal call to `extract_response_cname_labels()`, and test call sites in `unit_tests/test_client_payload_parity.py`.
+- Per project policy: prefer clean breaks over dead compatibility parameters.
 - Keep parse vs crypto failure boundaries intact:
 - envelope/CNAME/payload shape issues -> `ClientParseError`
 - MAC verification mismatch -> `ClientCryptoError`
-- Remove now-obsolete reason branches generated only by authoritative-only checks.
+- Remove now-obsolete reason branches generated only by authoritative-only checks (`response_not_aa`, `response_ra_set`, `response_counts_invalid`, `response_arcount_invalid`).
 
-### 3. Make recursive DNS support explicit in architecture docs
+### 4. Make recursive DNS support explicit in architecture docs
 Update docs so contracts are unambiguous and consistent with implementation:
 1. `doc/architecture/ARCHITECTURE.md`
 - add explicit normative statement: generated client runtime MUST support recursive DNS responses; this is the primary operating path.
@@ -67,7 +80,7 @@ Update docs so contracts are unambiguous and consistent with implementation:
 6. `doc/architecture/ERRORS_AND_INVARIANTS.md`
 - align parse-failure semantics so recursive-compatible envelopes are accepted and only true contract violations map to parse failure.
 
-### 4. Validation approach
+### 5. Validation approach
 Use deterministic validation commands during execution:
 1. run parity/regression suites already covering parser/crypto paths:
 - `python -m unittest unit_tests.test_client_payload_parity`
@@ -82,8 +95,9 @@ Use deterministic validation commands during execution:
 - `python -m unittest unit_tests.test_client_payload_parity.ClientPayloadParityTests.test_rejects_tc_set_even_with_valid_cname`
 
 ## Affected Components
-- `dnsdle/client_payload.py`: remove authoritative-only response gating and enforce recursive-compatible response invariants.
-- `unit_tests/test_client_payload_parity.py`: add deterministic recursive-envelope acceptance tests and ambiguity/missing-CNAME/TC negative tests.
+- `dnsdle/client_payload.py`: remove authoritative-only response gating, enforce recursive-compatible response invariants, remove dead `dns_edns_size` parameter from public entrypoints, remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` imports.
+- `dnsdle/generator.py`: update `_parse_response_for_cname()` in `_CLIENT_TEMPLATE` with the same recursive-compatible invariants; remove dead `DNS_FLAG_AA`/`DNS_FLAG_RA` constant definitions from template.
+- `unit_tests/test_client_payload_parity.py`: add deterministic recursive-envelope acceptance tests and ambiguity/missing-CNAME/TC negative tests; update call sites to remove `dns_edns_size` argument.
 - `doc/architecture/ARCHITECTURE.md`: declare recursive DNS support as a MUST-level client runtime invariant and primary usage mode.
 - `doc/architecture/CONFIG.md`: clarify recursive/system resolver mode is the default expected deployment path.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: redefine client response-acceptance rules to be recursive-compatible.
