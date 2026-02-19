@@ -24,9 +24,10 @@ After implementation:
   `seen_plaintext_sha256` and `seen_file_ids` sets. Callers share a single
   pair of sets across both calls so that content hashes and file IDs are
   unique across both publish passes (the sets are mutated in place).
-- `generate_client_artifacts()` includes the `"source"` field in its returned
-  artifact dicts so callers can access the generated client source text
-  without re-reading from disk.
+- `generate_client_artifacts()` includes the `"source"` and `"filename"`
+  fields in its returned artifact dicts so callers can access the generated
+  client source text without re-reading from disk and can identify
+  artifacts by their base filename (without the managed directory prefix).
 - No functional change to the existing startup flow, server, or client
   generation.
 
@@ -118,15 +119,19 @@ callers share a single pair of sets across both publish passes without
 reconstructing them from returned items.
 `build_publish_items_from_sources()` calls the same helper per source entry.
 
-### 3. Include `"source"` in `generate_client_artifacts()` return
+### 3. Include `"source"` and `"filename"` in `generate_client_artifacts()` return
 
 `_build_artifacts()` (client_generator.py:260-268) already includes
-`"source": source_text` in its internal artifact dicts. But
-`generate_client_artifacts()` (lines 470-480) strips it when building the
-returned `generated` list.
+`"source": source_text` and `"filename": filename` in its internal
+artifact dicts. But `generate_client_artifacts()` (lines 470-480) strips
+both when building the returned `generated` list (it transforms
+`filename` into the full `path`).
 
-Change: include `"source": artifact["source"]` in the dicts appended to
-`generated`. This is the only change to client_generator.py.
+Change: include `"source": artifact["source"]` and
+`"filename": artifact["filename"]` in the dicts appended to `generated`.
+Phase 2 uses `artifact["filename"]` as the `source_filename` when
+publishing client scripts, and Phase 5 uses it to match generation
+artifacts to their corresponding client publish items.
 
 ## Affected Components
 
@@ -138,5 +143,5 @@ Change: include `"source": artifact["source"]` in the dicts appended to
     for cross-set uniqueness; existing callers are unaffected.
   - Add `build_publish_items_from_sources()` using the same helper.
 - `dnsdle/client_generator.py`:
-  - Include `"source"` field in the dicts returned by
+  - Include `"source"` and `"filename"` fields in the dicts returned by
     `generate_client_artifacts()`.

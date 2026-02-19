@@ -11,8 +11,9 @@ builds the final RuntimeState.
 ## Prerequisites
 
 - Phase 1 (publish-sources infrastructure) must be complete.
-  `build_publish_items_from_sources()` and the `"source"` field in
-  `generate_client_artifacts()` return are both required.
+  `build_publish_items_from_sources()` and the `"source"` and
+  `"filename"` fields in `generate_client_artifacts()` return are all
+  required.
 
 ## Goal
 
@@ -121,8 +122,10 @@ classification change is intentional.
   - Remove `generate_client_artifacts` import.
 - `unit_tests/test_startup_state.py`:
   - Unpack `(runtime_state, generation_result)` tuple from
-    `build_startup_state()` in end-to-end test; error-path test is
-    unaffected.
+    `build_startup_state()` in end-to-end test.
+  - Update `len(publish_items)` assertion: the combined set now includes
+    client scripts (one per user file per target_os), not just user files.
+  - Error-path test is unaffected.
 - `unit_tests/test_startup_convergence.py`:
   - Extend `_PATCHABLE` to include `generate_client_artifacts` and
     `build_publish_items_from_sources` so stubs cover the new Phase 2
