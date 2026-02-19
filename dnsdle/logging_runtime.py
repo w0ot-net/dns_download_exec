@@ -7,7 +7,7 @@ import time
 
 from dnsdle.compat import is_binary
 from dnsdle.compat import key_text
-from dnsdle.constants import DEFAULT_LOG_CATEGORIES_CSV
+from dnsdle.constants import DEFAULT_LOG_CATEGORIES
 from dnsdle.constants import DEFAULT_LOG_FILE
 from dnsdle.constants import DEFAULT_LOG_FOCUS
 from dnsdle.constants import DEFAULT_LOG_LEVEL
@@ -42,26 +42,10 @@ _LEVEL_FROM_CLASSIFICATION = {
     "followup": "info",
     "miss": "warn",
 }
-_CATEGORY_FROM_PHASE = {
-    "startup": "startup",
-    "config": "config",
-    "budget": "budget",
-    "publish": "publish",
-    "mapping": "mapping",
-    "dnswire": "dnswire",
-    "server": "server",
-}
-_SENSITIVE_EXACT_KEYS = frozenset(
-    (
-        "psk",
-        "key",
-        "derived_key",
-        "payload",
-        "payload_bytes",
-        "slice_bytes",
-        "plaintext_bytes",
-    )
+_VALID_PHASE_CATEGORIES = frozenset(
+    ("startup", "config", "budget", "publish", "mapping", "dnswire", "server")
 )
+_SENSITIVE_EXACT_KEYS = frozenset(("slice_bytes", "plaintext_bytes"))
 _SENSITIVE_KEY_PARTS = ("psk", "key", "payload")
 
 
@@ -116,7 +100,7 @@ def _normalize_category_name(category):
 
 def _record_category(record):
     phase = str(record.get("phase", "")).lower()
-    return _CATEGORY_FROM_PHASE.get(phase, "startup")
+    return phase if phase in _VALID_PHASE_CATEGORIES else "startup"
 
 
 def _record_level(record):
@@ -131,7 +115,7 @@ def _record_is_required(record, level_name):
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
 
-def _apply_category_filter(level_name, record):
+def _subject_to_category_filter(level_name, record):
     if level_name in ("debug", "trace"):
         return True
     if level_name != "info":
@@ -169,9 +153,7 @@ class RuntimeLogger(object):
     ):
         self.level = _normalize_level_name(level)
         category_values = (
-            categories
-            if categories is not None
-            else tuple(DEFAULT_LOG_CATEGORIES_CSV.split(","))
+            categories if categories is not None else DEFAULT_LOG_CATEGORIES
         )
         self.category_set = frozenset(category_values)
         self.sample_rate = float(sample_rate)
@@ -204,7 +186,7 @@ class RuntimeLogger(object):
             return True
         if _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
             return False
-        if _apply_category_filter(level_name, event) and category_name not in self.category_set:
+        if _subject_to_category_filter(level_name, event) and category_name not in self.category_set:
             return False
         return True
 
@@ -353,7 +335,7 @@ def build_logger_from_config(config):
 def _bootstrap_logger():
     return _create_logger(
         level=DEFAULT_LOG_LEVEL,
-        categories=tuple(DEFAULT_LOG_CATEGORIES_CSV.split(",")),
+        categories=DEFAULT_LOG_CATEGORIES,
         sample_rate=DEFAULT_LOG_SAMPLE_RATE,
         rate_limit_per_sec=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
         output=DEFAULT_LOG_OUTPUT,
@@ -380,10 +362,6 @@ def configure_active_logger(config):
     if _ACTIVE_LOGGER is not None:
         _ACTIVE_LOGGER.close()
     _ACTIVE_LOGGER = logger
-    return _ACTIVE_LOGGER
-
-
-def get_active_logger():
     return _ACTIVE_LOGGER
 
 
