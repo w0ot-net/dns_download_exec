@@ -12,6 +12,8 @@ from dnsdle.constants import LOG_LEVELS
 from dnsdle.constants import MAX_DNS_EDNS_SIZE
 from dnsdle.constants import MIN_DNS_EDNS_SIZE
 from dnsdle.constants import TOKEN_ALPHABET_CHARS
+from dnsdle.constants import dns_name_wire_length
+from dnsdle.constants import labels_is_suffix
 from dnsdle.state import StartupError
 
 
@@ -49,10 +51,6 @@ Config = namedtuple(
 )
 
 
-def _dns_name_wire_length(labels):
-    return 1 + sum(1 + len(label) for label in labels)
-
-
 def _is_printable_ascii(value):
     for ch in value:
         code = ord(ch)
@@ -82,7 +80,7 @@ def _normalize_domain(value):
                 {"label": label},
             )
 
-    if _dns_name_wire_length(labels) > 255:
+    if dns_name_wire_length(labels) > 255:
         raise StartupError(
             "config",
             "invalid_config",
@@ -90,14 +88,6 @@ def _normalize_domain(value):
         )
 
     return domain, tuple(labels)
-
-
-def _labels_is_suffix(suffix_labels, full_labels):
-    suffix_len = len(suffix_labels)
-    full_len = len(full_labels)
-    if suffix_len > full_len:
-        return False
-    return full_labels[full_len - suffix_len :] == suffix_labels
 
 
 def _normalize_domains(raw_value):
@@ -136,14 +126,14 @@ def _normalize_domains(raw_value):
         for other_index in range(index + 1, len(domains)):
             domain_b = domains[other_index]
             labels_b = domain_labels_by_domain[other_index]
-            if _labels_is_suffix(labels_a, labels_b):
+            if labels_is_suffix(labels_a, labels_b):
                 raise StartupError(
                     "config",
                     "overlapping_domains",
                     "configured domains overlap on label boundaries",
                     {"domain": domain_a, "other_domain": domain_b},
                 )
-            if _labels_is_suffix(labels_b, labels_a):
+            if labels_is_suffix(labels_b, labels_a):
                 raise StartupError(
                     "config",
                     "overlapping_domains",
@@ -153,9 +143,9 @@ def _normalize_domains(raw_value):
 
     longest_domain = domains[0]
     longest_domain_labels = domain_labels_by_domain[0]
-    longest_domain_wire_len = _dns_name_wire_length(longest_domain_labels)
+    longest_domain_wire_len = dns_name_wire_length(longest_domain_labels)
     for index in range(1, len(domains)):
-        wire_len = _dns_name_wire_length(domain_labels_by_domain[index])
+        wire_len = dns_name_wire_length(domain_labels_by_domain[index])
         if wire_len > longest_domain_wire_len:
             longest_domain = domains[index]
             longest_domain_labels = domain_labels_by_domain[index]
@@ -428,7 +418,7 @@ def build_config(parsed_args):
             "file_tag_len cannot exceed dns_max_label_len",
         )
 
-    if _dns_name_wire_length((response_label,) + longest_domain_labels) > 255:
+    if dns_name_wire_length((response_label,) + longest_domain_labels) > 255:
         raise StartupError(
             "config",
             "invalid_config",

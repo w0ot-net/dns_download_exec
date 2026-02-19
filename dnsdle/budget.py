@@ -10,13 +10,10 @@ from dnsdle.constants import MAX_DNS_NAME_TEXT_LENGTH
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.constants import OPT_RR_BYTES
 from dnsdle.constants import QUESTION_FIXED_BYTES
+from dnsdle.constants import dns_name_wire_length
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
-
-
-def _dns_name_wire_length(labels):
-    return 1 + sum(1 + len(label) for label in labels)
 
 
 def _payload_labels_for_chars(char_count, label_cap):
@@ -57,7 +54,7 @@ def _validate_query_token_len(config, query_token_len):
         )
 
     qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
-    if _dns_name_wire_length(qname_labels) > MAX_DNS_NAME_WIRE_LENGTH:
+    if dns_name_wire_length(qname_labels) > MAX_DNS_NAME_WIRE_LENGTH:
         raise StartupError(
             "budget",
             "budget_unusable",
@@ -68,7 +65,7 @@ def _validate_query_token_len(config, query_token_len):
 
 def _response_size_estimate(config, query_token_len, target_wire_len):
     qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
-    qname_wire_len = _dns_name_wire_length(qname_labels)
+    qname_wire_len = dns_name_wire_length(qname_labels)
     question_size = qname_wire_len + QUESTION_FIXED_BYTES
 
     # Conservative packet sizing:
@@ -93,7 +90,7 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
     # 253 textual chars is the practical upper bound without trailing dot.
     for candidate in range(MAX_DNS_NAME_TEXT_LENGTH, 0, -1):
         payload_labels = _payload_labels_for_chars(candidate, config.dns_max_label_len)
-        target_wire_len = _dns_name_wire_length(payload_labels + suffix_labels)
+        target_wire_len = dns_name_wire_length(payload_labels + suffix_labels)
         candidate_response_size = _response_size_estimate(config, query_token_len, target_wire_len)
         if (
             target_wire_len <= MAX_DNS_NAME_WIRE_LENGTH

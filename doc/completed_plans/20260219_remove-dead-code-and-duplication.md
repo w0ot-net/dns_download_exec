@@ -89,7 +89,7 @@ def labels_is_suffix(suffix_labels, full_labels):
 - Remove local `_labels_is_suffix` definition.
 - Add `dns_name_wire_length` and `labels_is_suffix` to the `from dnsdle.constants import`
   block.
-- Replace all four call sites (`_dns_name_wire_length(...)` → `dns_name_wire_length(...)`,
+- Replace all six call sites (`_dns_name_wire_length(...)` → `dns_name_wire_length(...)`,
   `_labels_is_suffix(...)` → `labels_is_suffix(...)`).
 
 ### `dnsdle/mapping.py`
@@ -144,7 +144,7 @@ respectively. Removing them requires test changes outside this plan's scope.
 - `dnsdle/constants.py`: inline `LOG_LEVEL_*` and `LOG_CATEGORY_*` names; add
   `dns_name_wire_length` and `labels_is_suffix` functions.
 - `dnsdle/config.py`: remove two local private functions; add two imports from constants;
-  update four call sites.
+  update six call sites.
 - `dnsdle/mapping.py`: remove one local private function; add one import from constants;
   update one call site.
 - `dnsdle/budget.py`: remove one local private function; add one import from constants;
@@ -153,3 +153,7 @@ respectively. Removing them requires test changes outside this plan's scope.
   update one call site.
 - `dnsdle/cname_payload.py`: add local `_hmac_sha256` helper; replace three inline
   `hmac.new()` call expressions.
+
+## Execution Notes
+
+Executed 2026-02-19. All changes applied as specified. 134 unit tests pass.

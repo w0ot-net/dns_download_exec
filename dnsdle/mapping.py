@@ -10,13 +10,10 @@ from dnsdle.constants import DIGEST_TEXT_CAPACITY
 from dnsdle.constants import MAPPING_FILE_LABEL
 from dnsdle.constants import MAPPING_SLICE_LABEL
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
+from dnsdle.constants import dns_name_wire_length
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
-
-
-def _dns_name_wire_length(labels):
-    return 1 + sum(1 + len(label) for label in labels)
 
 
 def _hmac_sha256(key_bytes, message_bytes):
@@ -62,7 +59,7 @@ def _max_token_len_for_file(config, file_tag):
     max_candidate = min(config.dns_max_label_len, DIGEST_TEXT_CAPACITY)
     for token_len in range(max_candidate, 0, -1):
         labels = ("a" * token_len, file_tag) + tuple(config.longest_domain_labels)
-        if _dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
+        if dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
             return token_len
     return 0
 

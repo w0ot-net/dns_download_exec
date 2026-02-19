@@ -13,22 +13,15 @@ from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.constants import DNS_UDP_RECV_MAX
+from dnsdle.constants import labels_is_suffix
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _labels_is_suffix(suffix_labels, full_labels):
-    suffix_len = len(suffix_labels)
-    full_len = len(full_labels)
-    if suffix_len > full_len:
-        return False
-    return full_labels[full_len - suffix_len :] == suffix_labels
-
-
 def _selected_domain(config, qname_labels):
     for index, labels in enumerate(config.domain_labels_by_domain):
-        if _labels_is_suffix(labels, qname_labels):
+        if labels_is_suffix(labels, qname_labels):
             prefix_len = len(qname_labels) - len(labels)
             return config.domains[index], tuple(qname_labels[:prefix_len])
     return None, None

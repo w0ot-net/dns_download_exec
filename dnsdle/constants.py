@@ -94,37 +94,21 @@ FIXED_CONFIG = {
 
 
 # Logging defaults and contracts
-LOG_LEVEL_ERROR = "error"
-LOG_LEVEL_WARN = "warn"
-LOG_LEVEL_INFO = "info"
-LOG_LEVEL_DEBUG = "debug"
-LOG_LEVEL_TRACE = "trace"
-LOG_LEVELS = (
-    LOG_LEVEL_ERROR,
-    LOG_LEVEL_WARN,
-    LOG_LEVEL_INFO,
-    LOG_LEVEL_DEBUG,
-    LOG_LEVEL_TRACE,
-)
-
-LOG_CATEGORY_STARTUP = "startup"
-LOG_CATEGORY_CONFIG = "config"
-LOG_CATEGORY_BUDGET = "budget"
-LOG_CATEGORY_PUBLISH = "publish"
-LOG_CATEGORY_MAPPING = "mapping"
-LOG_CATEGORY_DNSWIRE = "dnswire"
-LOG_CATEGORY_SERVER = "server"
-LOG_CATEGORIES = (
-    LOG_CATEGORY_STARTUP,
-    LOG_CATEGORY_CONFIG,
-    LOG_CATEGORY_BUDGET,
-    LOG_CATEGORY_PUBLISH,
-    LOG_CATEGORY_MAPPING,
-    LOG_CATEGORY_DNSWIRE,
-    LOG_CATEGORY_SERVER,
-)
-
-DEFAULT_LOG_LEVEL = LOG_LEVEL_INFO
+LOG_LEVELS = ("error", "warn", "info", "debug", "trace")
+LOG_CATEGORIES = ("startup", "config", "budget", "publish", "mapping", "dnswire", "server")
+DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LOG_FILE = ""
 
 REQUIRED_LIFECYCLE_CLASSIFICATIONS = ("server_start", "shutdown")
+
+
+def dns_name_wire_length(labels):
+    return 1 + sum(1 + len(label) for label in labels)
+
+
+def labels_is_suffix(suffix_labels, full_labels):
+    suffix_len = len(suffix_labels)
+    full_len = len(full_labels)
+    if suffix_len > full_len:
+        return False
+    return full_labels[full_len - suffix_len:] == suffix_labels
