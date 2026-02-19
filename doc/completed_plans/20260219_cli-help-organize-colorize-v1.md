@@ -110,3 +110,22 @@ is purely a display concern.
 ## Affected Components
 - `dnsdle/cli.py`: restructure `_build_parser()` to use argument groups, add
   `help=` strings, add custom `HelpFormatter` subclass for TTY colorization.
+
+## Execution Notes
+
+Implemented as planned with no deviations:
+
+- Added `_ColorHelpFormatter` subclass overriding `start_section` to wrap
+  headings in ANSI bold when `sys.stdout.isatty()`.
+- Changed `add_help=False`, added explicit `-h`/`--help` with `action="help"`
+  and `default=argparse.SUPPRESS` as last entry in the required group.
+- All 20 arguments assigned to 6 named groups with `help=` strings using
+  `%(default)s` interpolation for optional args.
+- All existing defaults and `_LONG_OPTIONS`/`_KNOWN_LONG_OPTIONS` unchanged.
+
+Validation results:
+- Help output shows 6 clean groups with correct defaults, no stray `options:`
+  section.
+- ANSI bold codes present in all 6 headings when `isatty()` is true; absent
+  when false.
+- 126/126 existing unit tests pass with no regressions.
