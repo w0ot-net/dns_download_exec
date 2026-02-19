@@ -68,9 +68,7 @@ def _now_unix_ms():
 def _safe_json_value(value):
     if is_binary(value):
         return "<bytes:%d>" % len(value)
-    if isinstance(value, tuple):
-        return [_safe_json_value(item) for item in value]
-    if isinstance(value, list):
+    if isinstance(value, (tuple, list)):
         return [_safe_json_value(item) for item in value]
     if isinstance(value, dict):
         return _redact_map(value)
@@ -114,16 +112,12 @@ def _normalize_category_name(category):
 
 def _record_category(record):
     phase = str(record.get("phase", "")).lower()
-    if phase in _CATEGORY_FROM_PHASE:
-        return _CATEGORY_FROM_PHASE[phase]
-    return "startup"
+    return _CATEGORY_FROM_PHASE.get(phase, "startup")
 
 
 def _record_level(record):
     classification = str(record.get("classification", "")).lower()
-    if classification in _LEVEL_FROM_CLASSIFICATION:
-        return _LEVEL_FROM_CLASSIFICATION[classification]
-    return "info"
+    return _LEVEL_FROM_CLASSIFICATION.get(classification, "info")
 
 
 def _record_is_required(record, level_name):
@@ -133,11 +127,6 @@ def _record_is_required(record, level_name):
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
 
-def _record_is_diagnostic(record):
-    classification = str(record.get("classification", "")).lower()
-    return classification == "diagnostic"
-
-
 def _apply_category_filter(level_name, record):
     if level_name in ("debug", "trace"):
         return True
@@ -145,7 +134,7 @@ def _apply_category_filter(level_name, record):
         return False
     if record is None:
         return True
-    return _record_is_diagnostic(record)
+    return str(record.get("classification", "")).lower() == "diagnostic"
 
 
 def _write_line(stream, line):
@@ -180,8 +169,7 @@ class RuntimeLogger(object):
             if categories is not None
             else tuple(DEFAULT_LOG_CATEGORIES_CSV.split(","))
         )
-        self.categories = tuple(category_values)
-        self.category_set = frozenset(self.categories)
+        self.category_set = frozenset(category_values)
         self.sample_rate = float(sample_rate)
         self.rate_limit_per_sec = int(rate_limit_per_sec)
         self.output = output
@@ -207,9 +195,7 @@ class RuntimeLogger(object):
             self._stream = None
             self._owns_stream = False
 
-    def enabled(self, level, category, required=False, event=None):
-        level_name = _normalize_level_name(level)
-        category_name = _normalize_category_name(category)
+    def _enabled_normalized(self, level_name, category_name, required=False, event=None):
         if required:
             return True
         if _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
@@ -217,6 +203,14 @@ class RuntimeLogger(object):
         if _apply_category_filter(level_name, event) and category_name not in self.category_set:
             return False
         return True
+
+    def enabled(self, level, category, required=False, event=None):
+        return self._enabled_normalized(
+            _normalize_level_name(level),
+            _normalize_category_name(category),
+            required=required,
+            event=event,
+        )
 
     def _passes_focus(self, level_name, event):
         if not self.focus:
@@ -261,7 +255,7 @@ class RuntimeLogger(object):
         category_name = _normalize_category_name(category)
         base_event = dict(event or {})
         event_required = required or _record_is_required(base_event, level_name)
-        if not self.enabled(
+        if not self._enabled_normalized(
             level_name,
             category_name,
             required=event_required,
@@ -309,33 +303,37 @@ class RuntimeLogger(object):
         )
 
 
-def build_logger_from_config(config):
+def _create_logger(**kwargs):
     try:
-        return RuntimeLogger(
-            level=config.log_level,
-            categories=config.log_categories,
-            sample_rate=config.log_sample_rate,
-            rate_limit_per_sec=config.log_rate_limit_per_sec,
-            output=config.log_output,
-            log_file=config.log_file,
-            focus=config.log_focus,
-            stream=None,
-        )
+        return RuntimeLogger(**kwargs)
     except IOError as exc:
         raise StartupError(
             "startup",
             "log_output_unusable",
             "failed to open log output file: %s" % exc,
-            {"log_file": config.log_file},
+            {"log_file": kwargs.get("log_file")},
         )
 
 
+def build_logger_from_config(config):
+    return _create_logger(
+        level=config.log_level,
+        categories=config.log_categories,
+        sample_rate=config.log_sample_rate,
+        rate_limit_per_sec=config.log_rate_limit_per_sec,
+        output=config.log_output,
+        log_file=config.log_file,
+        focus=config.log_focus,
+        stream=None,
+    )
+
+
 def _bootstrap_logger():
-    return RuntimeLogger(
+    return _create_logger(
         level=DEFAULT_LOG_LEVEL,
         categories=tuple(DEFAULT_LOG_CATEGORIES_CSV.split(",")),
-        sample_rate=float(DEFAULT_LOG_SAMPLE_RATE),
-        rate_limit_per_sec=int(DEFAULT_LOG_RATE_LIMIT_PER_SEC),
+        sample_rate=DEFAULT_LOG_SAMPLE_RATE,
+        rate_limit_per_sec=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
         output=DEFAULT_LOG_OUTPUT,
         log_file=DEFAULT_LOG_FILE,
         focus=DEFAULT_LOG_FOCUS,
