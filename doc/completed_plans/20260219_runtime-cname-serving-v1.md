@@ -156,3 +156,8 @@ Implement explicit graceful shutdown behavior in the runtime loop:
 - Pre-bind serve invariant violations fail with `server_runtime_invalid` and do not create/bind socket.
 - Shutdown behavior is deterministic under idle traffic (`settimeout(0.5)` wake checks), closes socket once, and emits exactly one shutdown record.
 - Architecture docs listed above are updated to reflect exact implemented runtime behavior.
+
+## Execution Notes
+- Completion date: 2026-02-19
+- This plan is marked completed as already implemented in the current codebase.
+- No additional runtime-serving code changes were required during completion marking.
