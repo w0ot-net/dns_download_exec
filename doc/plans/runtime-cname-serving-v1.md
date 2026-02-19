@@ -76,7 +76,8 @@ Minimize per-request complexity by extending immutable runtime state with direct
 1. Default mode (`dns_edns_size > 512`): include OPT RR in responses.
 2. Classic mode (`dns_edns_size == 512`): omit OPT RR (non-default no-OPT behavior).
 3. Do not emit truncated (`TC=1`) slice responses in v1.
-4. Treat response-construction impossibility for a mapped request as runtime fault (`SERVFAIL`) with stable reason code.
+4. Treat configuration-driven response-construction infeasibility (including required compression-pointer layout constraints) as a fatal startup invariant violation; do not start serving in that state.
+5. Reserve runtime `SERVFAIL` for true internal faults after startup (for example, unexpected encode/state inconsistency), with stable reason codes.
 
 ### 6. Logging and stable error taxonomy
 Add runtime request log classes with stable reason codes aligned to architecture:
@@ -120,10 +121,11 @@ Update architecture docs to match implemented behavior exactly (clean break, no 
 
 ## Validation
 - Startup success path: valid config binds UDP and enters loop.
+- Startup invariant failure path: config that cannot satisfy required response-construction constraints fails before bind (no serve loop).
 - Mapped query path: returns `NOERROR` + one CNAME answer.
 - Deterministic miss path: returns `NXDOMAIN` with empty answer section.
 - Follow-up chase path: returns `NOERROR` + one A answer (`0.0.0.0`).
-- Runtime internal fault simulation: returns `SERVFAIL` with stable reason code logging.
+- Runtime internal fault simulation (post-startup): returns `SERVFAIL` with stable reason code logging.
 - EDNS policy: default includes OPT at `1232`; explicit `512` omits OPT.
 - Determinism check: repeated identical queries for same slice produce identical answer payload and TTL.
 
