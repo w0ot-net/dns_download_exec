@@ -3,6 +3,8 @@ from __future__ import absolute_import
 import hashlib
 import zlib
 
+import os
+
 from dnsdle.compat import to_ascii_bytes
 from dnsdle.constants import FILE_ID_PREFIX
 from dnsdle.constants import PROFILE_V1
@@ -104,6 +106,7 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                 "slice_bytes_by_index": slice_bytes_by_index,
                 "crypto_profile": PROFILE_V1,
                 "wire_profile": PROFILE_V1,
+                "source_filename": os.path.basename(path),
             }
         )
         if logger_enabled("debug", "publish"):

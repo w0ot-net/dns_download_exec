@@ -51,6 +51,7 @@ PublishItem = namedtuple(
         "slice_bytes_by_index",
         "crypto_profile",
         "wire_profile",
+        "source_filename",
     ],
 )
 
@@ -88,6 +89,7 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
             slice_bytes_by_index=tuple(item["slice_bytes_by_index"]),
             crypto_profile=item["crypto_profile"],
             wire_profile=item["wire_profile"],
+            source_filename=item["source_filename"],
         )
         publish_items.append(publish_item)
         identity = (publish_item.file_id, publish_item.publish_version)

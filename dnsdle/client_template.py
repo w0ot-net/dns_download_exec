@@ -34,6 +34,7 @@ WIRE_PROFILE = @@WIRE_PROFILE@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
 DNS_MAX_LABEL_LEN = @@DNS_MAX_LABEL_LEN@@
 DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
+SOURCE_FILENAME = @@SOURCE_FILENAME@@
 
 REQUEST_TIMEOUT_SECONDS = @@REQUEST_TIMEOUT_SECONDS@@
 NO_PROGRESS_TIMEOUT_SECONDS = @@NO_PROGRESS_TIMEOUT_SECONDS@@
@@ -99,9 +100,13 @@ class RetryableTransport(Exception):
     pass
 
 
+_VERBOSE = False
+
+
 def _log(message):
-    sys.stderr.write(str(message) + "\\n")
-    sys.stderr.flush()
+    if _VERBOSE:
+        sys.stderr.write(str(message) + "\\n")
+        sys.stderr.flush()
 
 
 def _to_ascii_bytes(value):
@@ -516,12 +521,7 @@ def _reassemble_plaintext(slice_bytes_by_index):
 
 
 def _deterministic_output_path():
-    name = "dnsdl_%s_%s_%s.bin" % (
-        FILE_ID,
-        PUBLISH_VERSION[:8],
-        PLAINTEXT_SHA256_HEX[:8],
-    )
-    return os.path.join(tempfile.gettempdir(), name)
+    return os.path.join(tempfile.gettempdir(), SOURCE_FILENAME)
 
 
 def _write_output_atomic(output_path, payload):
@@ -897,12 +897,15 @@ def _build_parser():
         default=str(NO_PROGRESS_TIMEOUT_SECONDS),
     )
     parser.add_argument("--max-rounds", default=str(MAX_ROUNDS))
+    parser.add_argument("--verbose", action="store_true", default=False)
     return parser
 
 
 def _parse_runtime_args(argv):
+    global _VERBOSE
     parser = _build_parser()
     args = parser.parse_args(argv)
+    _VERBOSE = args.verbose
 
     psk_value = (args.psk or "").strip()
     if not psk_value:

@@ -65,6 +65,7 @@ class ServerRequestEnvelopeValidationTests(unittest.TestCase):
                 "slice_bytes_by_index": (b"slice-data",),
                 "crypto_profile": "v1",
                 "wire_profile": "v1",
+                "source_filename": "test.bin",
             }
         ]
         return build_runtime_state(

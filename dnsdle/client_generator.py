@@ -148,6 +148,7 @@ def _render_client_source(config, publish_item, target_os):
         "RESPONSE_LABEL": config.response_label,
         "DNS_MAX_LABEL_LEN": int(config.dns_max_label_len),
         "DNS_EDNS_SIZE": int(config.dns_edns_size),
+        "SOURCE_FILENAME": publish_item.source_filename,
         "REQUEST_TIMEOUT_SECONDS": float(GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS),
         "NO_PROGRESS_TIMEOUT_SECONDS": int(
             GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS

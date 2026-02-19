@@ -58,6 +58,7 @@ def _make_publish_item(**overrides):
         "slice_bytes_by_index": (b"data",),
         "crypto_profile": "v1",
         "wire_profile": "v1",
+        "source_filename": "test.bin",
     }
     defaults.update(overrides)
     return PublishItem(**defaults)
@@ -170,6 +171,12 @@ class RenderClientSourceTests(unittest.TestCase):
         self.assertIn(repr("a" * 16), source)
         self.assertIn(repr("b" * 64), source)
         self.assertIn(repr("linux"), source)
+
+    def test_source_filename_present(self):
+        config = _make_config()
+        item = _make_publish_item()
+        source = _render_client_source(config, item, "linux")
+        self.assertIn("SOURCE_FILENAME = 'test.bin'", source)
 
     def test_no_authoritative_only_checks_in_source(self):
         config = _make_config()

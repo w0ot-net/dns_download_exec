@@ -40,6 +40,7 @@ Optional runtime inputs:
 - `--timeout seconds`
 - `--no-progress-timeout seconds`
 - `--max-rounds n`
+- `--verbose` (enable progress and diagnostic logging to stderr)
 
 Validation rules:
 - `--psk` must be present and non-empty.
@@ -185,7 +186,8 @@ Failures in this phase exit with code `6`.
 Write policy:
 - write final plaintext only after all verification steps pass
 - if `--out` provided, write exactly to that path
-- if `--out` omitted, write to deterministic temp-path pattern
+- if `--out` omitted, write to `<tempdir>/<source_filename>` where
+  `source_filename` is the original basename of the published file
 
 Invalid `--out` argument is a CLI validation failure (exit `2`).
 Output failures exit with code `7`.
@@ -196,7 +198,10 @@ Client must not execute downloaded bytes in v1.
 
 ## Logging
 
-Minimum runtime logs:
+Client is silent by default. Pass `--verbose` to enable diagnostic output on
+stderr.
+
+When verbose, minimum runtime logs:
 - startup metadata summary (redacted where needed)
 - per-round progress (`received`, `missing`, retries)
 - fatal failure reason and exit code

@@ -128,6 +128,7 @@ The following constants are required in generated code:
 - `RESPONSE_LABEL`
 - `DNS_MAX_LABEL_LEN`
 - `DNS_EDNS_SIZE`
+- `SOURCE_FILENAME`
 - retry/timeouts constants
 
 Invariant:
@@ -147,11 +148,12 @@ Generated client should expose a small, stable CLI:
 - `--timeout seconds` (optional request timeout override)
 - `--no-progress-timeout seconds` (optional override)
 - `--max-rounds n` (optional retry rounds cap)
+- `--verbose` (enable progress and diagnostic logging to stderr)
 
 `--psk` is mandatory and must be non-empty.
 
-If `--out` is omitted, write to a process temp directory with a deterministic
-name derived from `(file_id, publish_version, plaintext_sha256)`.
+If `--out` is omitted, write to `<tempdir>/<source_filename>` where
+`source_filename` is the original basename of the published file.
 
 No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 

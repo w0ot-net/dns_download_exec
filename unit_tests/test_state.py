@@ -19,6 +19,7 @@ def _mapped_item(file_id, file_tag, tokens):
         "slice_bytes_by_index": tuple(b"x" for _ in tokens),
         "crypto_profile": "v1",
         "wire_profile": "v1",
+        "source_filename": "test.bin",
     }
 
 
