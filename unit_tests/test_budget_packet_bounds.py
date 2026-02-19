@@ -21,8 +21,11 @@ from dnsdle.state import StartupError
 _TestConfig = namedtuple(
     "TestConfig",
     [
+        "domains",
         "domain_labels",
+        "longest_domain",
         "longest_domain_labels",
+        "longest_domain_wire_len",
         "dns_max_label_len",
         "file_tag_len",
         "response_label",
@@ -101,8 +104,11 @@ class BudgetPacketBoundsTests(unittest.TestCase):
     def _build_config(self, domain, dns_edns_size, file_tag_len):
         labels = tuple(domain.split("."))
         return _TestConfig(
+            domains=(domain,),
             domain_labels=labels,
+            longest_domain=domain,
             longest_domain_labels=labels,
+            longest_domain_wire_len=_dns_name_wire_length(labels),
             dns_max_label_len=63,
             file_tag_len=file_tag_len,
             response_label="r-x",
