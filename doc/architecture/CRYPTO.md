@@ -132,6 +132,12 @@ For each expected `slice_index` in `[0, total_slices - 1]`:
 4. If index already exists, new bytes and MAC must match prior stored value.
 5. Any mismatch at an already-stored index is fatal.
 
+Ordering rule:
+- client must parse/validate payload record fields first, verify MAC over
+  ciphertext-bound metadata second, and decrypt only after MAC success.
+- this ordering is implemented by `dnsdle/client_payload.py` and must remain
+  invariant in generated client equivalents.
+
 After all indices are present:
 1. Reassemble slices in strict index order.
 2. Validate total reassembled compressed byte length equals `compressed_size`.

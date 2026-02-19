@@ -158,6 +158,12 @@ Retry policy:
 - no-progress timeout is terminal
 - format/crypto/invariant violations are non-retryable fatal
 
+Parity-core boundary:
+- `dnsdle/client_payload.py` is the authority for parse/format (`4`) and
+  crypto verification (`5`) failures.
+- `dnsdle/client_reassembly.py` is the authority for reconstruction/decompress
+  and final hash failures (`6`).
+
 ---
 
 ## Invariants

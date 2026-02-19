@@ -109,6 +109,90 @@ def _unpack_header(message):
     return struct.unpack("!HHHHHH", message[:DNS_HEADER_BYTES])
 
 
+def _decode_question(message, start_offset):
+    labels, offset = _decode_name(message, start_offset)
+    if offset + 4 > _message_length(message):
+        raise DnsParseError("truncated DNS question")
+    qtype, qclass = struct.unpack("!HH", message[offset : offset + 4])
+    return (
+        {
+            "qname_labels": labels,
+            "qtype": qtype,
+            "qclass": qclass,
+        },
+        offset + 4,
+    )
+
+
+def _decode_resource_record(message, start_offset):
+    name_labels, offset = _decode_name(message, start_offset)
+    if offset + 10 > _message_length(message):
+        raise DnsParseError("truncated resource record")
+    rtype, rclass, ttl, rdlength = struct.unpack("!HHIH", message[offset : offset + 10])
+    rdata_offset = offset + 10
+    rdata_end = rdata_offset + rdlength
+    if rdata_end > _message_length(message):
+        raise DnsParseError("truncated resource record rdata")
+    record = {
+        "name_labels": name_labels,
+        "type": rtype,
+        "class": rclass,
+        "ttl": ttl,
+        "rdata": message[rdata_offset:rdata_end],
+    }
+    if rtype == DNS_QTYPE_CNAME:
+        cname_labels, cname_end = _decode_name(message, rdata_offset)
+        if cname_end != rdata_end:
+            raise DnsParseError("cname rdata length mismatch")
+        record["cname_labels"] = cname_labels
+    return record, rdata_end
+
+
+def _decode_resource_records(message, start_offset, count):
+    records = []
+    offset = start_offset
+    for _index in range(count):
+        record, offset = _decode_resource_record(message, offset)
+        records.append(record)
+    return records, offset
+
+
+def parse_message(message):
+    if _message_length(message) < DNS_HEADER_BYTES:
+        raise DnsParseError("message shorter than DNS header")
+
+    message_id, flags, qdcount, ancount, nscount, arcount = _unpack_header(message)
+    offset = DNS_HEADER_BYTES
+
+    questions = []
+    for _index in range(qdcount):
+        question, offset = _decode_question(message, offset)
+        questions.append(question)
+
+    answers, offset = _decode_resource_records(message, offset, ancount)
+    authorities, offset = _decode_resource_records(message, offset, nscount)
+    additionals, offset = _decode_resource_records(message, offset, arcount)
+
+    if offset != _message_length(message):
+        raise DnsParseError("trailing bytes in message")
+
+    return {
+        "id": message_id,
+        "flags": flags,
+        "opcode": (flags & DNS_OPCODE_MASK),
+        "rcode": (flags & 0x000F),
+        "qdcount": qdcount,
+        "ancount": ancount,
+        "nscount": nscount,
+        "arcount": arcount,
+        "question": (questions[0] if qdcount == 1 else None),
+        "questions": tuple(questions),
+        "answers": tuple(answers),
+        "authorities": tuple(authorities),
+        "additionals": tuple(additionals),
+    }
+
+
 def parse_request(message):
     if _message_length(message) < DNS_HEADER_BYTES:
         raise DnsParseError("message shorter than DNS header")
@@ -117,15 +201,7 @@ def parse_request(message):
 
     question = None
     if qdcount >= 1:
-        labels, offset = _decode_name(message, DNS_HEADER_BYTES)
-        if offset + 4 > _message_length(message):
-            raise DnsParseError("truncated DNS question")
-        qtype, qclass = struct.unpack("!HH", message[offset : offset + 4])
-        question = {
-            "qname_labels": labels,
-            "qtype": qtype,
-            "qclass": qclass,
-        }
+        question, _offset = _decode_question(message, DNS_HEADER_BYTES)
 
     parsed = {
         "id": request_id,

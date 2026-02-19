@@ -81,6 +81,13 @@ The generated script must contain these sections:
 All helper code must be inlined in the generated file; external package or
 multi-file layouts are not allowed in v1.
 
+When repository runtime helpers are used as references, generated logic must
+remain behavior-identical to:
+- `dnsdle/client_payload.py` for response-envelope validation, payload parse,
+  MAC verification, and decrypt.
+- `dnsdle/client_reassembly.py` for duplicate handling, reassembly,
+  decompression, and final hash checks.
+
 ---
 
 ## Embedded Constants Contract

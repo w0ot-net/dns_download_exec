@@ -174,11 +174,15 @@ v1 does not emit truncated (`TC=1`) slice responses.
 
 Client validation requirements:
 1. verify `QR=1` and matching transaction ID
-2. verify response question matches request
-3. require `RCODE=NOERROR` for slice success path
-4. locate matching `CNAME` answer for requested name
-5. decode compressed names safely
-6. pass CNAME target to payload decoder in
+2. verify response header flags for success path: `AA=1`, `TC=0`, `RA=0`,
+   opcode `QUERY`
+3. verify success-path section counts: `QDCOUNT=1`, `ANCOUNT=1`, `NSCOUNT=0`,
+   and `ARCOUNT` consistent with configured EDNS mode
+4. verify response question matches request
+5. require `RCODE=NOERROR` for slice success path
+6. locate exactly one matching `IN CNAME` answer for requested name
+7. decode compressed names safely
+8. pass CNAME target to payload decoder in
    `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 
 Any parse or format violation is fatal per client error policy.

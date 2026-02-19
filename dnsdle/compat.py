@@ -48,6 +48,22 @@ def base32_lower_no_pad(raw_bytes):
     return text.rstrip("=").lower()
 
 
+def base32_decode_no_pad(value):
+    text = to_ascii_text(value)
+    if not text:
+        raise ValueError("base32 text must be non-empty")
+    if "=" in text:
+        raise ValueError("base32 text must not include padding")
+    if text != text.lower():
+        raise ValueError("base32 text must be lowercase")
+    padding_len = (-len(text)) % 8
+    padded = text.upper() + ("=" * padding_len)
+    try:
+        return base64.b32decode(to_ascii_bytes(padded))
+    except Exception:
+        raise ValueError("invalid base32 text")
+
+
 def byte_value(value):
     if isinstance(value, integer_types):
         int_value = int(value)
@@ -66,6 +82,17 @@ def byte_value(value):
 def iter_byte_values(raw_bytes):
     for value in raw_bytes:
         yield byte_value(value)
+
+
+def constant_time_equals(left_value, right_value):
+    if not is_binary(left_value) or not is_binary(right_value):
+        raise TypeError("values must be bytes")
+    if len(left_value) != len(right_value):
+        return False
+    result = 0
+    for left_byte, right_byte in zip(iter_byte_values(left_value), iter_byte_values(right_value)):
+        result |= left_byte ^ right_byte
+    return result == 0
 
 
 def to_ascii_int_bytes(value, field_name):

@@ -114,6 +114,9 @@ Decoding steps:
 3. Base32-decode (accept lowercase form).
 4. Parse binary record and validate profile/flags/length invariants.
 
+The v1 parity parser (`dnsdle/client_payload.py`) treats any decode-step
+violation as a parse/format fatal error with no fallback mode.
+
 The server must emit canonical lowercase/no-padding encoding so duplicate
 replies for the same slice are byte-stable at the DNS text layer.
 
@@ -181,6 +184,12 @@ For each response:
 3. Record parse checks must pass (`profile`, flags, lengths).
 4. MAC must validate against mapped slice metadata.
 5. Stored bytes for duplicate slice index must match exactly.
+
+Record invariants are strict:
+- `profile` must be v1 (`0x01`)
+- `flags` must be zero
+- `cipher_len_u16` must be positive
+- `4 + cipher_len_u16 + 8` must equal full record byte length
 
 Any violation is a hard failure for that transfer session.
 
