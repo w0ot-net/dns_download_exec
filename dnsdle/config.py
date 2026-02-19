@@ -334,7 +334,12 @@ def _normalize_client_out_dir(raw_value):
     value = (raw_value or "").strip()
     if not value:
         raise StartupError("config", "invalid_config", "client_out_dir is empty")
-    return value
+    if "\x00" in value:
+        raise StartupError("config", "invalid_config", "client_out_dir contains NUL")
+    normalized = os.path.abspath(os.path.normpath(value))
+    if not normalized:
+        raise StartupError("config", "invalid_config", "client_out_dir is empty")
+    return normalized
 
 
 def _normalize_log_level(raw_value):

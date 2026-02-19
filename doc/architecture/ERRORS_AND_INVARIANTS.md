@@ -24,6 +24,8 @@ Examples:
 - `(file_tag, slice_token)` lookup-key collision across published files
 - unsupported profile values
 - slice budget computation failure
+- generated-client contract mismatch (`generator_invalid_contract`)
+- generated-client transactional write failure (`generator_write_failed`)
 
 ### Request Misses (Server)
 
@@ -214,6 +216,10 @@ Parity-core boundary:
 1. Exactly one standalone `.py` artifact per `(file, target_os)`.
 2. No sidecar artifacts for runtime dependencies.
 3. Embedded constants must be internally consistent.
+4. Generator writes only within managed output directory
+   `<client_out_dir>/dnsdle_v1/`.
+5. Generation commit is transactional per run; failure leaves no newly emitted
+   artifacts from that run.
 
 Any invariant breach is fatal for the current operation context.
 

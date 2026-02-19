@@ -59,6 +59,13 @@ Required properties:
 
 Suggested output naming:
 - `dnsdl_<file_id>_<file_tag>_<target_os>.py`
+- managed output boundary: `client_out_dir/dnsdle_v1/`
+
+Generator ownership rules:
+- only files inside `client_out_dir/dnsdle_v1/` matching managed filename
+  pattern are pruned as stale
+- generator must not delete or rewrite files outside that managed subdirectory
+- reruns replace managed target filenames atomically and deterministically
 
 Filename is not a protocol identifier and may change without wire impact.
 
@@ -250,8 +257,13 @@ Generation must fail before emitting client artifact when:
 - unsupported crypto/wire profile selected
 - unsupported `TARGET_OS`
 - generation path would require more than one output file for the client
+- managed output commit/rollback steps fail at any point
 
-Partial artifacts must not be kept on generation failure.
+Failure semantics:
+- generation is startup-fatal with stable reason codes
+  (`generator_invalid_contract`, `generator_write_failed`)
+- generation uses run-level transactional commit; on failure, no newly generated
+  artifact from that run remains in managed output.
 
 ---
 

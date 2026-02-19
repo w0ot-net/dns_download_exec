@@ -44,7 +44,7 @@ Processing flow is two-step:
 - `target_os` (`--target-os`): generated client OS profiles, allowed values
   `windows`, `linux`, `windows,linux`, default `windows,linux`.
 - `client_out_dir` (`--client-out-dir`): output directory for generated client
-  files, default `./generated_clients`.
+  files, default `./generated_clients` (normalized to absolute path at startup).
 - `compression_level` (`--compression-level`): compressed payload level,
   default `9`, valid `0..9`.
 - `log_level` (`--log-level`): logging threshold
@@ -188,6 +188,8 @@ Startup fails if any derived value cannot be computed within constraints.
 - every selected `target_os` value must be supported (`windows` or `linux`).
 - generator must produce exactly one `.py` file per `(file, target_os)` pair.
 - no sidecar files may be emitted.
+- generated files are written only under
+  `<normalized client_out_dir>/dnsdle_v1/`.
 
 ---
 

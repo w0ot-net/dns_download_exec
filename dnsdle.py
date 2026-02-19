@@ -4,6 +4,7 @@ from __future__ import print_function
 import sys
 
 from dnsdle import build_startup_state
+from dnsdle import generate_client_artifacts
 from dnsdle import serve_runtime
 from dnsdle.logging_runtime import emit_structured_record
 from dnsdle.logging_runtime import reset_active_logger
@@ -44,6 +45,80 @@ def main(argv=None):
             required=True,
         )
         return 1
+
+    expected_artifact_count = len(runtime_state.publish_items) * len(runtime_state.config.target_os)
+    _emit_record(
+        {
+            "classification": "generation_start",
+            "phase": "startup",
+            "reason_code": "generation_start",
+            "expected_artifact_count": expected_artifact_count,
+            "target_os": runtime_state.config.target_os_csv,
+        },
+        level="info",
+        category="startup",
+    )
+    try:
+        generation_result = generate_client_artifacts(runtime_state)
+    except StartupError as exc:
+        error_record = {
+            "classification": "generation_error",
+            "phase": "startup",
+            "reason_code": exc.reason_code,
+            "message": exc.message,
+        }
+        for key, value in exc.context.items():
+            if key not in error_record:
+                error_record[key] = value
+        _emit_record(
+            error_record,
+            level="error",
+            category="startup",
+            required=True,
+        )
+        return 1
+    except Exception as exc:
+        _emit_record(
+            {
+                "classification": "generation_error",
+                "phase": "startup",
+                "reason_code": "unexpected_exception",
+                "message": str(exc),
+            },
+            level="error",
+            category="startup",
+            required=True,
+        )
+        return 1
+
+    for artifact in generation_result["artifacts"]:
+        _emit_record(
+            {
+                "classification": "generation_ok",
+                "phase": "publish",
+                "reason_code": "generation_ok",
+                "file_id": artifact["file_id"],
+                "file_tag": artifact["file_tag"],
+                "target_os": artifact["target_os"],
+                "path": artifact["path"],
+            },
+            level="info",
+            category="publish",
+        )
+
+    _emit_record(
+        {
+            "classification": "generation_summary",
+            "phase": "startup",
+            "reason_code": "generation_summary",
+            "managed_dir": generation_result["managed_dir"],
+            "artifact_count": generation_result["artifact_count"],
+            "target_os": ",".join(generation_result["target_os"]),
+            "file_ids": sorted(set(item["file_id"] for item in generation_result["artifacts"])),
+        },
+        level="info",
+        category="startup",
+    )
 
     config = runtime_state.config
     _emit_record(

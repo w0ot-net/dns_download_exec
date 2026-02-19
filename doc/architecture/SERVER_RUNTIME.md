@@ -21,10 +21,11 @@ semantics for deterministic mappings.
 Server runtime has four phases:
 1. startup validation
 2. publish preparation
-3. serving loop
-4. graceful shutdown
+3. generated-client emission
+4. serving loop
+5. graceful shutdown
 
-The listener must not accept requests before phases 1 and 2 complete.
+The listener must not accept requests before phases 1-3 complete.
 
 ---
 
@@ -60,8 +61,9 @@ All publish tables become read-only before entering serve mode.
 Publish pipeline details are defined in
 `doc/architecture/PUBLISH_PIPELINE.md`.
 
-Client generation integration is intentionally out of scope for this document.
-Generation behavior is specified in `doc/architecture/CLIENT_GENERATION.md`.
+After publish preparation, startup must run client generation before entering
+serve mode. Generation behavior is specified in
+`doc/architecture/CLIENT_GENERATION.md`.
 
 ---
 

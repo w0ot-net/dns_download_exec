@@ -59,6 +59,11 @@ Client behavior:
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────┴──────────────────────┐
+│ Generated Client Emission                    │
+│ (single-file render, transactional write)    │
+└──────────────────────┬──────────────────────┘
+                       │
+┌──────────────────────┴──────────────────────┐
 │ DNS Response Engine                          │
 │ (query parse, lookup, CNAME encode, reply)   │
 └──────────────────────┬──────────────────────┘
@@ -180,8 +185,9 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 2. Server parses CLI arguments.
 3. Server normalizes/validates config invariants.
 4. Server builds in-memory publish artifacts for each file.
-5. Server validates runtime-serving invariants for DNS response construction.
-6. Server binds DNS socket and begins serving queries.
+5. Server generates one standalone client artifact per `(file, target_os)`.
+6. Server validates runtime-serving invariants for DNS response construction.
+7. Server binds DNS socket and begins serving queries.
 
 ### Download Flow
 
