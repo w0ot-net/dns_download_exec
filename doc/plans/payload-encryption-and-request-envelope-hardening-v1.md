@@ -24,6 +24,7 @@ After implementation:
 - Keep Python 2.7/3.x standard-library-only implementation.
 - Prefer invariants over fallbacks; malformed envelopes never reach mapping resolution.
 - Clean break: no compatibility mode for prior MAC-only wire output.
+- Envelope hardening scope is deterministic header/question gating for slice-serving safety; full DNS section structural validation is explicitly out of scope for this phase.
 
 ### 1. Restore deterministic per-slice encryption
 Implement explicit encryption in `dnsdle/cname_payload.py`:
@@ -54,6 +55,7 @@ Add deterministic pre-routing envelope checks in `dnsdle/server.py` (using parse
 Classification policy:
 - parseable envelope violations are deterministic misses with stable reason codes.
 - unparseable datagrams continue to be dropped.
+- no requirement in this phase to fully parse/validate answer/authority/additional RR bodies beyond header-count policy checks.
 
 ### 3. Reason-code and logging alignment
 Add/standardize request miss reason codes for envelope violations (for example `invalid_query_flags`, `unsupported_opcode`, `invalid_query_section_counts`, `invalid_additional_count`) and ensure emitted records remain machine-parseable with `classification`, `phase`, and `reason_code`.
