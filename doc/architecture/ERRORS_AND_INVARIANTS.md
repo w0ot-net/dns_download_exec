@@ -21,6 +21,7 @@ Examples:
 - unreadable input files
 - duplicate `file_version` across configured input files
 - invalid deterministic mapping derivation
+- `(file_tag, slice_token)` lookup-key collision across published files
 - unsupported profile values
 - slice budget computation failure
 

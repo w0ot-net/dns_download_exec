@@ -154,9 +154,12 @@ Requirements:
    allowed within or across files in one launch.
 3. Resolve collisions by increasing token length (up to limits), never by
    adding randomness.
-4. Store forward lookup map (`token -> slice identity`).
+4. Store forward lookup map
+   (`(file_tag, slice_token) -> canonical slice identity`).
 5. Emit generated client metadata with reverse lookup (`index -> token`) for
    that target file.
+6. Validate global uniqueness of every `(file_tag, slice_token)` key across
+   the full launch before serving requests.
 
 Grouping invariant:
 - mapping identity for one file depends only on
@@ -192,7 +195,8 @@ values in QNAMEs.
 For each query:
 1. Parse labels and match `<slice_token>.<file_tag>.<base_domain>`.
 2. Reject if `file_tag` is unknown for current process.
-3. Resolve `slice_token` in deterministic mapping table.
+3. Resolve composite key `(file_tag, slice_token)` in deterministic mapping
+   table.
 4. Retrieve canonical slice bytes for resolved file/version/index.
 5. Return deterministic CNAME answer for that slice.
 

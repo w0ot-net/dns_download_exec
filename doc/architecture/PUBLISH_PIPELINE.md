@@ -183,7 +183,8 @@ Required properties:
 
 After all fields are computed:
 1. build per-file publish object
-2. build server lookup maps keyed by `(file_tag, slice_token)`
+2. build one global server lookup map keyed by `(file_tag, slice_token)`
+   across all published files
 3. validate all manifest invariants
 4. freeze publish state as immutable before serving starts
 
