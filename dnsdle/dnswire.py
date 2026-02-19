@@ -200,8 +200,10 @@ def parse_request(message):
     request_id, flags, qdcount, ancount, nscount, arcount = _unpack_header(message)
 
     question = None
+    raw_question_bytes = b""
     if qdcount >= 1:
-        question, _offset = _decode_question(message, DNS_HEADER_BYTES)
+        question, question_end = _decode_question(message, DNS_HEADER_BYTES)
+        raw_question_bytes = message[DNS_HEADER_BYTES:question_end]
 
     parsed = {
         "id": request_id,
@@ -212,6 +214,7 @@ def parse_request(message):
         "nscount": nscount,
         "arcount": arcount,
         "question": question,
+        "raw_question_bytes": raw_question_bytes,
     }
     if logger_enabled("trace"):
         log_event(
@@ -298,8 +301,13 @@ def _encode_question(question):
 
 
 def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_size=512):
-    question = request.get("question")
-    question_bytes, qdcount = _encode_question(question)
+    raw_question_bytes = request.get("raw_question_bytes")
+    if raw_question_bytes is not None:
+        question_bytes = raw_question_bytes
+        qdcount = 1 if raw_question_bytes else 0
+    else:
+        question = request.get("question")
+        question_bytes, qdcount = _encode_question(question)
 
     ancount = 1 if answer_bytes else 0
     arcount = 1 if include_opt else 0
