@@ -12,7 +12,7 @@ from dnsdle.state import StartupError
 
 
 def _sha256_hex(data):
-    return hashlib.sha256(data).hexdigest().lower()
+    return hashlib.sha256(data).hexdigest()
 
 
 def _derive_file_id(publish_version):
@@ -21,14 +21,10 @@ def _derive_file_id(publish_version):
 
 
 def _chunk_bytes(data, chunk_size):
-    chunks = []
-    start = 0
-    data_len = len(data)
-    while start < data_len:
-        end = start + chunk_size
-        chunks.append(data[start:end])
-        start = end
-    return tuple(chunks)
+    return tuple(
+        data[i:i + chunk_size]
+        for i in range(0, len(data), chunk_size)
+    )
 
 
 def build_publish_items(config, max_ciphertext_slice_bytes):
@@ -97,13 +93,6 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
         compressed_size = len(compressed_bytes)
         slice_bytes_by_index = _chunk_bytes(compressed_bytes, max_ciphertext_slice_bytes)
         total_slices = len(slice_bytes_by_index)
-        if total_slices <= 0:
-            raise StartupError(
-                "publish",
-                "invalid_slice_count",
-                "total_slices must be positive",
-                {"file_id": file_id},
-            )
 
         publish_items.append(
             {
