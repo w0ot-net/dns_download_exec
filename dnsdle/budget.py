@@ -23,7 +23,7 @@ def _payload_labels_for_chars(char_count, label_cap):
     labels = []
     remaining = char_count
     while remaining > 0:
-        take = label_cap if remaining > label_cap else remaining
+        take = min(label_cap, remaining)
         labels.append("a" * take)
         remaining -= take
     return tuple(labels)
@@ -84,25 +84,23 @@ def _response_size_estimate(config, query_token_len, target_wire_len):
 def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
     domain_labels = _domain_labels(config)
     suffix_labels = (config.response_label,) + domain_labels
-    packet_size_limit = (
-        config.dns_edns_size
-        if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT
-        else CLASSIC_DNS_PACKET_LIMIT
-    )
+    packet_size_limit = max(config.dns_edns_size, CLASSIC_DNS_PACKET_LIMIT)
     query_token_len = int(query_token_len)
     _validate_query_token_len(config, query_token_len)
 
     max_payload_chars = 0
+    winning_response_size = 0
     # 253 textual chars is the practical upper bound without trailing dot.
     for candidate in range(MAX_DNS_NAME_TEXT_LENGTH, 0, -1):
         payload_labels = _payload_labels_for_chars(candidate, config.dns_max_label_len)
         target_wire_len = _dns_name_wire_length(payload_labels + suffix_labels)
-        response_size_estimate = _response_size_estimate(config, query_token_len, target_wire_len)
+        candidate_response_size = _response_size_estimate(config, query_token_len, target_wire_len)
         if (
             target_wire_len <= MAX_DNS_NAME_WIRE_LENGTH
-            and response_size_estimate <= packet_size_limit
+            and candidate_response_size <= packet_size_limit
         ):
             max_payload_chars = candidate
+            winning_response_size = candidate_response_size
             break
 
     if max_payload_chars <= 0:
@@ -112,7 +110,6 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
             "no payload capacity available within DNS name and packet limits",
         )
 
-    chosen_payload_labels = _payload_labels_for_chars(max_payload_chars, config.dns_max_label_len)
     max_record_bytes = (max_payload_chars * BASE32_BITS_PER_CHAR) // BITS_PER_BYTE
     max_ciphertext_slice_bytes = max_record_bytes - BINARY_RECORD_OVERHEAD
     if max_ciphertext_slice_bytes <= 0:
@@ -128,11 +125,6 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
             },
         )
 
-    response_size_estimate = _response_size_estimate(
-        config,
-        query_token_len,
-        _dns_name_wire_length(chosen_payload_labels + suffix_labels),
-    )
     budget_info = {
         "domains": tuple(config.domains),
         "longest_domain": config.longest_domain,
@@ -142,7 +134,7 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
         "binary_record_overhead": BINARY_RECORD_OVERHEAD,
         "dns_edns_size": config.dns_edns_size,
         "response_size_limit": packet_size_limit,
-        "response_size_estimate": response_size_estimate,
+        "response_size_estimate": winning_response_size,
         "query_token_len": query_token_len,
     }
     if logger_enabled("debug", "budget"):
