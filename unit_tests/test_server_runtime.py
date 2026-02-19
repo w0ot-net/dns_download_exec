@@ -17,6 +17,7 @@ from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.state import FrozenDict
+from dnsdle.state import StartupError
 from dnsdle.state import build_runtime_state
 
 
@@ -25,6 +26,8 @@ class _FakeSocket(object):
         self.bound = None
         self.timeout = None
         self.closed = False
+        self.recv_calls = 0
+        self.send_calls = 0
 
     def bind(self, addr):
         self.bound = addr
@@ -33,9 +36,11 @@ class _FakeSocket(object):
         self.timeout = value
 
     def recvfrom(self, _size):
+        self.recv_calls += 1
         raise socket.timeout()
 
     def sendto(self, _payload, _addr):
+        self.send_calls += 1
         return 0
 
     def close(self):
@@ -207,6 +212,68 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertTrue(fake_socket.closed)
         self.assertEqual(1, len(shutdown_records))
+
+    def test_serve_runtime_fails_pre_bind_when_runtime_invariant_check_fails(self):
+        runtime_state = self._runtime_state(dns_edns_size=1232)
+        records = []
+        created = {"count": 0}
+
+        original_payload_labels = server_module.cname_payload.payload_labels_for_slice
+        original_socket_factory = server_module.socket.socket
+
+        def _raise_payload_error(_slice_bytes, _label_cap):
+            raise ValueError("forced payload encode failure")
+
+        def _counting_socket_factory(*_args, **_kwargs):
+            created["count"] += 1
+            return _FakeSocket()
+
+        try:
+            server_module.cname_payload.payload_labels_for_slice = _raise_payload_error
+            server_module.socket.socket = _counting_socket_factory
+            with self.assertRaises(StartupError) as ctx:
+                server_module.serve_runtime(
+                    runtime_state,
+                    records.append,
+                    stop_requested=lambda: True,
+                )
+        finally:
+            server_module.cname_payload.payload_labels_for_slice = original_payload_labels
+            server_module.socket.socket = original_socket_factory
+
+        self.assertEqual("startup", ctx.exception.phase)
+        self.assertEqual("server_runtime_invalid", ctx.exception.reason_code)
+        self.assertIn("invariant check failed", ctx.exception.message)
+        self.assertEqual(0, created["count"])
+        self.assertEqual([], records)
+
+    def test_serve_runtime_timeout_wake_loop_stops_deterministically(self):
+        runtime_state = self._runtime_state(dns_edns_size=1232)
+        fake_socket = _FakeSocket()
+        records = []
+        original_socket_factory = server_module.socket.socket
+
+        def _stop_after_three_timeouts():
+            return fake_socket.recv_calls >= 3
+
+        try:
+            server_module.socket.socket = lambda *_args, **_kwargs: fake_socket
+            exit_code = server_module.serve_runtime(
+                runtime_state,
+                records.append,
+                stop_requested=_stop_after_three_timeouts,
+            )
+        finally:
+            server_module.socket.socket = original_socket_factory
+
+        shutdown_records = [record for record in records if record["classification"] == "shutdown"]
+        self.assertEqual(0, exit_code)
+        self.assertEqual(0.5, fake_socket.timeout)
+        self.assertGreaterEqual(fake_socket.recv_calls, 3)
+        self.assertEqual(0, fake_socket.send_calls)
+        self.assertTrue(fake_socket.closed)
+        self.assertEqual(1, len(shutdown_records))
+        self.assertEqual("stop_callback", shutdown_records[0]["reason_code"])
 
 
 if __name__ == "__main__":

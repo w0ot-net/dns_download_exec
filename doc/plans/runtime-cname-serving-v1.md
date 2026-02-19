@@ -36,6 +36,7 @@ Out of scope for this phase:
    - start server loop
    - return non-zero on fatal startup or bind failure
 4. Preserve machine-readable JSON logging fields and stable startup error structure.
+5. Add a mandatory pre-bind runtime-serve invariant gate (`server_runtime_invalid`) that validates response-construction feasibility against startup-derived constraints before creating/binding a UDP socket.
 
 ### 2. Introduce explicit DNS wire codec module
 Add a dedicated stdlib-only DNS codec module (single responsibility):
@@ -100,9 +101,11 @@ Update architecture docs to match implemented behavior exactly (clean break, no 
 Implement explicit graceful shutdown behavior in the runtime loop:
 1. Handle interrupt/termination signal path in `dnsdle.py`/server loop.
 2. Stop receive/respond loop via explicit stop flag.
-3. Close UDP socket deterministically on shutdown.
-4. Emit shutdown log record with stable classification and counters where available.
-5. Exit cleanly without mutating publish/runtime mapping state.
+3. Use bounded receive waits (`socket.settimeout(0.5)`) as the deterministic wake mechanism so stop checks run even when no datagrams arrive.
+4. On receive timeout, continue loop and re-check stop state; on recv/send socket errors, log stable runtime-fault reason codes and continue unless stop is requested.
+5. Close UDP socket deterministically on shutdown.
+6. Emit shutdown log record with stable classification and counters where available.
+7. Exit cleanly without mutating publish/runtime mapping state.
 
 ## Affected Components
 - `dnsdle.py`: transition from startup-only run to startup + UDP serve lifecycle; keep startup/fatal logging contract.
@@ -133,7 +136,7 @@ Implement explicit graceful shutdown behavior in the runtime loop:
 
 ## Validation
 - Startup success path: valid config binds UDP and enters loop.
-- Startup invariant failure path: config that cannot satisfy required response-construction constraints fails before bind (no serve loop).
+- Startup invariant failure path: config/runtime state that cannot satisfy required response-construction constraints fails with `server_runtime_invalid` before socket create/bind (no serve loop).
 - Mapped query path: returns `NOERROR` + one CNAME answer.
 - Deterministic miss path: returns `NXDOMAIN` with empty answer section.
 - Follow-up chase path: returns `NOERROR` + one A answer (`0.0.0.0`).
@@ -143,11 +146,13 @@ Implement explicit graceful shutdown behavior in the runtime loop:
 - DNS parse-safety checks: malformed envelopes, pointer loops, and out-of-bounds names are dropped (no unsafe response).
 - Classifier-order check: follow-up shape is evaluated before slice mapping for identical suffix space.
 - Header/count contract checks: response `ID`, `QR/AA/RA/TC`, section counts, and qname echo are deterministic and spec-compliant.
-- Shutdown path check: interrupt/stop request exits loop, closes socket, and emits shutdown log once.
+- Shutdown path check: stop request under no-traffic timeout loop exits within bounded time, closes socket, and emits shutdown log once.
 
 ## Success Criteria
 - `dnsdle.py` runs as an actual UDP DNS server after startup instead of exiting immediately.
 - Request behavior matches documented response matrix (`NOERROR` CNAME, follow-up A, `NXDOMAIN`, `SERVFAIL`).
 - Query routing uses configured multi-domain suffix matching with no single-domain fallback logic.
 - Runtime response building remains deterministic for fixed runtime state.
+- Pre-bind serve invariant violations fail with `server_runtime_invalid` and do not create/bind socket.
+- Shutdown behavior is deterministic under idle traffic (`settimeout(0.5)` wake checks), closes socket once, and emits exactly one shutdown record.
 - Architecture docs listed above are updated to reflect exact implemented runtime behavior.
