@@ -88,6 +88,7 @@ v1 defines:
 
 This binds mapping identity to file content only.
 Within one launch, `file_version` must be unique across configured files.
+`file_version` is canonical lowercase hex (`[0-9a-f]{64}`).
 
 ### File ID
 
@@ -95,7 +96,9 @@ Within one launch, `file_version` must be unique across configured files.
 input order, or total file set).
 
 v1 rule:
-- `file_id = sha256("dnsdle:file-id:v1|" + file_version).hexdigest()[:16]`
+- `file_id_input = ascii_bytes("dnsdle:file-id:v1|") +
+  ascii_bytes(file_version)`
+- `file_id = sha256(file_id_input).hexdigest().lower()[:16]`
 
 Launch invariant:
 - `file_id` collisions across configured files are startup errors.
@@ -111,9 +114,15 @@ v1 compression algorithm:
 - level = configured `compression_level` (`0..9`)
 - no preset dictionary
 
+Implementation profile (for determinism guarantees):
+- python implementation + major/minor version
+- zlib runtime version used by that interpreter
+- fixed v1 compression settings in this document
+
 Determinism rule:
 - fixed plaintext bytes + fixed `compression_level` must produce identical
-  `compressed_bytes` across runs in the same implementation profile.
+  `compressed_bytes` across runs with the same implementation profile.
+- cross-profile byte-identical compression is not guaranteed in v1.
 
 Failure rules:
 - compression failure is a fatal startup error.

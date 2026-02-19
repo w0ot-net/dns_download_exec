@@ -179,8 +179,9 @@ Required property:
   CNAME target text and TTL.
 - with unchanged mapping, crypto, and wire inputs (`mapping_seed`,
   `file_version`, `compression_level`, `psk`, `base_domain`, `response_label`,
-  `dns_max_label_len`, profile ids, and `ttl`), derived `(file_tag,
-  slice_token)` and CNAME target text/TTL remain stable across restarts.
+  `dns_max_label_len`, profile ids, `ttl`, and implementation profile from
+  `doc/architecture/PUBLISH_PIPELINE.md`), derived `(file_tag, slice_token)`
+  and CNAME target text/TTL remain stable across restarts.
 
 ---
 

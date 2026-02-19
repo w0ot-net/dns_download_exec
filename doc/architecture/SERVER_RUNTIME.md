@@ -65,9 +65,9 @@ Generation behavior is specified in `doc/architecture/CLIENT_GENERATION.md`.
 ## Deterministic Restart Semantics
 
 Runtime determinism rule:
-- If `(mapping_seed, file content, relevant config)` are unchanged, then
-  `file_tag`, `slice_token`, and served CNAME payloads remain unchanged
-  across process restarts.
+- If `(mapping_seed, file content, relevant config, implementation profile)`
+  are unchanged, then `file_tag`, `slice_token`, and served CNAME payloads
+  remain unchanged across process restarts.
 
 No persisted mapping state file is required for compatibility.
 
@@ -75,6 +75,8 @@ Changing any of the following may break old clients:
 - `mapping_seed`
 - file content
 - `compression_level`
+- implementation profile (python implementation/version and zlib runtime
+  version; see `doc/architecture/PUBLISH_PIPELINE.md`)
 - relevant mapping/wire config (`file_tag_len`, `dns_max_label_len`,
   `domain`, `response_label`, profile values)
 
