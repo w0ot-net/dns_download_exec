@@ -32,6 +32,13 @@ Out of scope:
 ### 1. Introduce shared client parity helpers
 Create a dedicated module for client-side protocol parity (for example `dnsdle/client_payload.py` or equivalent) that exposes:
 - DNS response helper(s) to extract required CNAME target labels for a requested name.
+- Response envelope validation helper(s) that enforce `doc/architecture/DNS_MESSAGE_FORMAT.md` before payload decode:
+  - response `ID` matches request transaction id
+  - `QR=1`, response opcode/query semantics are valid for v1 parse path
+  - response question echoes original request qname/qtype/qclass
+  - exactly one matching `IN CNAME` answer is selected for slice-success path
+  - compressed-name decoding rejects pointer loops/out-of-bounds pointers
+  - non-success response classes (`NXDOMAIN`, `SERVFAIL`, missing required CNAME) are classified as parse/format violations for this parity-core phase
 - Payload decode helper:
   - validate response suffix (`response_label` + selected base domain)
   - join payload labels
@@ -70,6 +77,7 @@ Determinism requirement:
 
 ### 4. Documentation alignment
 Update architecture docs to reflect concrete parity behavior and where validation happens:
+- DNS response-envelope parse/validation order and fatal mismatch rules
 - client-side payload parse invariants and decode steps
 - MAC/decrypt ordering
 - reconstruction/hash enforcement details
@@ -83,8 +91,17 @@ Use deterministic unit coverage for parity core:
 4. wrong metadata context rejection case
 5. full reassembly/decompress/hash success and failure cases
 
-Also run a targeted live-path check:
-- obtain one runtime CNAME response from current server path and verify client core decodes/decrypts exactly to canonical startup slice bytes.
+Run existing regression suites for touched parser/crypto modules:
+- `python -m unittest unit_tests.test_cname_payload`
+- `python -m unittest unit_tests.test_cname_payload_encryption`
+- `python -m unittest unit_tests.test_dnswire`
+
+Run new parity suites:
+- `python -m unittest unit_tests.test_client_payload_parity`
+- `python -m unittest unit_tests.test_client_reassembly`
+
+Replace live UDP check with deterministic in-process integration coverage:
+- add a fixture-driven test case in `unit_tests/test_client_payload_parity.py` that builds one canonical server response using `cname_payload` + `dnswire` helpers, then asserts client response parsing + payload verify/decrypt outputs exact expected slice bytes without socket bind/network I/O.
 
 ## Affected Components
 - `dnsdle/cname_payload.py`: factor/reuse shared crypto primitives as needed so client/server derivations cannot drift.
@@ -99,4 +116,5 @@ Also run a targeted live-path check:
 - `doc/architecture/CLIENT_GENERATION.md`: clarify generated client should call parity helpers/embedded equivalent logic exactly.
 - `doc/architecture/CRYPTO.md`: clarify client verification/decrypt ordering and parity requirements.
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`: clarify client-side binary record parse expectations and fatal validation cases.
+- `doc/architecture/DNS_MESSAGE_FORMAT.md`: clarify response-envelope validation order and fatal mismatch handling for client parity core.
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: align failure class mapping for parse/crypto/reassembly violations.
