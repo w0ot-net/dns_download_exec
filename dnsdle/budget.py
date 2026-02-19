@@ -4,11 +4,15 @@ from dnsdle.state import StartupError
 
 
 MAX_DNS_NAME_WIRE_LENGTH = 255
+MAX_DNS_NAME_TEXT_LENGTH = 253
+CLASSIC_DNS_PACKET_LIMIT = 512
 BINARY_RECORD_OVERHEAD = 20  # 4-byte header + 16-byte truncated MAC
 DNS_HEADER_BYTES = 12
 QUESTION_FIXED_BYTES = 4  # QTYPE + QCLASS
 ANSWER_FIXED_BYTES = 12  # NAME ptr + TYPE + CLASS + TTL + RDLENGTH
 OPT_RR_BYTES = 11  # root NAME + TYPE + CLASS + TTL + RDLEN
+BASE32_BITS_PER_CHAR = 5
+BITS_PER_BYTE = 8
 
 
 def _dns_name_wire_length(labels):
@@ -45,13 +49,17 @@ def _response_size_estimate(config, query_token_len, target_wire_len):
     #   (no suffix-compression credit during startup budgeting)
     answer_size = ANSWER_FIXED_BYTES + target_wire_len
 
-    additional_size = OPT_RR_BYTES if config.dns_edns_size > 512 else 0
+    additional_size = OPT_RR_BYTES if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT else 0
     return DNS_HEADER_BYTES + question_size + answer_size + additional_size
 
 
 def compute_max_ciphertext_slice_bytes(config):
     suffix_labels = (config.response_label,) + tuple(config.domain_labels)
-    packet_size_limit = config.dns_edns_size if config.dns_edns_size > 512 else 512
+    packet_size_limit = (
+        config.dns_edns_size
+        if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT
+        else CLASSIC_DNS_PACKET_LIMIT
+    )
     query_token_len = _max_query_token_len_by_name(config)
     if query_token_len <= 0:
         raise StartupError(
@@ -62,7 +70,7 @@ def compute_max_ciphertext_slice_bytes(config):
 
     max_payload_chars = 0
     # 253 textual chars is the practical upper bound without trailing dot.
-    for candidate in range(253, 0, -1):
+    for candidate in range(MAX_DNS_NAME_TEXT_LENGTH, 0, -1):
         payload_labels = _payload_labels_for_chars(candidate, config.dns_max_label_len)
         target_wire_len = _dns_name_wire_length(payload_labels + suffix_labels)
         response_size_estimate = _response_size_estimate(config, query_token_len, target_wire_len)
@@ -81,7 +89,7 @@ def compute_max_ciphertext_slice_bytes(config):
         )
 
     chosen_payload_labels = _payload_labels_for_chars(max_payload_chars, config.dns_max_label_len)
-    max_record_bytes = (max_payload_chars * 5) // 8
+    max_record_bytes = (max_payload_chars * BASE32_BITS_PER_CHAR) // BITS_PER_BYTE
     max_ciphertext_slice_bytes = max_record_bytes - BINARY_RECORD_OVERHEAD
     if max_ciphertext_slice_bytes <= 0:
         raise StartupError(
