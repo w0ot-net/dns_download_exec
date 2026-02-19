@@ -43,6 +43,7 @@ Optional runtime inputs:
 
 Validation rules:
 - `--psk` must be present and non-empty.
+- if `--out` is provided, it must be a valid non-empty path argument.
 - numeric overrides must parse and be positive.
 - unsupported flags are usage errors.
 
@@ -93,12 +94,14 @@ Per-iteration steps:
 3. build query name `<slice_token>.<file_tag>.<base_domain>`
 4. send DNS query
 5. wait for response subject to request timeout
-6. on timeout/miss, update retry state and continue
-7. on response, parse and validate expected CNAME structure
-8. decode CNAME payload record
-9. verify crypto and decrypt slice
-10. store slice if new index; verify equality if duplicate index
-11. when a new index is stored, reset no-progress timer
+6. on timeout/no-response, update retry state and continue
+7. on response, validate expected CNAME answer contract
+8. explicit DNS miss responses (for example, `NXDOMAIN` or no required CNAME
+   answer) are contract violations
+9. decode CNAME payload record
+10. verify crypto and decrypt slice
+11. store slice if new index; verify equality if duplicate index
+12. when a new index is stored, reset no-progress timer
 
 Loop termination failures:
 - max-rounds exhausted
@@ -136,7 +139,7 @@ For each received response:
 
 Classification:
 - transport timeout/no-response: retryable
-- parse/format mismatch: fatal (exit `4`)
+- DNS miss response or parse/format mismatch: fatal (exit `4`)
 - crypto mismatch: fatal (exit `5`)
 
 No alternate wire parsing mode is allowed in v1.
@@ -163,6 +166,7 @@ Write policy:
 - if `--out` provided, write exactly to that path
 - if `--out` omitted, write to deterministic temp-path pattern
 
+Invalid `--out` argument is a CLI validation failure (exit `2`).
 Output failures exit with code `7`.
 
 Client must not execute downloaded bytes in v1.
