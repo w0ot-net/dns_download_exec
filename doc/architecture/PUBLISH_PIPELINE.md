@@ -173,7 +173,10 @@ After slices are built, derive mapping identifiers from
   `(mapping_seed, file_version, i)`
 
 Required properties:
-- mapping for one file depends only on `(mapping_seed, file_version)`
+- mapping identity for one file depends only on
+  `(mapping_seed, file_version)`
+- token materialization additionally depends on fixed length constraints for
+  the launch (`file_tag_len`, `dns_max_label_len`, DNS name limits)
 - mapping does not depend on file path, startup time, or other hosted files
 - token cardinality/order matches slice array cardinality/order
 
