@@ -166,5 +166,7 @@ profile id and must not silently reinterpret v1 records.
 ## Python Compatibility Constraints
 
 Implementation must support Python 2.7 and Python 3.x with standard library
-only. Architecture-level crypto requirements are fixed; implementation details
-must preserve the invariants in this document.
+only. Compatibility aliases and byte/text coercion helpers should be
+centralized in `dnsdle/compat.py` so crypto/payload code paths avoid duplicated
+interpreter-branching logic. Architecture-level crypto requirements are fixed;
+implementation details must preserve the invariants in this document.
