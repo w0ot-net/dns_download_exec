@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import unittest
 
 import dnsdle as startup_module
+from dnsdle.state import StartupError
 
 
 _PATCHABLE = (
@@ -297,6 +298,159 @@ class StartupConvergenceTests(unittest.TestCase):
         self.assertEqual(40, captured["max_ciphertext_slice_bytes"])
         self.assertEqual(3, captured["query_token_len"])
         self.assertEqual((3, 3), captured["lens"])
+
+
+    # -- Phase 2 invariant and integration tests --
+
+    def _phase2_stubs(self):
+        """Shared stubs for Phase 2 tests: single-iteration convergence."""
+        fake_config = _FakeConfig()
+
+        def parse_stub(_argv):
+            return "parsed-args"
+
+        def build_config_stub(_pa):
+            return fake_config
+
+        def configure_logger_stub(_c):
+            pass
+
+        def budget_stub(_config, query_token_len=1):
+            return 100, {"query_token_len": query_token_len}
+
+        def publish_stub(_config, _mcsb):
+            return [{"file_id": "pub0", "plaintext_sha256": "psha0"}]
+
+        def generate_stub(_input):
+            return {
+                "artifacts": ({"filename": "client.py", "source": "pass"},),
+                "managed_dir": "",
+                "artifact_count": 1,
+                "target_os": ("linux",),
+            }
+
+        def source_publish_stub(
+            sources, compression_level, max_ciphertext_slice_bytes,
+            seen_plaintext_sha256=None, seen_file_ids=None,
+        ):
+            return [{"file_id": "cpub0", "plaintext_sha256": "cpsha0"}]
+
+        return (
+            fake_config,
+            parse_stub,
+            build_config_stub,
+            configure_logger_stub,
+            budget_stub,
+            publish_stub,
+            generate_stub,
+            source_publish_stub,
+        )
+
+    def test_raises_mapping_stability_violation_when_user_mapping_changes(self):
+        (
+            fake_config, parse_stub, build_config_stub,
+            configure_logger_stub, budget_stub, publish_stub,
+            generate_stub, source_publish_stub,
+        ) = self._phase2_stubs()
+
+        def mapping_stub(publish_items, _config):
+            if len(publish_items) == 1:
+                return [{"file_id": "u0", "file_tag": "tag_a",
+                         "slice_token_len": 1, "slice_tokens": ("s0",)}]
+            return [
+                {"file_id": "u0", "file_tag": "tag_b",
+                 "slice_token_len": 1, "slice_tokens": ("s0",)},
+                {"file_id": "c0", "file_tag": "ctag",
+                 "slice_token_len": 1, "slice_tokens": ("c0",)},
+            ]
+
+        def runtime_stub(_cfg, _mapped, _mcsb, _bi):
+            return "unused"
+
+        self._install(
+            parse_stub, build_config_stub, configure_logger_stub,
+            budget_stub, publish_stub, mapping_stub, runtime_stub,
+            generate_stub=generate_stub,
+            source_publish_stub=source_publish_stub,
+        )
+        with self.assertRaises(StartupError) as ctx:
+            startup_module.build_startup_state(["--dummy"])
+
+        self.assertEqual("mapping_stability_violation", ctx.exception.reason_code)
+        self.assertEqual("u0", ctx.exception.context["file_id"])
+
+    def test_raises_token_length_overflow_when_client_items_exceed_budget(self):
+        (
+            fake_config, parse_stub, build_config_stub,
+            configure_logger_stub, budget_stub, publish_stub,
+            generate_stub, source_publish_stub,
+        ) = self._phase2_stubs()
+
+        def mapping_stub(publish_items, _config):
+            if len(publish_items) == 1:
+                return [{"file_id": "u0", "file_tag": "tf0",
+                         "slice_token_len": 1, "slice_tokens": ("a",)}]
+            return [
+                {"file_id": "u0", "file_tag": "tf0",
+                 "slice_token_len": 1, "slice_tokens": ("a",)},
+                {"file_id": "c0", "file_tag": "cf0",
+                 "slice_token_len": 2, "slice_tokens": ("x", "y")},
+            ]
+
+        def runtime_stub(_cfg, _mapped, _mcsb, _bi):
+            return "unused"
+
+        self._install(
+            parse_stub, build_config_stub, configure_logger_stub,
+            budget_stub, publish_stub, mapping_stub, runtime_stub,
+            generate_stub=generate_stub,
+            source_publish_stub=source_publish_stub,
+        )
+        with self.assertRaises(StartupError) as ctx:
+            startup_module.build_startup_state(["--dummy"])
+
+        self.assertEqual("token_length_overflow", ctx.exception.reason_code)
+        self.assertEqual(2, ctx.exception.context["combined_max_token_len"])
+        self.assertEqual(1, ctx.exception.context["query_token_len"])
+        self.assertIn("hint", ctx.exception.context)
+
+    def test_phase2_combines_client_items_into_final_runtime_state(self):
+        (
+            fake_config, parse_stub, build_config_stub,
+            configure_logger_stub, budget_stub, publish_stub,
+            generate_stub, source_publish_stub,
+        ) = self._phase2_stubs()
+
+        def mapping_stub(publish_items, _config):
+            if len(publish_items) == 1:
+                return [{"file_id": "u0", "file_tag": "tf0",
+                         "slice_token_len": 1, "slice_tokens": ("a",)}]
+            return [
+                {"file_id": "u0", "file_tag": "tf0",
+                 "slice_token_len": 1, "slice_tokens": ("a",)},
+                {"file_id": "c0", "file_tag": "cf0",
+                 "slice_token_len": 1, "slice_tokens": ("b",)},
+            ]
+
+        captured = {}
+
+        def runtime_stub(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
+            captured["mapped_count"] = len(mapped_publish_items)
+            captured["file_ids"] = [item["file_id"] for item in mapped_publish_items]
+            return "final_state"
+
+        self._install(
+            parse_stub, build_config_stub, configure_logger_stub,
+            budget_stub, publish_stub, mapping_stub, runtime_stub,
+            generate_stub=generate_stub,
+            source_publish_stub=source_publish_stub,
+        )
+        runtime_state, generation_result = startup_module.build_startup_state(["--dummy"])
+
+        self.assertEqual("final_state", runtime_state)
+        self.assertEqual(1, generation_result["artifact_count"])
+        self.assertEqual(2, captured["mapped_count"])
+        self.assertEqual(["u0", "c0"], captured["file_ids"])
 
 
 if __name__ == "__main__":
