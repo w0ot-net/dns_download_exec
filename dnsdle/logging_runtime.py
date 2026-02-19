@@ -6,6 +6,7 @@ import time
 
 from dnsdle.compat import is_binary
 from dnsdle.compat import key_text
+from dnsdle.compat import PY2
 from dnsdle.constants import DEFAULT_LOG_LEVEL
 from dnsdle.constants import LOG_CATEGORIES
 from dnsdle.constants import LOG_LEVELS
@@ -46,6 +47,11 @@ def _now_unix_ms():
 
 def _safe_json_value(value):
     if is_binary(value):
+        if PY2:
+            try:
+                return value.decode("ascii")
+            except (UnicodeDecodeError, AttributeError):
+                pass
         return "<bytes:%d>" % len(value)
     if isinstance(value, (tuple, list)):
         return [_safe_json_value(item) for item in value]
