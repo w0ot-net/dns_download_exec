@@ -5,22 +5,16 @@ import os
 import re
 from collections import namedtuple
 
+from dnsdle.constants import ALLOWED_TARGET_OS
+from dnsdle.constants import FIXED_CONFIG
+from dnsdle.constants import MAX_DNS_EDNS_SIZE
+from dnsdle.constants import MIN_DNS_EDNS_SIZE
+from dnsdle.constants import TOKEN_ALPHABET_CHARS
 from dnsdle.state import StartupError
 
 
-TOKEN_ALPHABET = set("abcdefghijklmnopqrstuvwxyz0123456789")
+TOKEN_ALPHABET = set(TOKEN_ALPHABET_CHARS)
 LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-ALLOWED_TARGET_OS = ("windows", "linux")
-
-FIXED_CONFIG = {
-    "query_mapping_alphabet": "[a-z0-9]",
-    "query_mapping_case": "lowercase",
-    "wire_profile": "v1",
-    "crypto_profile": "v1",
-    "qtype_response": "CNAME",
-    "generated_client_single_file": True,
-    "generated_client_download_only": True,
-}
 
 
 Config = namedtuple(
@@ -284,7 +278,12 @@ def parse_cli_config(argv=None):
 
     listen_addr, listen_host, listen_port = _normalize_listen_addr(args.listen_addr)
     ttl = _parse_int_in_range("ttl", args.ttl, 1, 300)
-    dns_edns_size = _parse_int_in_range("dns_edns_size", args.dns_edns_size, 512, 4096)
+    dns_edns_size = _parse_int_in_range(
+        "dns_edns_size",
+        args.dns_edns_size,
+        MIN_DNS_EDNS_SIZE,
+        MAX_DNS_EDNS_SIZE,
+    )
     dns_max_label_len = _parse_int_in_range(
         "dns_max_label_len", args.dns_max_label_len, 16, 63
     )

@@ -1,18 +1,16 @@
 from __future__ import absolute_import
 
+from dnsdle.constants import ANSWER_FIXED_BYTES
+from dnsdle.constants import BASE32_BITS_PER_CHAR
+from dnsdle.constants import BINARY_RECORD_OVERHEAD
+from dnsdle.constants import BITS_PER_BYTE
+from dnsdle.constants import CLASSIC_DNS_PACKET_LIMIT
+from dnsdle.constants import DNS_HEADER_BYTES
+from dnsdle.constants import MAX_DNS_NAME_TEXT_LENGTH
+from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
+from dnsdle.constants import OPT_RR_BYTES
+from dnsdle.constants import QUESTION_FIXED_BYTES
 from dnsdle.state import StartupError
-
-
-MAX_DNS_NAME_WIRE_LENGTH = 255
-MAX_DNS_NAME_TEXT_LENGTH = 253
-CLASSIC_DNS_PACKET_LIMIT = 512
-BINARY_RECORD_OVERHEAD = 20  # 4-byte header + 16-byte truncated MAC
-DNS_HEADER_BYTES = 12
-QUESTION_FIXED_BYTES = 4  # QTYPE + QCLASS
-ANSWER_FIXED_BYTES = 12  # NAME ptr + TYPE + CLASS + TTL + RDLENGTH
-OPT_RR_BYTES = 11  # root NAME + TYPE + CLASS + TTL + RDLEN
-BASE32_BITS_PER_CHAR = 5
-BITS_PER_BYTE = 8
 
 
 def _dns_name_wire_length(labels):

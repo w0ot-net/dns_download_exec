@@ -4,10 +4,11 @@ import base64
 import hashlib
 import hmac
 
+from dnsdle.constants import DIGEST_TEXT_CAPACITY
+from dnsdle.constants import MAPPING_FILE_LABEL
+from dnsdle.constants import MAPPING_SLICE_LABEL
+from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.state import StartupError
-
-
-DIGEST_TEXT_CAPACITY = 52  # base32(lower, no-pad) chars from SHA-256 digest
 
 
 def _ascii_bytes(value):
@@ -32,14 +33,14 @@ def _hmac_sha256(key_bytes, message_bytes):
 
 
 def _derive_file_digest(seed_bytes, publish_version_bytes):
-    return _hmac_sha256(seed_bytes, b"dnsdle:file:v1|" + publish_version_bytes)
+    return _hmac_sha256(seed_bytes, MAPPING_FILE_LABEL + publish_version_bytes)
 
 
 def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
     slice_index_bytes = _ascii_bytes(str(slice_index))
     return _hmac_sha256(
         seed_bytes,
-        b"dnsdle:slice:v1|" + publish_version_bytes + b"|" + slice_index_bytes,
+        MAPPING_SLICE_LABEL + publish_version_bytes + b"|" + slice_index_bytes,
     )
 
 
@@ -74,7 +75,7 @@ def _max_token_len_for_file(config, file_tag):
 
     for token_len in range(1, max_candidate + 1):
         labels = ("a" * token_len, file_tag) + tuple(config.domain_labels)
-        if _dns_name_wire_length(labels) <= 255:
+        if _dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
             max_by_qname = token_len
 
     return max_by_qname
