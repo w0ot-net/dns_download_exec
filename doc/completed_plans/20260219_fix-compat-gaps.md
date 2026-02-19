@@ -114,3 +114,16 @@ string_types = (str, bytes)
 - `dnsdle/__init__.py`: add `to_ascii_bytes` import; replace one raw `.encode("ascii")` call.
 - `dnsdle/mapping.py`: add `to_ascii_int_bytes` import; replace one
   `to_ascii_bytes(str(...))` call with `to_ascii_int_bytes`.
+
+## Execution Notes (2026-02-19)
+
+All plan items implemented as specified with no deviations:
+
+1. `dnsdle/client_generator.py`: added `to_ascii_bytes` and `to_ascii_text` imports;
+   replaced validation guard (`source.encode("ascii")` -> `to_ascii_text(source)`) and
+   binary write (`source_text.encode("ascii")` -> `to_ascii_bytes(source_text)`).
+2. `dnsdle/__init__.py`: added `to_ascii_bytes` import; replaced
+   `artifact["source"].encode("ascii")` -> `to_ascii_bytes(artifact["source"])`.
+3. `dnsdle/mapping.py`: added `to_ascii_int_bytes` import; replaced
+   `to_ascii_bytes(str(slice_index))` -> `to_ascii_int_bytes(slice_index, "slice_index")`.
+4. `dnsdle/compat.py`: removed `string_types` from both PY2 and PY3 branches.

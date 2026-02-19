@@ -9,12 +9,10 @@ PY2 = sys.version_info[0] == 2
 if PY2:
     text_type = unicode
     binary_type = str
-    string_types = (str, unicode)
     integer_types = (int, long)
 else:
     text_type = str
     binary_type = bytes
-    string_types = (str, bytes)
     integer_types = (int,)
 
 

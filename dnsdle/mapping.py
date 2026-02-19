@@ -5,6 +5,7 @@ import hmac
 
 from dnsdle.compat import base32_lower_no_pad
 from dnsdle.compat import to_ascii_bytes
+from dnsdle.compat import to_ascii_int_bytes
 from dnsdle.constants import DIGEST_TEXT_CAPACITY
 from dnsdle.constants import MAPPING_FILE_LABEL
 from dnsdle.constants import MAPPING_SLICE_LABEL
@@ -27,7 +28,7 @@ def _derive_file_digest(seed_bytes, publish_version_bytes):
 
 
 def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
-    slice_index_bytes = to_ascii_bytes(str(slice_index))
+    slice_index_bytes = to_ascii_int_bytes(slice_index, "slice_index")
     return _hmac_sha256(
         seed_bytes,
         MAPPING_SLICE_LABEL + publish_version_bytes + b"|" + slice_index_bytes,
