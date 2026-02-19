@@ -124,7 +124,7 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
     return RuntimeState(
         config=config,
         max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
-        budget_info=FrozenDict(dict(budget_info)),
+        budget_info=FrozenDict(budget_info),
         publish_items=tuple(publish_items),
         lookup_by_key=FrozenDict(lookup),
         slice_bytes_by_identity=FrozenDict(slice_bytes_by_identity),
