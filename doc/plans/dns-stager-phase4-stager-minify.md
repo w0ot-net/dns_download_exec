@@ -5,7 +5,9 @@
 Create a custom deterministic minifier tailored to the stager template's
 disciplined coding style. No AST, no tokenizer, no external dependencies
 -- just mechanical text passes that are correct by construction given the
-template constraints established in Phase 3.
+template constraints established in Phase 3. The minifier operates on
+fully-substituted Python source (Phase 5 replaces `@@PLACEHOLDER@@`
+markers before calling `minify()`).
 
 ## Prerequisites
 
@@ -19,8 +21,10 @@ After implementation:
 - `dnsdle/stager_minify.py` exports `minify(source) -> str`.
 - The minifier is deterministic: same input always produces same output.
 - Minified output `compile()`s successfully.
-- Round-tripping the stager template through minification preserves all
-  function names and embedded constants.
+- Round-tripping the fully-substituted stager source through minification
+  preserves semantic correctness: all functions remain callable, all
+  constant values are unchanged, and the download-verify-exec chain
+  behaves identically.
 - The minified output is substantially smaller than the readable template,
   making it suitable for zlib compression and base64 one-liner embedding.
 
@@ -43,7 +47,14 @@ def minify(source):
 3. **Rename variables.** Apply a fixed rename table using word-boundary
    regex: `re.sub(r'\benc_key\b', 'e', src)`. Process longest names
    first to prevent substring interference. The rename table maps every
-   template-local variable to a single-character name.
+   template-local variable and function name to a single-character name.
+   The regex operates on the entire source including string literals, so
+   **no old-name in the rename table may appear as a whole word inside
+   any string literal** of the post-substitution source. The Phase 3
+   template satisfies this for hardcoded strings (crypto labels use
+   `dnsdle-enc-v1|` style naming, never bare variable names).
+   Substituted runtime values (domain labels, file identifiers) are
+   generated or DNS-conformant and will not collide in practice.
 4. **Reduce indentation.** Replace 4 spaces per indent level with 1 space.
 5. **Semicolon-join.** Consecutive lines at the same indent level that are
    not control-flow openers (`if`, `for`, `while`, `try`, `except`,
@@ -53,10 +64,13 @@ def minify(source):
 ### 2. Variable rename table
 
 The rename table is a module-level constant (list of `(old_name, new_name)`
-pairs). It maps every template-local variable and function name to a
-short replacement. The table is ordered longest-name-first so that
-`re.sub` on longer names runs before shorter names, preventing substring
-interference.
+pairs). It maps every template-local variable, function name, and
+function parameter name to a short replacement. The table is ordered
+longest-name-first so that `re.sub` on longer names runs before shorter
+names, preventing substring interference. Because the template has no
+nested functions or closures, each name is unique across the entire
+source and whole-source `re.sub` renames it consistently at every use
+site.
 
 The table doubles as documentation of the variable mapping. It must be
 updated whenever the stager template's local names change.
@@ -77,6 +91,13 @@ _BLOCK_STARTERS = frozenset((
 A line is a block starter if its first whitespace-delimited token is in
 this set. Block starters force a line break; they cannot be appended to
 the previous line with `;`.
+
+This set is intentionally scoped to the stager template's vocabulary,
+not all Python keywords. `return`, `break`, and `continue` are included
+even though `a=1;return a` is valid Python -- preventing that join is a
+safety-over-size trade-off that keeps the pass trivial. Keywords like
+`class`, `assert`, `raise`, and `del` are omitted because the template
+never uses them.
 
 ### 4. Indentation reduction
 
