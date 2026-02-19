@@ -66,7 +66,14 @@ After implementation:
 - Keep external config surface unchanged (`--domains`, etc.); this is a
   structural refactor, not a config-contract expansion.
 
-### 5. Validation approach
+### 5. Execution prerequisite for test edits
+- This plan includes `unit_tests/` changes because parser-contract behavior is
+  the primary risk surface for the refactor.
+- Prerequisite: explicit user approval to modify tests is required before
+  execution; if approval is not present, split test updates into a separate
+  follow-up plan and do not execute this plan as-is.
+
+### 6. Validation approach
 - Add/update unit tests for parser/config split behavior:
   - `unit_tests/test_cli.py` (new):
     - removed `--domain` rejected with `StartupError`
@@ -84,6 +91,12 @@ After implementation:
     - valid multi-domain launch
     - removed `--domain` rejection
     - duplicate/overlap domain failures
+- Run command-level CLI error/logging checks through `dnsdle.py`:
+  - `python dnsdle.py --domain example.com --files <f> --psk k`
+  - `python dnsdle.py --dom example.com --files <f> --psk k`
+  - `python dnsdle.py --unknown-flag`
+  - verify each returns non-zero and emits one `startup_error` record with
+    stable fields (`classification`, `phase`, `reason_code`, `message`).
 - Run targeted module tests:
   - `python -m unittest unit_tests.test_cli`
   - `python -m unittest unit_tests.test_config`
@@ -101,10 +114,20 @@ After implementation:
   config construction.
 - `dnsdle/__init__.py`: startup wiring updated to parse args before config
   normalization.
+- `dnsdle.py`: top-level CLI startup error/logging contract is validated
+  end-to-end (non-zero exit + stable `startup_error` record fields).
 - `unit_tests/test_cli.py` (new): parser behavior invariants (`StartupError`
   surfaces, removed flag rejection, no-abbrev behavior).
 - `unit_tests/test_config.py`: switch to config-build entrypoint and keep
   normalization invariant coverage.
+- `unit_tests/test_publish.py`: migrate direct config-entrypoint usage to the
+  new parse/build split.
+- `unit_tests/test_mapping.py`: migrate direct config-entrypoint usage to the
+  new parse/build split.
+- `unit_tests/test_server_runtime.py`: migrate direct config-entrypoint usage to
+  the new parse/build split.
+- `unit_tests/test_startup_convergence.py`: update startup patch targets for
+  the new parse/build call graph.
 - `unit_tests/test_startup_state.py`: ensure startup integration path remains
   stable after call-site rewiring.
 - `doc/architecture/ARCHITECTURE.md`: clarify component boundary between CLI
