@@ -179,6 +179,69 @@ class BudgetPacketBoundsTests(unittest.TestCase):
 
         self.assertEqual("budget_unusable", ctx.exception.reason_code)
 
+    def test_requires_longest_domain_labels(self):
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(object())
+
+        self.assertEqual("budget", ctx.exception.phase)
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        self.assertIn("longest_domain_labels", ctx.exception.message)
+
+    def test_rejects_non_positive_query_token_len(self):
+        config = self._build_config("example.com", dns_edns_size=1232, file_tag_len=6)
+
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(config, query_token_len=0)
+
+        self.assertEqual("budget", ctx.exception.phase)
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        self.assertEqual(0, ctx.exception.context.get("query_token_len"))
+
+    def test_rejects_query_token_len_over_label_limit(self):
+        config = self._build_config("example.com", dns_edns_size=1232, file_tag_len=6)
+
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(config, query_token_len=64)
+
+        self.assertEqual("budget", ctx.exception.phase)
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        self.assertEqual(64, ctx.exception.context.get("query_token_len"))
+
+    def test_rejects_query_name_that_cannot_fit_token_and_file_tag(self):
+        domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 52))
+        config = self._build_config(domain, dns_edns_size=1232, file_tag_len=16)
+
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(config, query_token_len=1)
+
+        self.assertEqual("budget", ctx.exception.phase)
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        self.assertIn("query name budget cannot fit", ctx.exception.message)
+        self.assertEqual(1, ctx.exception.context.get("query_token_len"))
+
+    def test_rejects_when_suffix_leaves_no_payload_capacity(self):
+        domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 57))
+        labels = tuple(domain.split("."))
+        config = _TestConfig(
+            domains=(domain,),
+            domain_labels=labels,
+            longest_domain=domain,
+            longest_domain_labels=labels,
+            longest_domain_wire_len=_dns_name_wire_length(labels),
+            dns_max_label_len=63,
+            file_tag_len=1,
+            response_label="x" * 63,
+            dns_edns_size=512,
+            mapping_seed="0",
+        )
+
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(config, query_token_len=1)
+
+        self.assertEqual("budget", ctx.exception.phase)
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        self.assertIn("no payload capacity available", ctx.exception.message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,72 @@ class MappingTests(unittest.TestCase):
         self.assertEqual("mapping", ctx.exception.phase)
         self.assertEqual("mapping_collision", ctx.exception.reason_code)
 
+    def test_rejects_when_qname_limits_disallow_even_shortest_token(self):
+        longest_domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 52))
+        cfg = parse_cli_config(
+            [
+                "--domains",
+                longest_domain,
+                "--files",
+                self.file_path,
+                "--psk",
+                "k",
+                "--file-tag-len",
+                "16",
+            ]
+        )
+
+        items = [_publish_item("1" * 16, "d" * 64, 1)]
+        with self.assertRaises(StartupError) as ctx:
+            apply_mapping(items, cfg)
+
+        self.assertEqual("mapping", ctx.exception.phase)
+        self.assertEqual("mapping_capacity_exceeded", ctx.exception.reason_code)
+        self.assertIn("QNAME limits do not allow", ctx.exception.message)
+        self.assertEqual("1" * 16, ctx.exception.context.get("file_id"))
+
+    def test_multi_domain_mapping_clamps_to_longest_domain(self):
+        longest_domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 52))
+        cfg = parse_cli_config(
+            [
+                "--domains",
+                "example.com,%s" % longest_domain,
+                "--files",
+                self.file_path,
+                "--psk",
+                "k",
+                "--file-tag-len",
+                "16",
+            ]
+        )
+        self.assertEqual(tuple(sorted(("example.com", longest_domain))), cfg.domains)
+        self.assertEqual(longest_domain, cfg.longest_domain)
+
+        items = [_publish_item("1" * 16, "e" * 64, 1)]
+        with self.assertRaises(StartupError) as ctx:
+            apply_mapping(items, cfg)
+
+        self.assertEqual("mapping", ctx.exception.phase)
+        self.assertEqual("mapping_capacity_exceeded", ctx.exception.reason_code)
+        self.assertIn("QNAME limits do not allow", ctx.exception.message)
+
+    def test_rejects_local_collisions_when_token_len_cap_is_too_small(self):
+        cfg = self._parse_config(mapping_seed="0")
+        items = [_publish_item("1" * 16, "f" * 64, 33)]
+
+        original = mapping_module._max_token_len_for_file
+        mapping_module._max_token_len_for_file = lambda _cfg, _tag: 1
+        try:
+            with self.assertRaises(StartupError) as ctx:
+                apply_mapping(items, cfg)
+        finally:
+            mapping_module._max_token_len_for_file = original
+
+        self.assertEqual("mapping", ctx.exception.phase)
+        self.assertEqual("mapping_collision", ctx.exception.reason_code)
+        self.assertIn("unable to resolve local slice-token collisions", ctx.exception.message)
+        self.assertEqual("1" * 16, ctx.exception.context.get("file_id"))
+
 
 if __name__ == "__main__":
     unittest.main()

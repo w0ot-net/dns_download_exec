@@ -42,6 +42,10 @@ class ConfigParsingTests(unittest.TestCase):
         )
 
         self.assertEqual(("api.example.net", "example.com"), cfg.domains)
+        self.assertEqual(
+            (("api", "example", "net"), ("example", "com")),
+            cfg.domain_labels_by_domain,
+        )
         self.assertEqual(("api", "example", "net"), cfg.longest_domain_labels)
         self.assertEqual("api.example.net", cfg.longest_domain)
         self.assertEqual("0.0.0.0", cfg.listen_host)
@@ -60,6 +64,77 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertEqual("config", ctx.exception.phase)
         self.assertEqual("overlapping_domains", ctx.exception.reason_code)
+
+    def test_rejects_duplicate_normalized_domains(self):
+        args = self._base_args()
+        args[1] = "EXAMPLE.com,example.com."
+
+        with self.assertRaises(StartupError) as ctx:
+            parse_cli_config(args)
+
+        self.assertEqual("config", ctx.exception.phase)
+        self.assertEqual("duplicate_domain", ctx.exception.reason_code)
+        self.assertEqual("example.com", ctx.exception.context.get("domain"))
+
+    def test_rejects_domains_with_empty_entry(self):
+        args = self._base_args()
+        args[1] = "example.com,,hello.com"
+
+        with self.assertRaises(StartupError) as ctx:
+            parse_cli_config(args)
+
+        self.assertEqual("config", ctx.exception.phase)
+        self.assertEqual("invalid_domains", ctx.exception.reason_code)
+        self.assertIn("empty entry", ctx.exception.message)
+
+    def test_rejects_legacy_domain_flag(self):
+        with self.assertRaises(StartupError) as ctx:
+            parse_cli_config(
+                [
+                    "--domain",
+                    "example.com",
+                    "--files",
+                    self.sample_file,
+                    "--psk",
+                    "secret",
+                ]
+            )
+
+        self.assertEqual("config", ctx.exception.phase)
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertIn("--domain is removed; use --domains", ctx.exception.message)
+
+    def test_selects_longest_domain_even_when_not_first_in_canonical_order(self):
+        longer = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.com"
+        cfg = parse_cli_config(
+            [
+                "--domains",
+                "a.com,%s" % longer,
+                "--files",
+                self.sample_file,
+                "--psk",
+                "secret",
+            ]
+        )
+
+        self.assertEqual(("a.com", longer), cfg.domains)
+        self.assertEqual(longer, cfg.longest_domain)
+        self.assertEqual(tuple(longer.split(".")), cfg.longest_domain_labels)
+        short_wire_len = 1 + sum(1 + len(label) for label in ("a", "com"))
+        self.assertGreater(cfg.longest_domain_wire_len, short_wire_len)
+
+    def test_rejects_response_suffix_exceeding_dns_limit_for_longest_domain(self):
+        longest_domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 61))
+        args = self._base_args()
+        args[1] = longest_domain
+
+        with self.assertRaises(StartupError) as ctx:
+            parse_cli_config(args)
+
+        self.assertEqual("config", ctx.exception.phase)
+        self.assertEqual("invalid_config", ctx.exception.reason_code)
+        self.assertIn("response suffix exceeds DNS name-length limits", ctx.exception.message)
+        self.assertEqual(longest_domain, ctx.exception.context.get("longest_domain"))
 
     def test_rejects_token_only_response_label(self):
         args = self._base_args() + ["--response-label", "abc123"]
