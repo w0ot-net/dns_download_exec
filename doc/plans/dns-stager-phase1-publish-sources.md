@@ -93,16 +93,23 @@ def _build_single_publish_item(
     max_ciphertext_slice_bytes,
     seen_plaintext_sha256,
     seen_file_ids,
-    item_label,
+    item_context,
 ):
 ```
 
-`item_label` is a string used in error context (e.g. `"file_index=0"` or
-`"source=dnsdl_..._linux.py"`).
+`item_context` is a dict merged into `StartupError` context for any error
+raised by the helper (e.g. `{"file_index": 0}` from the disk caller or
+`{"source": "dnsdl_..._linux.py"}` from the sources caller). This preserves
+structured error output.
+
+The helper returns the publish item dict. Callers are responsible for
+diagnostic logging (the existing `log_event` call in `build_publish_items()`
+stays in its disk-read loop; `build_publish_items_from_sources()` adds its
+own logging with source-appropriate context).
 
 Rewrite `build_publish_items()` to call `_build_single_publish_item()` per
-file, keeping its disk-read loop. `build_publish_items_from_sources()` calls
-the same helper per source entry.
+file, keeping its disk-read loop and per-item logging.
+`build_publish_items_from_sources()` calls the same helper per source entry.
 
 ### 3. Include `"source"` in `generate_client_artifacts()` return
 
@@ -125,6 +132,3 @@ Change: include `"source": artifact["source"]` in the dicts appended to
 - `dnsdle/client_generator.py`:
   - Include `"source"` field in the dicts returned by
     `generate_client_artifacts()`.
-- `dnsdle/__init__.py`:
-  - Add import for `build_publish_items_from_sources` (unused until Phase 2,
-    but validates the import path).
