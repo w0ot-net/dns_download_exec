@@ -8,11 +8,15 @@ import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
 from dnsdle.compat import base32_lower_no_pad
 from dnsdle.constants import DNS_FLAG_AA
+from dnsdle.constants import DNS_FLAG_QR
 from dnsdle.constants import DNS_FLAG_RA
 from dnsdle.constants import DNS_FLAG_TC
+from dnsdle.constants import DNS_OPCODE_MASK
 from dnsdle.constants import DNS_QCLASS_IN
 from dnsdle.constants import DNS_QTYPE_A
 from dnsdle.constants import DNS_RCODE_NOERROR
+from dnsdle.constants import DNS_RCODE_NXDOMAIN
+from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.constants import PAYLOAD_MAC_TRUNC_LEN
 
 
@@ -86,6 +90,18 @@ def _dummy_ns_rr():
     rdata = b'\xc0\x0c'  # pointer to question name
     rdlength = len(rdata)
     return name + struct.pack("!HHIH", rr_type, rr_class, ttl, rdlength) + rdata
+
+
+def _patch_response_rcode(message, rcode):
+    """Patch the RCODE field (low 4 bits of flags) in a DNS response."""
+    flags = struct.unpack("!H", message[2:4])[0]
+    flags = (flags & 0xFFF0) | (rcode & 0x000F)
+    return message[:2] + struct.pack("!H", flags) + message[4:]
+
+
+def _patch_response_id(message, new_id):
+    """Patch the transaction ID in a DNS response."""
+    return struct.pack("!H", new_id & 0xFFFF) + message[2:]
 
 
 class ClientPayloadParityTests(unittest.TestCase):
@@ -462,6 +478,179 @@ class ClientPayloadParityTests(unittest.TestCase):
                 321,
             )
         self.assertEqual("response_truncated", raised.exception.reason_code)
+
+    def test_rejects_servfail_rcode(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_rcode(response, DNS_RCODE_SERVFAIL)
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_rcode_invalid", raised.exception.reason_code)
+
+    def test_rejects_nxdomain_rcode(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_rcode(response, DNS_RCODE_NXDOMAIN)
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_rcode_invalid", raised.exception.reason_code)
+
+    def test_rejects_response_id_mismatch(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_id(response, 0x9999)
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_id_mismatch", raised.exception.reason_code)
+
+    def test_rejects_non_qr_response(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        response = _patch_response_flags(response, clear_flags=DNS_FLAG_QR)
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_not_qr", raised.exception.reason_code)
+
+    def test_rejects_non_query_opcode(self):
+        psk = "k"
+        file_id = "1" * 16
+        publish_version = "a" * 64
+        request_qname_labels = ("tok123", "tag123", "example", "com")
+        selected_domain_labels = ("example", "com")
+        response_label = "r-x"
+
+        record = cname_payload.build_slice_record(
+            psk, file_id, publish_version, 0, 3, 321, b"slice-data-not-trivial",
+        )
+        response = _response_with_record(
+            record, request_qname_labels, selected_domain_labels, response_label,
+        )
+        # Set opcode to IQUERY (1) = 0x0800 in the opcode field
+        response = _patch_response_flags(
+            response, clear_flags=DNS_OPCODE_MASK, set_flags=0x0800,
+        )
+
+        with self.assertRaises(client_payload.ClientParseError) as raised:
+            client_payload.decode_response_slice(
+                response,
+                0x1234,
+                request_qname_labels,
+                DNS_QTYPE_A,
+                DNS_QCLASS_IN,
+                response_label,
+                selected_domain_labels,
+                psk,
+                file_id,
+                publish_version,
+                0,
+                3,
+                321,
+            )
+        self.assertEqual("response_opcode_invalid", raised.exception.reason_code)
 
 
 if __name__ == "__main__":
