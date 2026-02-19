@@ -96,6 +96,14 @@ No sensitive-value logs (PSK, raw file bytes).
 ### 7. Documentation alignment in same change
 Update architecture docs to match implemented behavior exactly (clean break, no shim wording). Document deterministic classification order, follow-up handling, and EDNS response policy as implemented.
 
+### 8. Shutdown lifecycle handling
+Implement explicit graceful shutdown behavior in the runtime loop:
+1. Handle interrupt/termination signal path in `dnsdle.py`/server loop.
+2. Stop receive/respond loop via explicit stop flag.
+3. Close UDP socket deterministically on shutdown.
+4. Emit shutdown log record with stable classification and counters where available.
+5. Exit cleanly without mutating publish/runtime mapping state.
+
 ## Affected Components
 - `dnsdle.py`: transition from startup-only run to startup + UDP serve lifecycle; keep startup/fatal logging contract.
 - `dnsdle/__init__.py`: expose/import runtime entry helpers as needed for clean CLI wiring.
@@ -106,6 +114,8 @@ Update architecture docs to match implemented behavior exactly (clean break, no 
 - `dnsdle/dnswire.py` (new): DNS request parser and deterministic response encoder utilities.
 - `dnsdle/server.py` (new): UDP socket loop, request classification, mapping resolution, and response dispatch.
 - `dnsdle/cname_payload.py` (new or equivalent): deterministic CNAME target materialization from canonical slice bytes + response/domain suffix.
+- `unit_tests/test_dnswire.py` (new): parser/encoder safety and deterministic wire-contract tests (pointer loops, bounds, header/count invariants, EDNS OPT/no-OPT behavior).
+- `unit_tests/test_server_runtime.py` (new): classifier ordering, response matrix, runtime-fault boundary, determinism, and shutdown-path tests.
 - `doc/architecture/ARCHITECTURE.md`: align component and startup/download flow wording with actual runtime implementation boundary.
 - `doc/architecture/SERVER_RUNTIME.md`: align serve loop, classifier order, and response-path behavior to code.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: align packet/header/count semantics, compression use, and EDNS/no-OPT behavior to implementation.
@@ -117,7 +127,9 @@ Update architecture docs to match implemented behavior exactly (clean break, no 
 2. Add runtime server loop and request classifier with explicit response matrix.
 3. Extend runtime state for O(1) slice retrieval in request path.
 4. Wire `dnsdle.py` to run serve loop after successful startup build.
-5. Align architecture docs with final implemented behavior and invariants.
+5. Implement graceful shutdown path (signal/interrupt -> stop flag -> socket close -> shutdown log).
+6. Add runtime/dnswire unit tests covering wire safety, classifier matrix, determinism, and shutdown.
+7. Align architecture docs with final implemented behavior and invariants.
 
 ## Validation
 - Startup success path: valid config binds UDP and enters loop.
@@ -128,6 +140,10 @@ Update architecture docs to match implemented behavior exactly (clean break, no 
 - Runtime internal fault simulation (post-startup): returns `SERVFAIL` with stable reason code logging.
 - EDNS policy: default includes OPT at `1232`; explicit `512` omits OPT.
 - Determinism check: repeated identical queries for same slice produce identical answer payload and TTL.
+- DNS parse-safety checks: malformed envelopes, pointer loops, and out-of-bounds names are dropped (no unsafe response).
+- Classifier-order check: follow-up shape is evaluated before slice mapping for identical suffix space.
+- Header/count contract checks: response `ID`, `QR/AA/RA/TC`, section counts, and qname echo are deterministic and spec-compliant.
+- Shutdown path check: interrupt/stop request exits loop, closes socket, and emits shutdown log once.
 
 ## Success Criteria
 - `dnsdle.py` runs as an actual UDP DNS server after startup instead of exiting immediately.
