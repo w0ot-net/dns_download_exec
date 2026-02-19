@@ -132,11 +132,11 @@ For each incoming request:
 2. Validate parseable query-envelope invariants (`QR=0`, query opcode,
    section-count policy).
 3. Match one configured base-domain suffix. Unmatched domains return NXDOMAIN.
-4. Classify follow-up shape
+4. Validate qtype/class for v1 slice flow. Unsupported qtype/class on a matched
+   domain returns NODATA (NOERROR with empty answer).
+5. Classify follow-up shape
    (`<payload_labels>.<response_label>.<selected_base_domain>`, qtype `A`) for
    configured domains before slice-mapping evaluation.
-5. Validate qtype/class for v1 slice flow. Unsupported qtype/class on a matched
-   domain returns NODATA (NOERROR with empty answer).
 6. Validate prefix label count for slice shape. Wrong count on a matched domain
    returns NODATA.
 7. Resolve mapping to canonical slice identity. Unknown mapping returns

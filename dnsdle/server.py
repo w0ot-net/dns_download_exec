@@ -159,6 +159,16 @@ def handle_request_message(runtime_state, request_bytes):
     if selected_domain is None:
         return _miss_response(request, config, "unknown_domain", None)
 
+    qtype = question["qtype"]
+    qclass = question["qclass"]
+    if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
+        return _nodata_response(
+            request,
+            config,
+            "unsupported_qtype_or_class",
+            {"qtype": qtype, "qclass": qclass},
+        )
+
     if _is_followup_query(prefix_labels, config.response_label):
         answer_bytes = dnswire.build_a_answer(config.ttl)
         response = dnswire.build_response(
@@ -172,16 +182,6 @@ def handle_request_message(runtime_state, request_bytes):
             "followup",
             "followup_a_response",
             {"selected_base_domain": selected_domain},
-        )
-
-    qtype = question["qtype"]
-    qclass = question["qclass"]
-    if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
-        return _nodata_response(
-            request,
-            config,
-            "unsupported_qtype_or_class",
-            {"qtype": qtype, "qclass": qclass},
         )
 
     if len(prefix_labels) != 2:

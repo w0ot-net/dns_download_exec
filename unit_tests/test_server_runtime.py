@@ -17,6 +17,7 @@ from dnsdle.cli import parse_cli_args
 from dnsdle.config import build_config
 from dnsdle.constants import DNS_QCLASS_IN
 from dnsdle.constants import DNS_QTYPE_A
+from dnsdle.constants import DNS_QTYPE_AAAA
 from dnsdle.constants import DNS_QTYPE_CNAME
 from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
@@ -214,6 +215,21 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(0, ancount)
         self.assertEqual("miss", record["classification"])
         self.assertEqual("invalid_slice_qname_shape", record["reason_code"])
+
+    def test_unsupported_qtype_on_matched_domain_returns_nodata(self):
+        runtime_state = self._runtime_state(dns_edns_size=1232)
+        labels = ("tok01", "tag001", "example", "com")
+
+        response, record = server_module.handle_request_message(
+            runtime_state,
+            _query_message(labels, qtype=DNS_QTYPE_AAAA),
+        )
+
+        _rid, flags, _qd, ancount, _ns, _ar = _header(response)
+        self.assertEqual(DNS_RCODE_NOERROR, flags & 0x000F)
+        self.assertEqual(0, ancount)
+        self.assertEqual("miss", record["classification"])
+        self.assertEqual("unsupported_qtype_or_class", record["reason_code"])
 
     def test_unknown_mapping_returns_nxdomain(self):
         runtime_state = self._runtime_state(dns_edns_size=512)
