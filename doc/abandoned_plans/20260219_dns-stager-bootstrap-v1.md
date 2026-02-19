@@ -1,9 +1,10 @@
-**ABANDONED 2026-02-19**: Replaced by four sequential phase plans for
+**ABANDONED 2026-02-19**: Replaced by five sequential phase plans for
 incremental implementation and validation. Replacement plans:
 - `doc/plans/dns-stager-phase1-publish-sources.md`
 - `doc/plans/dns-stager-phase2-two-phase-startup.md`
 - `doc/plans/dns-stager-phase3-stager-template.md`
-- `doc/plans/dns-stager-phase4-stager-generation.md`
+- `doc/plans/dns-stager-phase4-stager-minify.md`
+- `doc/plans/dns-stager-phase5-stager-generation.md`
 
 # Plan: DNS Stager Bootstrap
 

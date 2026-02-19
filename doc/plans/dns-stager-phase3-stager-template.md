@@ -1,0 +1,111 @@
+# Plan: Phase 3 -- Stager Template
+
+## Summary
+
+Create the stager template: a readable Python script implementing the
+minimum viable DNS download protocol needed to retrieve one file via CNAME
+records. The template is self-contained and can be validated independently
+(compile-check, ASCII-only) before minification or integration.
+
+## Prerequisites
+
+- None for code changes (new module only).
+- Conceptually depends on the protocol defined in the existing codebase
+  (`dnsdle/cname_payload.py`, `dnsdle/client_reassembly.py`,
+  `dnsdle/dnswire.py`).
+
+## Goal
+
+After implementation:
+
+- `dnsdle/stager_template.py` contains a readable Python stager script
+  with placeholder constants.
+- The template implements the full download-verify-exec chain using the
+  same crypto and wire protocol as the server.
+- The template is written in a disciplined coding style that enables
+  mechanical minification in Phase 4.
+- The template `compile()`s successfully after placeholder substitution
+  with representative values.
+
+## Design
+
+### 1. Stager template (`dnsdle/stager_template.py`)
+
+A module exporting a single function:
+
+```python
+def build_stager_template():
+    """Return the stager template source as a string."""
+```
+
+The template is a complete Python script stored as a string constant. It
+uses `@@PLACEHOLDER@@` substitution markers (same pattern as the client
+template in `dnsdle/client_template.py`).
+
+**Included protocol operations:**
+
+- Raw UDP DNS query construction (QTYPE A, RD flag, EDNS OPT record when
+  `dns_edns_size > 512`).
+- CNAME response parsing: header validation, question section skip, answer
+  section CNAME RDATA extraction with DNS name decompression (pointer
+  support).
+- Payload label extraction from CNAME target (strip response_label and
+  domain suffix).
+- Base32 decode (lowercase alphabet, no padding).
+- HMAC-SHA256 key derivation: `enc_key` and `mac_key` from PSK + file
+  identity, using the same label constants as `dnsdle/cname_payload.py`.
+- XOR stream keystream generation and decryption.
+- MAC verification (truncated 8-byte HMAC-SHA256).
+- Binary record parsing (profile byte, flags byte, payload, MAC).
+- Slice reassembly into compressed stream, zlib decompression, SHA-256
+  final verification.
+- `exec()` handoff: sets `sys.argv` and calls `exec(client_source)`.
+
+**Excluded (to minimize size):**
+
+- Retry logic (each slice attempted once; any failure is fatal).
+- CLI argument parsing (positional `sys.argv` only).
+- Logging or progress output.
+- Descriptive error messages (raw exceptions propagate).
+- System resolver discovery (resolver is a required positional argument).
+- Domain rotation (uses first configured domain only).
+
+**Embedded constants** (filled at generation time):
+
+- `@@DOMAIN_LABELS@@`: domain label tuple (first configured domain).
+- `@@FILE_TAG@@`: file_tag of the client publish item.
+- `@@FILE_ID@@`: file_id.
+- `@@PUBLISH_VERSION@@`: publish_version.
+- `@@TOTAL_SLICES@@`: total_slices.
+- `@@COMPRESSED_SIZE@@`: compressed_size.
+- `@@PLAINTEXT_SHA256_HEX@@`: plaintext_sha256.
+- `@@SLICE_TOKENS@@`: ordered slice_tokens tuple.
+- `@@RESPONSE_LABEL@@`: response_label.
+- `@@DNS_MAX_LABEL_LEN@@`: dns_max_label_len.
+- `@@DNS_EDNS_SIZE@@`: dns_edns_size.
+
+**Runtime arguments:** `<resolver_ip> <psk> [extra_client_args...]`
+
+**Exec handoff:** After downloading and verifying the client source, the
+stager sets `sys.argv = ['s', '--psk', psk, '--resolver', resolver] +
+extra_args` and calls `exec(client_source)`. The client's
+`if __name__ == "__main__"` block fires and runs to completion.
+
+**Python 2.7/3.x compatibility:** The stager uses `b"..."` byte literals
+for all wire and crypto operations and handles the str/bytes split for
+`sys.argv` values with a compact `encode` guard. No `print` calls (no
+output).
+
+**Template coding discipline** (enables mechanical minification in Phase 4):
+
+- Every statement on its own line (no multi-line expressions).
+- Comments always on their own line (never inline after code).
+- Consistent 4-space indentation.
+- No multi-line string literals containing `#`.
+- No nested functions or closures.
+- No decorators, `with` statements, or comprehensions spanning lines.
+
+## Affected Components
+
+- `dnsdle/stager_template.py` (NEW): stager template source string with
+  placeholder constants. Exports `build_stager_template()`.
