@@ -160,6 +160,25 @@ class BudgetPacketBoundsTests(unittest.TestCase):
 
         self.assertGreater(max_ciphertext_slice_bytes, 0)
 
+    def test_budget_prefers_longest_domain_labels_over_domain_labels(self):
+        config = _TestConfig(
+            domains=("example.com", "a" * 63 + "." + "b" * 63 + "." + "c" * 63 + "." + "d" * 22),
+            domain_labels=("example", "com"),
+            longest_domain="a" * 63 + "." + "b" * 63 + "." + "c" * 63 + "." + "d" * 22,
+            longest_domain_labels=("a" * 63, "b" * 63, "c" * 63, "d" * 22),
+            longest_domain_wire_len=217,
+            dns_max_label_len=63,
+            file_tag_len=16,
+            response_label="r-x",
+            dns_edns_size=512,
+            mapping_seed="0",
+        )
+
+        with self.assertRaises(StartupError) as ctx:
+            compute_max_ciphertext_slice_bytes(config)
+
+        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+
 
 if __name__ == "__main__":
     unittest.main()

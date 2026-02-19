@@ -93,6 +93,10 @@ class StartupConvergenceTests(unittest.TestCase):
         self.assertEqual(48, runtime_state["max_ciphertext_slice_bytes"])
         self.assertEqual(5, runtime_state["query_token_len"])
         self.assertEqual((5, 5, 4), runtime_state["realized_token_lens"])
+        self.assertEqual(
+            runtime_state["query_token_len"],
+            max(runtime_state["realized_token_lens"]),
+        )
 
     def test_stops_when_realized_max_token_len_falls_below_current_query_len(self):
         fake_config = object()
