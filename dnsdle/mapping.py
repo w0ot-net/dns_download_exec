@@ -58,17 +58,12 @@ def _compute_tokens(seed_bytes, publish_version, total_slices, token_len):
 
 
 def _max_token_len_for_file(config, file_tag):
-    max_by_qname = 0
-    max_candidate = config.dns_max_label_len
-    if max_candidate > DIGEST_TEXT_CAPACITY:
-        max_candidate = DIGEST_TEXT_CAPACITY
-
-    for token_len in range(1, max_candidate + 1):
+    max_candidate = min(config.dns_max_label_len, DIGEST_TEXT_CAPACITY)
+    for token_len in range(max_candidate, 0, -1):
         labels = ("a" * token_len, file_tag) + tuple(config.longest_domain_labels)
         if _dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
-            max_by_qname = token_len
-
-    return max_by_qname
+            return token_len
+    return 0
 
 
 def _find_min_local_len(seed_bytes, publish_version, total_slices, max_token_len):
@@ -96,10 +91,19 @@ def _find_colliding_files(entries):
     return colliding_files
 
 
+def _entry_sort_key(entry):
+    return (
+        entry["file_tag"],
+        entry["file_id"],
+        entry["publish_version"],
+    )
+
+
 def apply_mapping(publish_items, config):
     seed_bytes = to_ascii_bytes(config.mapping_seed)
 
     entries = []
+    max_len_by_index = []
     for item in publish_items:
         entry = dict(item)
         file_tag = _derive_file_tag(
@@ -138,17 +142,13 @@ def apply_mapping(publish_items, config):
 
         entry["file_tag"] = file_tag
         entry["slice_token_len"] = local_len
-        entry["slice_token_len_max"] = max_token_len
         entry["slice_tokens"] = local_tokens
         entries.append(entry)
+        max_len_by_index.append(max_token_len)
 
     canonical_order = sorted(
         range(len(entries)),
-        key=lambda idx: (
-            entries[idx]["file_tag"],
-            entries[idx]["file_id"],
-            entries[idx]["publish_version"],
-        ),
+        key=lambda idx: _entry_sort_key(entries[idx]),
     )
 
     while True:
@@ -156,11 +156,10 @@ def apply_mapping(publish_items, config):
         if not colliding_files:
             break
 
-        promote_idx = None
-        for idx in canonical_order:
-            if idx in colliding_files:
-                promote_idx = idx
-                break
+        promote_idx = next(
+            (idx for idx in canonical_order if idx in colliding_files),
+            None,
+        )
 
         if promote_idx is None:
             raise StartupError(
@@ -171,7 +170,7 @@ def apply_mapping(publish_items, config):
 
         entry = entries[promote_idx]
         current_len = entry["slice_token_len"]
-        max_len = entry["slice_token_len_max"]
+        max_len = max_len_by_index[promote_idx]
         if current_len >= max_len:
             raise StartupError(
                 "mapping",
@@ -194,9 +193,6 @@ def apply_mapping(publish_items, config):
         )
         entry["slice_token_len"] = new_len
         entry["slice_tokens"] = tokens
-
-    for entry in entries:
-        entry.pop("slice_token_len_max", None)
 
     if logger_enabled("debug", "mapping"):
         log_event(
