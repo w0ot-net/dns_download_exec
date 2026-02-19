@@ -137,7 +137,7 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
         "response_size_estimate": winning_response_size,
         "query_token_len": query_token_len,
     }
-    if logger_enabled("debug", "budget"):
+    if logger_enabled("debug"):
         log_event(
             "debug",
             "budget",

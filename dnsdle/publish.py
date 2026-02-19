@@ -109,7 +109,7 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                 "source_filename": os.path.basename(path),
             }
         )
-        if logger_enabled("debug", "publish"):
+        if logger_enabled("debug"):
             log_event(
                 "debug",
                 "publish",

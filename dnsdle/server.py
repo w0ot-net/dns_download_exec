@@ -131,7 +131,7 @@ def handle_request_message(runtime_state, request_bytes):
         request = dnswire.parse_request(request_bytes)
     except dnswire.DnsParseError:
         return None, None
-    if logger_enabled("trace", "server"):
+    if logger_enabled("trace"):
         log_event(
             "trace",
             "server",
@@ -204,7 +204,7 @@ def handle_request_message(runtime_state, request_bytes):
         return _miss_response(request, config, "mapping_not_found", request_context)
 
     file_id, publish_version, slice_index = identity_value
-    if logger_enabled("debug", "server"):
+    if logger_enabled("debug"):
         log_event(
             "debug",
             "server",
@@ -408,7 +408,7 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
             try:
                 datagram, addr = sock.recvfrom(DNS_UDP_RECV_MAX)
             except socket.timeout:
-                if logger_enabled("trace", "server"):
+                if logger_enabled("trace"):
                     log_event(
                         "trace",
                         "server",

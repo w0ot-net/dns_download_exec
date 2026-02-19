@@ -194,7 +194,7 @@ def apply_mapping(publish_items, config):
         entry["slice_token_len"] = new_len
         entry["slice_tokens"] = tokens
 
-    if logger_enabled("debug", "mapping"):
+    if logger_enabled("debug"):
         log_event(
             "debug",
             "mapping",

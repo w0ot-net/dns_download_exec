@@ -1,19 +1,12 @@
 from __future__ import absolute_import
 
 import json
-import random
 import sys
 import time
 
 from dnsdle.compat import is_binary
 from dnsdle.compat import key_text
-from dnsdle.constants import DEFAULT_LOG_CATEGORIES
-from dnsdle.constants import DEFAULT_LOG_FILE
-from dnsdle.constants import DEFAULT_LOG_FOCUS
 from dnsdle.constants import DEFAULT_LOG_LEVEL
-from dnsdle.constants import DEFAULT_LOG_OUTPUT
-from dnsdle.constants import DEFAULT_LOG_RATE_LIMIT_PER_SEC
-from dnsdle.constants import DEFAULT_LOG_SAMPLE_RATE
 from dnsdle.constants import LOG_CATEGORIES
 from dnsdle.constants import LOG_LEVELS
 from dnsdle.constants import REQUIRED_LIFECYCLE_CLASSIFICATIONS
@@ -115,16 +108,6 @@ def _record_is_required(record, level_name):
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
 
-def _subject_to_category_filter(level_name, record):
-    if level_name in ("debug", "trace"):
-        return True
-    if level_name != "info":
-        return False
-    if record is None:
-        return True
-    return str(record.get("classification", "")).lower() == "diagnostic"
-
-
 def _write_line(stream, line):
     try:
         stream.write(line)
@@ -140,37 +123,17 @@ class RequiredLogEmissionError(Exception):
 
 
 class RuntimeLogger(object):
-    def __init__(
-        self,
-        level=DEFAULT_LOG_LEVEL,
-        categories=None,
-        sample_rate=1.0,
-        rate_limit_per_sec=200,
-        output=DEFAULT_LOG_OUTPUT,
-        log_file=DEFAULT_LOG_FILE,
-        focus=DEFAULT_LOG_FOCUS,
-        stream=None,
-    ):
+    def __init__(self, level=DEFAULT_LOG_LEVEL, log_file="", stream=None):
         self.level = _normalize_level_name(level)
-        category_values = (
-            categories if categories is not None else DEFAULT_LOG_CATEGORIES
-        )
-        self.category_set = frozenset(category_values)
-        self.sample_rate = float(sample_rate)
-        self.rate_limit_per_sec = int(rate_limit_per_sec)
-        self.output = output
         self.log_file = log_file
-        self.focus = (focus or "").strip()
         self._owns_stream = False
         self._stream = stream
         if self._stream is None:
-            if output == "file":
+            if log_file:
                 self._stream = open(log_file, "a")
                 self._owns_stream = True
             else:
                 self._stream = sys.stdout
-        self._window_second = int(time.time())
-        self._window_count = 0
 
     def close(self):
         if self._owns_stream and self._stream is not None:
@@ -181,56 +144,10 @@ class RuntimeLogger(object):
             self._stream = None
             self._owns_stream = False
 
-    def _enabled_normalized(self, level_name, category_name, required=False, event=None):
+    def enabled(self, level, required=False):
         if required:
             return True
-        if _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
-            return False
-        if _subject_to_category_filter(level_name, event) and category_name not in self.category_set:
-            return False
-        return True
-
-    def enabled(self, level, category, required=False, event=None):
-        return self._enabled_normalized(
-            _normalize_level_name(level),
-            _normalize_category_name(category),
-            required=required,
-            event=event,
-        )
-
-    def _passes_focus(self, level_name, event):
-        if not self.focus:
-            return True
-        if level_name not in ("debug", "trace"):
-            return True
-        for key in ("file_tag", "slice_token", "selected_base_domain"):
-            value = event.get(key)
-            if value is not None and self.focus == str(value):
-                return True
-        return False
-
-    def _passes_sampling(self, level_name):
-        if level_name not in ("debug", "trace"):
-            return True
-        if self.sample_rate <= 0.0:
-            return False
-        if self.sample_rate >= 1.0:
-            return True
-        return random.random() < self.sample_rate
-
-    def _passes_rate_limit(self, level_name):
-        if level_name not in ("debug", "trace"):
-            return True
-        if self.rate_limit_per_sec <= 0:
-            return False
-        second = int(time.time())
-        if second != self._window_second:
-            self._window_second = second
-            self._window_count = 0
-        if self._window_count >= self.rate_limit_per_sec:
-            return False
-        self._window_count += 1
-        return True
+        return _LEVEL_RANK[_normalize_level_name(level)] >= _LEVEL_RANK[self.level]
 
     def _write_record(self, record):
         line = json.dumps(record, sort_keys=True)
@@ -241,20 +158,8 @@ class RuntimeLogger(object):
         category_name = _normalize_category_name(category)
         base_event = dict(event or {})
         event_required = required or _record_is_required(base_event, level_name)
-        if not self._enabled_normalized(
-            level_name,
-            category_name,
-            required=event_required,
-            event=base_event,
-        ):
+        if not event_required and _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
             return False
-        if not event_required:
-            if not self._passes_focus(level_name, base_event):
-                return False
-            if not self._passes_sampling(level_name):
-                return False
-            if not self._passes_rate_limit(level_name):
-                return False
 
         if context_fn is not None:
             context = context_fn()
@@ -289,27 +194,9 @@ class RuntimeLogger(object):
         )
 
 
-def _create_logger(
-    level,
-    categories,
-    sample_rate,
-    rate_limit_per_sec,
-    output,
-    log_file,
-    focus,
-    stream,
-):
+def _create_logger(level, log_file, stream):
     try:
-        return RuntimeLogger(
-            level=level,
-            categories=categories,
-            sample_rate=sample_rate,
-            rate_limit_per_sec=rate_limit_per_sec,
-            output=output,
-            log_file=log_file,
-            focus=focus,
-            stream=stream,
-        )
+        return RuntimeLogger(level=level, log_file=log_file, stream=stream)
     except IOError as exc:
         raise StartupError(
             "startup",
@@ -322,12 +209,7 @@ def _create_logger(
 def build_logger_from_config(config):
     return _create_logger(
         level=config.log_level,
-        categories=config.log_categories,
-        sample_rate=config.log_sample_rate,
-        rate_limit_per_sec=config.log_rate_limit_per_sec,
-        output=config.log_output,
         log_file=config.log_file,
-        focus=config.log_focus,
         stream=None,
     )
 
@@ -335,12 +217,7 @@ def build_logger_from_config(config):
 def _bootstrap_logger():
     return _create_logger(
         level=DEFAULT_LOG_LEVEL,
-        categories=DEFAULT_LOG_CATEGORIES,
-        sample_rate=DEFAULT_LOG_SAMPLE_RATE,
-        rate_limit_per_sec=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
-        output=DEFAULT_LOG_OUTPUT,
-        log_file=DEFAULT_LOG_FILE,
-        focus=DEFAULT_LOG_FOCUS,
+        log_file="",
         stream=sys.stdout,
     )
 
@@ -365,8 +242,8 @@ def configure_active_logger(config):
     return _ACTIVE_LOGGER
 
 
-def logger_enabled(level, category, required=False):
-    return _ACTIVE_LOGGER.enabled(level, category, required=required)
+def logger_enabled(level, required=False):
+    return _ACTIVE_LOGGER.enabled(level, required=required)
 
 
 def log_event(level, category, event, context_fn=None, required=False):

@@ -213,7 +213,7 @@ def parse_request(message):
         "arcount": arcount,
         "question": question,
     }
-    if logger_enabled("trace", "dnswire"):
+    if logger_enabled("trace"):
         log_event(
             "trace",
             "dnswire",
@@ -321,7 +321,7 @@ def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_si
     if include_opt:
         parts.append(_encode_opt_record(edns_size))
     response = b"".join(parts)
-    if logger_enabled("trace", "dnswire"):
+    if logger_enabled("trace"):
         log_event(
             "trace",
             "dnswire",

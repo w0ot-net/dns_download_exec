@@ -3,13 +3,8 @@ from __future__ import absolute_import
 import argparse
 import sys
 
-from dnsdle.constants import DEFAULT_LOG_CATEGORIES_CSV
 from dnsdle.constants import DEFAULT_LOG_FILE
-from dnsdle.constants import DEFAULT_LOG_FOCUS
 from dnsdle.constants import DEFAULT_LOG_LEVEL
-from dnsdle.constants import DEFAULT_LOG_OUTPUT
-from dnsdle.constants import DEFAULT_LOG_RATE_LIMIT_PER_SEC
-from dnsdle.constants import DEFAULT_LOG_SAMPLE_RATE
 from dnsdle.state import StartupError
 
 
@@ -28,12 +23,7 @@ _LONG_OPTIONS = (
     "--client-out-dir",
     "--compression-level",
     "--log-level",
-    "--log-categories",
-    "--log-sample-rate",
-    "--log-rate-limit-per-sec",
-    "--log-output",
     "--log-file",
-    "--log-focus",
     "--help",
 )
 _KNOWN_LONG_OPTIONS = set(_LONG_OPTIONS)
@@ -135,19 +125,8 @@ def _build_parser():
     logging_grp = parser.add_argument_group("logging")
     logging_grp.add_argument("--log-level", default=DEFAULT_LOG_LEVEL,
                              help="error|warn|info|debug|trace (default: %(default)s)")
-    logging_grp.add_argument("--log-categories", default=DEFAULT_LOG_CATEGORIES_CSV,
-                             help="category filter or \"all\" (default: %(default)s)")
-    logging_grp.add_argument("--log-sample-rate", default=DEFAULT_LOG_SAMPLE_RATE,
-                             help="sampling rate, 0..1 (default: %(default)s)")
-    logging_grp.add_argument("--log-rate-limit-per-sec",
-                             default=DEFAULT_LOG_RATE_LIMIT_PER_SEC,
-                             help="rate limit per second, 0..1000000 (default: %(default)s)")
-    logging_grp.add_argument("--log-output", default=DEFAULT_LOG_OUTPUT,
-                             help="stdout|file (default: %(default)s)")
     logging_grp.add_argument("--log-file", default=DEFAULT_LOG_FILE,
-                             help="log file path (required when --log-output=file)")
-    logging_grp.add_argument("--log-focus", default=DEFAULT_LOG_FOCUS,
-                             help="focus key for debug filtering")
+                             help="log file path (if omitted, logs to stdout)")
     return parser
 
 

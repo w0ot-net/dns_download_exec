@@ -149,3 +149,15 @@ No focus, sampling, rate limit, or category checks.
 - `dnsdle/server.py`: Update three `logger_enabled` calls to remove category argument.
 - `doc/architecture/LOGGING.md`: Rewrite Configuration and Suppression Rules sections.
 - `doc/architecture/CONFIG.md`: Remove 5 log config field descriptions and simplify logging validation rules.
+
+## Execution Notes
+
+Executed 2026-02-19.  All plan items implemented as specified with no deviations.
+
+- `_parse_float_in_range` confirmed to have no callers outside log_sample_rate; removed.
+- `configure_active_logger` and `reset_active_logger` left structurally intact
+  (they delegate to the simplified `_create_logger` / `build_logger_from_config`).
+- `LOG_CATEGORIES` import kept in `logging_runtime.py` because
+  `_normalize_category_name` still validates category labels for JSON output.
+- All 10 `logger_enabled` call sites across 6 files updated to single-arg form.
+- Architecture docs (LOGGING.md, CONFIG.md) updated to match new 2-arg surface.

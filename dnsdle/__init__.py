@@ -36,7 +36,7 @@ def build_startup_state(argv=None):
         mapped_items = apply_mapping(publish_items, config)
 
         realized_max_token_len = _max_slice_token_len(mapped_items)
-        if logger_enabled("debug", "startup"):
+        if logger_enabled("debug"):
             log_event(
                 "debug",
                 "startup",

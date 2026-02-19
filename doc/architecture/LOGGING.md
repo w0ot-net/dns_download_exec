@@ -35,26 +35,19 @@ Additional event-specific keys may be included as context.
 
 Runtime logging controls:
 - `--log-level` (`error|warn|info|debug|trace`, default `info`)
-- `--log-categories` (CSV or `all`, default `startup,publish,server`)
-- `--log-sample-rate` (`0..1`, default `1.0`)
-- `--log-rate-limit-per-sec` (non-negative integer, default `200`)
-- `--log-output` (`stdout|file`, default `stdout`)
-- `--log-file` (required when `--log-output file`)
-- `--log-focus` (optional deterministic request focus key)
-
-Invalid combinations are startup errors.
+- `--log-file` (optional; if omitted, logs to stdout)
 
 ---
 
 ## Suppression Rules
 
-Filtering and suppression apply to diagnostics only:
-- category filters apply to non-required `INFO/DEBUG/TRACE` diagnostics.
-- sampling and rate limiting apply only to `DEBUG/TRACE`.
+Filtering is level-threshold only.
 
-Required events are unsuppressed:
+Required events bypass the level threshold:
 - all `ERROR` events always emit.
 - lifecycle events `server_start` and `shutdown` always emit.
+
+Categories remain as labels in emitted JSON but are not filterable.
 
 ---
 
