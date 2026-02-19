@@ -128,3 +128,28 @@ Replace live UDP check with deterministic in-process integration coverage:
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`: clarify client-side binary record parse expectations and fatal validation cases.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: clarify response-envelope validation order and fatal mismatch handling for client parity core.
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: align failure class mapping for parse/crypto/reassembly violations.
+
+## Execution Notes
+- Implemented `dnsdle/client_payload.py` with strict response-envelope validation,
+  CNAME payload decode, binary record invariants, MAC verification, and
+  deterministic decrypt.
+- Implemented `dnsdle/client_reassembly.py` with duplicate-slice equality
+  enforcement, full-index coverage checks, ordered reassembly, zlib decompress,
+  and plaintext hash verification.
+- Added low-level DNS response parsing helpers in `dnsdle/dnswire.py` and shared
+  helper updates in `dnsdle/compat.py`.
+- Added deterministic coverage in:
+  - `unit_tests/test_client_payload_parity.py`
+  - `unit_tests/test_client_reassembly.py`
+- Updated architecture docs listed in the plan to document module boundaries and
+  validation ordering.
+- Validation executed:
+  - `python -m unittest unit_tests.test_cname_payload`
+  - `python -m unittest unit_tests.test_cname_payload_encryption`
+  - `python -m unittest unit_tests.test_dnswire`
+  - `python -m unittest unit_tests.test_client_payload_parity`
+  - `python -m unittest unit_tests.test_client_reassembly`
+  - `python2 -m unittest unit_tests.test_client_payload_parity`
+  - `python2 -m unittest unit_tests.test_client_reassembly`
+- Implementation commit: `cf7a209`
+- Deviations from plan: none.
