@@ -120,20 +120,33 @@ replies for the same slice are byte-stable at the DNS text layer.
 ## Size Budget and Slice Capacity
 
 Server startup must compute a strict maximum ciphertext size per slice from DNS
-limits and configured suffix length.
+name limits and DNS packet-size limits.
 
 Inputs:
 - maximum DNS name length (255 bytes including label lengths)
 - configured `effective_label_cap` (16..63)
 - configured `dns_edns_size` (default `1232`)
 - fixed suffix length for `.<response_label>.<base_domain>`
+- DNS message envelope terms (header, echoed question, one CNAME answer,
+  optional OPT additional RR)
 - binary record overhead (4-byte header + 16-byte MAC)
 
 Startup algorithm:
-1. Compute max payload base32 characters that fit in remaining name budget.
-2. Convert base32 capacity to max raw binary record bytes.
-3. Subtract fixed binary overhead to get `max_ciphertext_slice_bytes`.
-4. Fail startup if `max_ciphertext_slice_bytes <= 0`.
+1. Compute max payload base32 characters that fit remaining CNAME target-name
+   budget.
+2. Compute packet-size estimate for slice responses and enforce:
+   - packet limit is `dns_edns_size` when `dns_edns_size > 512`
+   - packet limit is `512` when `dns_edns_size = 512` (classic mode)
+3. Use the largest payload size that satisfies both name and packet limits.
+4. Convert base32 capacity to max raw binary record bytes.
+5. Subtract fixed binary overhead to get `max_ciphertext_slice_bytes`.
+6. Fail startup if `max_ciphertext_slice_bytes <= 0`.
+
+Packet-size estimate is conservative in v1:
+- include DNS header, echoed question, and one CNAME answer
+- include OPT RR only when `dns_edns_size > 512`
+- do not assume CNAME target suffix compression savings during startup budget
+  calculation
 
 All file slicing for the launch must use `max_ciphertext_slice_bytes` or
 smaller.

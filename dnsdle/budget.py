@@ -5,6 +5,10 @@ from dnsdle.state import StartupError
 
 MAX_DNS_NAME_WIRE_LENGTH = 255
 BINARY_RECORD_OVERHEAD = 20  # 4-byte header + 16-byte truncated MAC
+DNS_HEADER_BYTES = 12
+QUESTION_FIXED_BYTES = 4  # QTYPE + QCLASS
+ANSWER_FIXED_BYTES = 12  # NAME ptr + TYPE + CLASS + TTL + RDLENGTH
+OPT_RR_BYTES = 11  # root NAME + TYPE + CLASS + TTL + RDLEN
 
 
 def _dns_name_wire_length(labels):
@@ -21,15 +25,51 @@ def _payload_labels_for_chars(char_count, label_cap):
     return tuple(labels)
 
 
+def _max_query_token_len_by_name(config):
+    max_len = 0
+    for token_len in range(1, config.dns_max_label_len + 1):
+        qname_labels = ("a" * token_len, "b" * config.file_tag_len) + tuple(config.domain_labels)
+        if _dns_name_wire_length(qname_labels) <= MAX_DNS_NAME_WIRE_LENGTH:
+            max_len = token_len
+    return max_len
+
+
+def _response_size_estimate(config, query_token_len, target_wire_len):
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + tuple(config.domain_labels)
+    qname_wire_len = _dns_name_wire_length(qname_labels)
+    question_size = qname_wire_len + QUESTION_FIXED_BYTES
+
+    # Conservative packet sizing:
+    # - answer owner name uses pointer (2 bytes, in ANSWER_FIXED_BYTES)
+    # - CNAME target is sized as full expanded DNS name wire length
+    #   (no suffix-compression credit during startup budgeting)
+    answer_size = ANSWER_FIXED_BYTES + target_wire_len
+
+    additional_size = OPT_RR_BYTES if config.dns_edns_size > 512 else 0
+    return DNS_HEADER_BYTES + question_size + answer_size + additional_size
+
+
 def compute_max_ciphertext_slice_bytes(config):
     suffix_labels = (config.response_label,) + tuple(config.domain_labels)
+    packet_size_limit = config.dns_edns_size if config.dns_edns_size > 512 else 512
+    query_token_len = _max_query_token_len_by_name(config)
+    if query_token_len <= 0:
+        raise StartupError(
+            "budget",
+            "budget_unusable",
+            "query name budget cannot fit any slice-token label",
+        )
 
     max_payload_chars = 0
     # 253 textual chars is the practical upper bound without trailing dot.
     for candidate in range(253, 0, -1):
         payload_labels = _payload_labels_for_chars(candidate, config.dns_max_label_len)
         target_wire_len = _dns_name_wire_length(payload_labels + suffix_labels)
-        if target_wire_len <= MAX_DNS_NAME_WIRE_LENGTH:
+        response_size_estimate = _response_size_estimate(config, query_token_len, target_wire_len)
+        if (
+            target_wire_len <= MAX_DNS_NAME_WIRE_LENGTH
+            and response_size_estimate <= packet_size_limit
+        ):
             max_payload_chars = candidate
             break
 
@@ -37,9 +77,10 @@ def compute_max_ciphertext_slice_bytes(config):
         raise StartupError(
             "budget",
             "budget_unusable",
-            "no payload capacity available in CNAME target name budget",
+            "no payload capacity available within DNS name and packet limits",
         )
 
+    chosen_payload_labels = _payload_labels_for_chars(max_payload_chars, config.dns_max_label_len)
     max_record_bytes = (max_payload_chars * 5) // 8
     max_ciphertext_slice_bytes = max_record_bytes - BINARY_RECORD_OVERHEAD
     if max_ciphertext_slice_bytes <= 0:
@@ -50,12 +91,23 @@ def compute_max_ciphertext_slice_bytes(config):
             {
                 "max_payload_chars": max_payload_chars,
                 "max_record_bytes": max_record_bytes,
+                "response_size_limit": packet_size_limit,
+                "query_token_len": query_token_len,
             },
         )
+
+    response_size_estimate = _response_size_estimate(
+        config,
+        query_token_len,
+        _dns_name_wire_length(chosen_payload_labels + suffix_labels),
+    )
 
     return max_ciphertext_slice_bytes, {
         "max_payload_chars": max_payload_chars,
         "max_record_bytes": max_record_bytes,
         "binary_record_overhead": BINARY_RECORD_OVERHEAD,
         "dns_edns_size": config.dns_edns_size,
+        "response_size_limit": packet_size_limit,
+        "response_size_estimate": response_size_estimate,
+        "query_token_len": query_token_len,
     }
