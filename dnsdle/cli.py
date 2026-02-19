@@ -42,7 +42,7 @@ _KNOWN_LONG_OPTIONS = set(_LONG_OPTIONS)
 class _ColorHelpFormatter(argparse.HelpFormatter):
     def start_section(self, heading):
         if heading and sys.stdout.isatty():
-            heading = "\033[1m%s\033[0m" % heading
+            heading = "\033[1;36m%s\033[0m" % heading
         argparse.HelpFormatter.start_section(self, heading)
 
 
