@@ -186,7 +186,8 @@ change (clean break, no shim behavior), especially:
   state without runtime exceptions for valid inputs.
 - Same inputs produce identical derived publish/mapping outputs across restarts.
 - Duplicate-content file inputs fail startup with explicit reason.
-- Global `(file_tag, slice_token)` collision is detected and fails startup.
+- Unresolved global `(file_tag, slice_token)` collisions after deterministic
+  promotion to configured limits fail startup with stable reason codes.
 - collision-resolution promotion behavior is deterministic for identical inputs.
 - startup failures emit stable classification/phase/reason_code fields.
 - No fallback remap behavior exists for invalid or ambiguous mapping state.
