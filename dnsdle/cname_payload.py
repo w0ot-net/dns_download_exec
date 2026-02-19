@@ -1,10 +1,14 @@
 from __future__ import absolute_import
 
-import base64
 import hashlib
 import hmac
 import struct
 
+from dnsdle.compat import base32_lower_no_pad
+from dnsdle.compat import iter_byte_values
+from dnsdle.compat import to_ascii_bytes
+from dnsdle.compat import to_ascii_int_bytes
+from dnsdle.compat import to_utf8_bytes
 from dnsdle.constants import PAYLOAD_ENC_KEY_LABEL
 from dnsdle.constants import PAYLOAD_ENC_STREAM_LABEL
 from dnsdle.constants import PAYLOAD_FLAGS_V1_BYTE
@@ -12,43 +16,6 @@ from dnsdle.constants import PAYLOAD_MAC_KEY_LABEL
 from dnsdle.constants import PAYLOAD_MAC_MESSAGE_LABEL
 from dnsdle.constants import PAYLOAD_MAC_TRUNC_LEN
 from dnsdle.constants import PAYLOAD_PROFILE_V1_BYTE
-
-
-def _to_bytes(value):
-    if isinstance(value, bytes):
-        return value
-    return value.encode("ascii")
-
-
-def _to_utf8_bytes(value):
-    if isinstance(value, bytes):
-        return value
-    return value.encode("utf-8")
-
-
-def _iter_byte_values(raw_bytes):
-    for value in raw_bytes:
-        if isinstance(value, int):
-            yield value
-        else:
-            yield ord(value)
-
-
-def _to_ascii_int_bytes(value, field_name):
-    try:
-        int_value = int(value)
-    except (TypeError, ValueError):
-        raise ValueError("%s must be an integer" % field_name)
-    if int_value < 0:
-        raise ValueError("%s must be non-negative" % field_name)
-    return _to_bytes(str(int_value))
-
-
-def _base32_lower_no_pad(raw_bytes):
-    encoded = base64.b32encode(raw_bytes)
-    if not isinstance(encoded, str):
-        encoded = encoded.decode("ascii")
-    return encoded.rstrip("=").lower()
 
 
 def _split_payload_labels(payload_text, label_cap):
@@ -67,11 +34,11 @@ def _split_payload_labels(payload_text, label_cap):
 
 
 def _enc_key(psk, file_id, publish_version):
-    psk_bytes = _to_utf8_bytes(psk)
+    psk_bytes = to_utf8_bytes(psk)
     if not psk_bytes:
         raise ValueError("psk must be non-empty")
-    file_id_bytes = _to_bytes(file_id)
-    publish_version_bytes = _to_bytes(publish_version)
+    file_id_bytes = to_ascii_bytes(file_id)
+    publish_version_bytes = to_ascii_bytes(publish_version)
     return hmac.new(
         psk_bytes,
         PAYLOAD_ENC_KEY_LABEL + file_id_bytes + b"|" + publish_version_bytes,
@@ -82,14 +49,14 @@ def _enc_key(psk, file_id, publish_version):
 def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len):
     if output_len <= 0:
         raise ValueError("output_len must be positive")
-    file_id_bytes = _to_bytes(file_id)
-    publish_version_bytes = _to_bytes(publish_version)
-    slice_index_bytes = _to_ascii_int_bytes(slice_index, "slice_index")
+    file_id_bytes = to_ascii_bytes(file_id)
+    publish_version_bytes = to_ascii_bytes(publish_version)
+    slice_index_bytes = to_ascii_int_bytes(slice_index, "slice_index")
     blocks = []
     counter = 0
     produced = 0
     while produced < output_len:
-        counter_bytes = _to_ascii_int_bytes(counter, "counter")
+        counter_bytes = to_ascii_int_bytes(counter, "counter")
         block_input = (
             PAYLOAD_ENC_STREAM_LABEL
             + file_id_bytes
@@ -108,8 +75,8 @@ def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len)
 
 
 def _xor_bytes(left_bytes, right_bytes):
-    left_values = list(_iter_byte_values(left_bytes))
-    right_values = list(_iter_byte_values(right_bytes))
+    left_values = list(iter_byte_values(left_bytes))
+    right_values = list(iter_byte_values(right_bytes))
     if len(left_values) != len(right_values):
         raise ValueError("xor inputs must have equal length")
 
@@ -120,7 +87,7 @@ def _xor_bytes(left_bytes, right_bytes):
 
 
 def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes):
-    payload = _to_bytes(slice_bytes)
+    payload = to_ascii_bytes(slice_bytes)
     if not payload:
         raise ValueError("slice_bytes must be non-empty")
     key = _enc_key(psk, file_id, publish_version)
@@ -135,11 +102,11 @@ def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes
 
 
 def _mac_key(psk, file_id, publish_version):
-    psk_bytes = _to_utf8_bytes(psk)
+    psk_bytes = to_utf8_bytes(psk)
     if not psk_bytes:
         raise ValueError("psk must be non-empty")
-    file_id_bytes = _to_bytes(file_id)
-    publish_version_bytes = _to_bytes(publish_version)
+    file_id_bytes = to_ascii_bytes(file_id)
+    publish_version_bytes = to_ascii_bytes(publish_version)
     return hmac.new(
         psk_bytes,
         PAYLOAD_MAC_KEY_LABEL + file_id_bytes + b"|" + publish_version_bytes,
@@ -156,19 +123,19 @@ def _mac_bytes(
     compressed_size,
     ciphertext_bytes,
 ):
-    slice_index_bytes = _to_ascii_int_bytes(slice_index, "slice_index")
-    total_slices_bytes = _to_ascii_int_bytes(total_slices, "total_slices")
-    compressed_size_bytes = _to_ascii_int_bytes(compressed_size, "compressed_size")
+    slice_index_bytes = to_ascii_int_bytes(slice_index, "slice_index")
+    total_slices_bytes = to_ascii_int_bytes(total_slices, "total_slices")
+    compressed_size_bytes = to_ascii_int_bytes(compressed_size, "compressed_size")
     if int(total_slices) <= 0:
         raise ValueError("total_slices must be positive")
     if int(compressed_size) <= 0:
         raise ValueError("compressed_size must be positive")
-    payload = _to_bytes(ciphertext_bytes)
+    payload = to_ascii_bytes(ciphertext_bytes)
     message = (
         PAYLOAD_MAC_MESSAGE_LABEL
-        + _to_bytes(file_id)
+        + to_ascii_bytes(file_id)
         + b"|"
-        + _to_bytes(publish_version)
+        + to_ascii_bytes(publish_version)
         + b"|"
         + slice_index_bytes
         + b"|"
@@ -191,7 +158,7 @@ def build_slice_record(
     compressed_size,
     slice_bytes,
 ):
-    payload = _to_bytes(slice_bytes)
+    payload = to_ascii_bytes(slice_bytes)
     payload_len = len(payload)
     if payload_len <= 0:
         raise ValueError("slice_bytes must be non-empty")
@@ -246,7 +213,7 @@ def payload_labels_for_slice(
         compressed_size,
         slice_bytes,
     )
-    payload_text = _base32_lower_no_pad(record_bytes)
+    payload_text = base32_lower_no_pad(record_bytes)
     return _split_payload_labels(payload_text, label_cap)
 
 
