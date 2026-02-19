@@ -264,6 +264,9 @@ Failure semantics:
   (`generator_invalid_contract`, `generator_write_failed`)
 - generation uses run-level transactional commit; on failure, no newly generated
   artifact from that run remains in managed output.
+- if rollback restoration itself fails, startup is fatal and backup directory
+  material is preserved for operator recovery (never deleted on rollback-failure
+  paths).
 
 ---
 

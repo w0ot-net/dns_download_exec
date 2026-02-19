@@ -66,7 +66,12 @@ RETRY_SLEEP_BASE_MS = @@RETRY_SLEEP_BASE_MS@@
 RETRY_SLEEP_JITTER_MS = @@RETRY_SLEEP_JITTER_MS@@
 
 DNS_FLAG_QR = 0x8000
+DNS_FLAG_AA = 0x0400
+DNS_FLAG_TC = 0x0200
 DNS_FLAG_RD = 0x0100
+DNS_FLAG_RA = 0x0080
+DNS_OPCODE_QUERY = 0x0000
+DNS_OPCODE_MASK = 0x7800
 DNS_QTYPE_A = 1
 DNS_QTYPE_CNAME = 5
 DNS_QTYPE_OPT = 41
@@ -294,17 +299,28 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
     if len(message) < DNS_HEADER_BYTES:
         raise ClientError(EXIT_PARSE, "parse", "response shorter than DNS header")
 
-    response_id, flags, qdcount, ancount, _nscount, _arcount = struct.unpack(
+    response_id, flags, qdcount, ancount, nscount, arcount = struct.unpack(
         "!HHHHHH", message[:DNS_HEADER_BYTES]
     )
     if response_id != (int(expected_id) & 0xFFFF):
         raise ClientError(EXIT_PARSE, "parse", "response ID mismatch")
     if (flags & DNS_FLAG_QR) == 0:
         raise ClientError(EXIT_PARSE, "parse", "response missing QR flag")
+    if (flags & DNS_FLAG_AA) == 0:
+        raise ClientError(EXIT_PARSE, "parse", "response does not set AA")
+    if flags & DNS_FLAG_TC:
+        raise ClientError(EXIT_PARSE, "parse", "response sets TC")
+    if flags & DNS_FLAG_RA:
+        raise ClientError(EXIT_PARSE, "parse", "response sets RA")
+    if (flags & DNS_OPCODE_MASK) != DNS_OPCODE_QUERY:
+        raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
     rcode = flags & 0x000F
-    if qdcount != 1:
-        raise ClientError(EXIT_PARSE, "parse", "response qdcount must be 1")
+    if qdcount != 1 or ancount != 1 or nscount != 0:
+        raise ClientError(EXIT_PARSE, "parse", "response section counts invalid")
+    expected_arcount = 1 if DNS_EDNS_SIZE > 512 else 0
+    if arcount != expected_arcount:
+        raise ClientError(EXIT_PARSE, "parse", "response arcount does not match EDNS mode")
 
     offset = DNS_HEADER_BYTES
     qname_labels, offset = _decode_name(message, offset)
@@ -324,19 +340,27 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
 
     cname_labels = None
     cname_matches = 0
-    for _ in range(ancount):
-        rr_name, offset = _decode_name(message, offset)
-        if offset + 10 > len(message):
-            raise ClientError(EXIT_PARSE, "parse", "truncated answer RR header")
-        rr_type, rr_class, _rr_ttl, rdlength = struct.unpack(
-            "!HHIH", message[offset:offset + 10]
-        )
-        offset += 10
-        rdata_offset = offset
-        rdata_end = offset + rdlength
-        if rdata_end > len(message):
-            raise ClientError(EXIT_PARSE, "parse", "truncated answer RDATA")
 
+    def _consume_rrs(current_offset, count):
+        results = []
+        for _ in range(count):
+            rr_name, current_offset = _decode_name(message, current_offset)
+            if current_offset + 10 > len(message):
+                raise ClientError(EXIT_PARSE, "parse", "truncated answer RR header")
+            rr_type, rr_class, _rr_ttl, rdlength = struct.unpack(
+                "!HHIH", message[current_offset:current_offset + 10]
+            )
+            current_offset += 10
+            rdata_offset = current_offset
+            rdata_end = current_offset + rdlength
+            if rdata_end > len(message):
+                raise ClientError(EXIT_PARSE, "parse", "truncated answer RDATA")
+            results.append((rr_name, rr_type, rr_class, rdata_offset, rdata_end))
+            current_offset = rdata_end
+        return results, current_offset
+
+    answers, offset = _consume_rrs(offset, ancount)
+    for rr_name, rr_type, rr_class, rdata_offset, rdata_end in answers:
         if rr_type == DNS_QTYPE_CNAME and rr_class == DNS_QCLASS_IN and rr_name == expected_qname:
             parsed_labels, parsed_end = _decode_name(message, rdata_offset)
             if parsed_end != rdata_end:
@@ -346,7 +370,10 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
                 raise ClientError(EXIT_PARSE, "parse", "multiple matching CNAME answers")
             cname_labels = parsed_labels
 
-        offset = rdata_end
+    _, offset = _consume_rrs(offset, nscount)
+    _, offset = _consume_rrs(offset, arcount)
+    if offset != len(message):
+        raise ClientError(EXIT_PARSE, "parse", "trailing bytes in response message")
 
     if cname_labels is None:
         raise ClientError(EXIT_PARSE, "parse", "missing required CNAME answer")
@@ -1230,26 +1257,52 @@ def _collect_backup_targets(managed_dir, expected_names):
     return tuple(sorted(existing_expected + stale_managed))
 
 
-def _rollback_commit(moved_pairs, placed_paths):
+def _rollback_commit(moved_pairs, placed_paths, backup_dir):
+    rollback_errors = []
     for placed_path in reversed(placed_paths):
         if os.path.exists(placed_path):
             try:
                 os.remove(placed_path)
-            except Exception:
-                pass
+            except Exception as exc:
+                rollback_errors.append(
+                    "failed removing placed artifact %s: %s" % (placed_path, exc)
+                )
 
     for backup_path, original_path in reversed(moved_pairs):
         if not os.path.exists(backup_path):
+            rollback_errors.append(
+                "missing backup during restore %s" % backup_path
+            )
             continue
         try:
             if os.path.exists(original_path):
                 os.remove(original_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            rollback_errors.append(
+                "failed removing original during restore %s: %s"
+                % (original_path, exc)
+            )
+            continue
         try:
             os.rename(backup_path, original_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            rollback_errors.append(
+                "failed restoring backup %s -> %s: %s"
+                % (backup_path, original_path, exc)
+            )
+
+    if rollback_errors:
+        raise StartupError(
+            "startup",
+            "generator_write_failed",
+            "transaction rollback failed; backup directory preserved",
+            {
+                "backup_dir": backup_dir,
+                "preserve_backup_dir": True,
+                "rollback_error_count": len(rollback_errors),
+                "rollback_first_error": rollback_errors[0],
+            },
+        )
 
 
 def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
@@ -1259,6 +1312,7 @@ def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
     moved_pairs = []
     placed_paths = []
 
+    failure = None
     try:
         for original_path in targets_to_backup:
             basename = os.path.basename(original_path)
@@ -1285,17 +1339,32 @@ def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
                 )
             os.rename(staged_path, managed_path)
             placed_paths.append(managed_path)
-    except StartupError:
-        _rollback_commit(moved_pairs, placed_paths)
-        raise
+    except StartupError as exc:
+        failure = exc
     except Exception as exc:
-        _rollback_commit(moved_pairs, placed_paths)
-        raise StartupError(
+        failure = StartupError(
             "startup",
             "generator_write_failed",
             "transactional commit failed: %s" % exc,
             {"managed_dir": managed_dir},
         )
+
+    if failure is None:
+        return
+
+    try:
+        _rollback_commit(moved_pairs, placed_paths, backup_dir)
+    except StartupError as rollback_exc:
+        rollback_context = dict(rollback_exc.context)
+        rollback_context["rollback_trigger_reason_code"] = failure.reason_code
+        raise StartupError(
+            "startup",
+            "generator_write_failed",
+            "transaction rollback failed; backup directory preserved",
+            rollback_context,
+        )
+
+    raise failure
 
 
 def generate_client_artifacts(runtime_state):
@@ -1332,9 +1401,10 @@ def generate_client_artifacts(runtime_state):
             _write_staged_file(stage_dir, artifact["filename"], artifact["source"])
 
         _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts)
-    except StartupError:
+    except StartupError as exc:
         _cleanup_tree(stage_dir)
-        _cleanup_tree(backup_dir)
+        if not exc.context.get("preserve_backup_dir"):
+            _cleanup_tree(backup_dir)
         raise
     except Exception as exc:
         _cleanup_tree(stage_dir)
