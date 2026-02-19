@@ -19,18 +19,22 @@ mapping limits, parser classification, and client generation/runtime behavior.
 After implementation:
 - server accepts `--domains d1,d2,...` and rejects invalid sets
   (empty/duplicate/overlapping domains)
-- mapping lookup and slice identity are independent of selected base domain
-- requests to any configured base domain return the same routing outcome and
-  same canonical slice identity for identical `(file_tag, slice_token)`
+- mapping lookup inputs and publish identities are independent of selected base
+  domain
 - all token-length and payload-capacity constraints are computed against the
   longest configured domain so every configured domain is safe
-- architecture docs and code paths use one aligned multi-domain contract
+- architecture docs and startup/core code paths use one aligned multi-domain
+  contract
+- request-routing equivalence across configured domains is specified as an
+  architecture contract and prepared in startup state, with runtime enforcement
+  deferred until request-serving implementation exists
 
 ## Design
 ### 1. Config contract: move from `domain` to `domains`
 - Replace required `--domain` with required `--domains` CSV.
-- Normalize each domain (lowercase, strip trailing dot), deduplicate, and
-  require deterministic canonical order.
+- Normalize each domain (lowercase, strip trailing dot), reject duplicate
+  normalized values (no silent dedupe), and require deterministic canonical
+  order for valid unique inputs.
 - Enforce non-overlap invariant at startup:
   no configured domain may be equal to, or DNS-suffix-contained by, another
   configured domain on label boundaries.
@@ -48,7 +52,7 @@ After implementation:
 - Keep fail-fast behavior when a valid mapping/payload cannot be materialized
   under worst-case domain length.
 
-### 3. Request/response runtime semantics
+### 3. Request/response runtime semantics (contract-only in this phase)
 - Request parse accepts any configured base domain suffix.
 - Domain suffix selection must happen before mapping-field parsing to avoid
   ambiguity.
@@ -59,13 +63,26 @@ After implementation:
 - CNAME output suffix policy should be fixed in docs:
   emit response using the queried base domain to preserve resolver chase
   behavior while keeping slice identity identical.
+- This plan does not implement a DNS request-serving loop; it defines the
+  contract and startup/runtime-state prerequisites for a follow-on serve-path
+  implementation plan.
 
 ### 4. Client generation/runtime contract
 - Generated clients embed `BASE_DOMAINS` (ordered list), not one `BASE_DOMAIN`.
-- Runtime query construction selects domains by deterministic policy
-  (for example fixed-primary with deterministic failover or round-robin).
-- Regardless of selection policy, validation/acceptance rules remain unchanged;
-  only request suffix source changes.
+- Runtime query construction uses one fixed policy:
+  - `BASE_DOMAINS` order is canonical and deterministic.
+  - initialize `domain_index = 0` at client startup.
+  - each DNS request uses `BASE_DOMAINS[domain_index]` for QNAME suffix.
+  - on transport-level retryable event (timeout/no response/socket retryable
+    interruption), advance `domain_index = (domain_index + 1) % len(BASE_DOMAINS)`
+    before the next request attempt.
+  - on valid DNS response (slice accepted or valid duplicate slice), keep
+    `domain_index` unchanged.
+  - on non-retryable contract/crypto violation, fail immediately (no domain
+    rotation fallback).
+  - on process restart, reset `domain_index` to `0`.
+- Validation/acceptance rules for payloads remain unchanged; only request suffix
+  source changes.
 
 ### 5. Error classes, invariants, and observability
 - Add startup errors for:
@@ -81,6 +98,8 @@ After implementation:
 - First change set updates architecture docs to a consistent multi-domain model.
 - Second change set updates startup/core code to match docs.
 - Third change set updates generated-client contract and implementation.
+- Runtime request-handler enforcement is explicitly out of scope for this plan
+  because a serve-path implementation is not currently present in the codebase.
 - No compatibility shims for single-domain contracts.
 
 ## Affected Components
@@ -116,3 +135,62 @@ After implementation:
   domain-set representation.
 - `dnsdle/__init__.py`: wire updated config/budget/mapping contracts in startup
   state build path.
+
+## Phased Execution
+1. Update architecture docs to replace singular base-domain contracts with
+   multi-domain contracts and explicit longest-domain clamping rules.
+2. Update startup config parsing/validation for `--domains`, including
+   normalize-then-reject duplicate handling and non-overlap checks.
+3. Update budget/mapping derivation logic to consume longest-domain derived
+   fields and enforce worst-case length constraints.
+4. Update startup/runtime state and startup logging to carry domain-set fields.
+5. Update generated-client architecture/runtime contracts from `BASE_DOMAIN` to
+   `BASE_DOMAINS` with deterministic domain-selection policy.
+6. Verify validation and acceptance gates below before considering the plan
+   complete.
+
+## Validation Matrix
+- Case 1 (valid multi-domain baseline):
+  `--domains example.com,hello.com` with valid inputs starts successfully and
+  produces deterministic startup artifacts.
+- Case 2 (duplicate normalized domain rejection):
+  `--domains EXAMPLE.com,example.com.` fails startup with explicit duplicate
+  domain reason code (no silent dedupe).
+- Case 3 (overlap rejection):
+  `--domains example.com,sub.example.com` fails startup with explicit overlap
+  reason code.
+- Case 4 (unknown request suffix classification, contract level):
+  architecture docs and error matrix explicitly classify non-configured base
+  domain requests as deterministic miss behavior.
+- Case 5 (longest-domain clamp correctness):
+  with mixed domain lengths, derived token-length/payload-capacity limits match
+  the longest configured domain, and startup fails if worst-case domain makes
+  constraints unsatisfiable.
+- Case 6 (cross-domain mapping identity contract):
+  docs and startup state define mapping lookup as domain-agnostic so identical
+  `(file_tag, slice_token)` resolve to the same canonical slice identity across
+  accepted domains.
+- Case 7 (deterministic ordering of valid inputs):
+  same unique domain set provided in different CSV orders yields identical
+  canonical stored order and identical derived startup outputs.
+- Case 8 (client domain-selection determinism):
+  with `BASE_DOMAINS=[d0,d1,d2]`, retryable transport failures rotate suffix
+  strictly `d0 -> d1 -> d2 -> d0`, valid responses keep current index, and
+  process restart resets selection to `d0`.
+
+## Success Criteria
+- `--domain` is removed from the contract and replaced by `--domains` with
+  explicit normalize-then-reject duplicate semantics.
+- Domain overlap and duplicate normalized domains are hard startup failures with
+  stable reason codes.
+- Length/capacity derivations are explicitly defined and implemented against the
+  longest configured domain.
+- Architecture docs consistently define that base domain is a route qualifier,
+  not part of mapping identity.
+- `doc/architecture/CLIENT_GENERATION.md` and
+  `doc/architecture/CLIENT_RUNTIME.md` define exactly one shared domain-selection
+  algorithm (the fixed rotation-on-retry policy above), with no alternate modes.
+- Startup/core code paths expose sufficient domain-set state for follow-on
+  request-handler implementation to enforce cross-domain routing contract.
+- Plan scope remains executable in current codebase by limiting runtime-routing
+  outcomes to documented contract + startup-state prerequisites.
