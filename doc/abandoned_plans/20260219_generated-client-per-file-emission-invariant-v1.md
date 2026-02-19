@@ -1,5 +1,14 @@
 # Plan: Generated Client Per-File Emission Invariant (v1)
 
+**ABANDONED 2026-02-19**: Roughly half the described work (lifecycle logging,
+filename uniqueness, transactional commit) already exists in the codebase.
+Design Section 2 duplicates existing `generation_start`/`generation_ok`/
+`generation_summary` records in `dnsdle.py`. Design Section 3 describes only
+existing transactional commit behavior. Design Section 1 payload constant
+parity check lacks a concrete low-complexity approach. Artifact dict is missing
+`publish_version` which the plan depends on but does not address. Replaced by
+scoped v2 plan: `doc/plans/generated-client-per-file-emission-invariant-v2.md`.
+
 ## Summary
 Ensure generated-client emission is explicitly and verifiably one client per
 published file per selected target OS. Startup must fail fast if emission
