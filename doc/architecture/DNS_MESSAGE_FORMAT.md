@@ -98,7 +98,7 @@ Reason:
 
 Startup invariant:
 - if required compression-pointer layout cannot be constructed safely for the
-  longest configured domain/suffix rules, startup fails.
+  longest configured domain/suffix rules, startup fails before bind.
 
 Parser safety:
 - name decoder must detect invalid pointers and pointer loops.
@@ -131,10 +131,12 @@ Follow-up queries must never be interpreted as slice-token requests.
 For deterministic misses:
 - `RCODE = NXDOMAIN`
 - no answer RRs
+- `QDCOUNT = 1` when one parseable question is present; otherwise `QDCOUNT = 0`
 
 For internal runtime faults:
 - `RCODE = SERVFAIL`
 - no answer RRs
+- `QDCOUNT = 1` when one parseable question is present; otherwise `QDCOUNT = 0`
 
 Response code selection and classification are governed by
 `doc/architecture/ERRORS_AND_INVARIANTS.md`.

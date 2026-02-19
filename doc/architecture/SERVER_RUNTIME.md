@@ -117,14 +117,19 @@ equivalence for wire behavior and invariants.
 For each parseable request:
 1. Parse DNS envelope and question.
 2. Match one configured base-domain suffix.
-3. Validate qtype/qclass/qname shape for v1 contract.
-4. Extract `slice_token`, `file_tag`, and matched `base_domain`.
-5. Resolve mapping key to canonical slice identity.
-6. Build binary slice record.
-7. Encode CNAME target using matched `base_domain` and write response.
+3. Validate qtype/class for v1 (`A` / `IN`).
+4. Classify follow-up shape first:
+   - `<payload_labels>.<response_label>.<selected_base_domain>`
+   - respond with one synthetic `A` answer (`0.0.0.0`)
+5. Classify slice shape:
+   - `<slice_token>.<file_tag>.<selected_base_domain>`
+6. Resolve mapping key to canonical slice identity.
+7. Build deterministic v1 payload record from canonical slice bytes.
+8. Encode CNAME target using matched `base_domain` and write response.
 
 Response behavior must follow `doc/architecture/ERRORS_AND_INVARIANTS.md`:
 - valid mapped request -> `NOERROR` + one CNAME answer
+- follow-up request -> `NOERROR` + one A answer
 - deterministic miss -> `NXDOMAIN`
 - internal runtime fault after mapping -> `SERVFAIL`
 
@@ -154,7 +159,7 @@ Minimum runtime logs:
 - startup summary (domains, file count, listen address)
 - per-file publish summary (`file_id`, `file_tag`, `total_slices`,
   ciphertext slice budget)
-- request outcomes (`served`, `miss`, `runtime_fault`)
+- request outcomes (`served`, `followup`, `miss`, `runtime_fault`)
 - shutdown summary (uptime and counters)
 
 Sensitive values must not be logged:
@@ -167,7 +172,7 @@ Sensitive values must not be logged:
 ## Shutdown
 
 Graceful shutdown sequence:
-1. Stop accepting new work (set stop flag).
+1. Stop accepting new work (set stop flag from signal, callback, or interrupt).
 2. Close UDP socket.
 3. Flush pending logs.
 4. Exit process.

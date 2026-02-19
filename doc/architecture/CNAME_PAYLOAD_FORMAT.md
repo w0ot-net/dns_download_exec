@@ -14,7 +14,7 @@ It is the contract between:
 1. Maximize usable slice bytes in each CNAME response.
 2. Keep response parsing deterministic and fail-fast.
 3. Keep request QNAMEs short and opaque.
-4. Support out-of-order and retry-heavy retrieval.
+4. Keep payload materialization deterministic for fixed startup state.
 
 ---
 
@@ -61,39 +61,30 @@ Before DNS text encoding, the server builds this binary record:
 +--------+--------+----------------+-------------------+--------------+
 | Byte 0 | Byte 1 | Bytes 2..3     | Bytes 4..N-17     | Bytes N-16.. |
 +--------+--------+----------------+-------------------+--------------+
-|profile | flags  | cipher_len_u16 | ciphertext bytes  | mac_trunc16  |
+|profile | flags  | slice_len_u16  | slice bytes       | mac_trunc16  |
 +--------+--------+----------------+-------------------+--------------+
 ```
 
 Field definitions:
 - `profile` (1 byte): crypto profile id. v1 value is `0x01`.
 - `flags` (1 byte): reserved. v1 requires `0x00`.
-- `cipher_len_u16` (2 bytes, big-endian): ciphertext byte length.
-- `ciphertext`: encrypted slice payload bytes.
-- `mac_trunc16` (16 bytes): truncated HMAC-SHA256 tag.
+- `slice_len_u16` (2 bytes, big-endian): canonical slice-byte length.
+- `slice bytes`: canonical bytes from startup publish state for this slice.
+- `mac_trunc16` (16 bytes): reserved field. v1 serves zero bytes in this field.
 
 Invariants:
-1. `cipher_len_u16` must equal actual ciphertext length.
-2. `cipher_len_u16` must be greater than zero.
+1. `slice_len_u16` must equal actual slice-byte length.
+2. `slice_len_u16` must be greater than zero.
 3. Reserved flags must be zero.
 4. Unknown `profile` is a hard failure.
 
 ---
 
-## MAC Binding
+## Reserved MAC Field
 
-The transmitted MAC field authenticates:
-- `file_id`
-- `publish_version`
-- `slice_index`
-- `total_slices`
-- `compressed_size`
-- `ciphertext`
-
-The metadata values come from generated client constants and query-token
-mapping, not from DNS cleartext fields.
-
-Any MAC mismatch is fatal for the transfer session.
+v1 runtime keeps `mac_trunc16` as a fixed-width reserved trailer and emits
+all-zero bytes. No MAC verification contract is defined in this runtime-serving
+phase.
 
 ---
 
@@ -112,7 +103,7 @@ Decoding steps:
    configured domain.
 2. Join payload labels.
 3. Base32-decode (accept lowercase form).
-4. Parse binary record and validate invariants.
+4. Parse binary record and validate profile/flags/length invariants.
 
 The server must emit canonical lowercase/no-padding encoding so duplicate
 replies for the same slice are byte-stable at the DNS text layer.
@@ -132,7 +123,7 @@ Inputs:
   using longest configured domain
 - DNS message envelope terms (header, echoed question, one CNAME answer,
   optional OPT additional RR)
-- binary record overhead (4-byte header + 16-byte MAC)
+- binary record overhead (4-byte header + 16-byte reserved trailer)
 
 Startup algorithm:
 1. Compute max payload base32 characters that fit remaining CNAME target-name
@@ -178,8 +169,7 @@ For each response:
 1. Question/answer name must match request routing expectation.
 2. CNAME suffix must match expected response suffix.
 3. Record parse checks must pass (`profile`, flags, lengths).
-4. MAC must validate against mapped slice metadata.
-5. Stored bytes for duplicate slice index must match exactly.
+4. Stored bytes for duplicate slice index must match exactly.
 
 Any violation is a hard failure for that transfer session.
 

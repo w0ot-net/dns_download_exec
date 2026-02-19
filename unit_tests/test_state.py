@@ -35,11 +35,17 @@ class StateTests(unittest.TestCase):
         self.assertEqual(1, len(runtime.publish_items))
         self.assertEqual(2, len(runtime.lookup_by_key))
         self.assertEqual(("1" * 16, "a" * 64, 0), runtime.lookup_by_key[("tag001", "a")])
+        self.assertEqual(
+            (b"x", b"x"),
+            runtime.slice_bytes_by_identity[("1" * 16, "a" * 64)],
+        )
 
         with self.assertRaises(TypeError):
             runtime.lookup_by_key[("tag001", "c")] = ("x", "y", 2)
         with self.assertRaises(TypeError):
             runtime.budget_info["query_token_len"] = 2
+        with self.assertRaises(TypeError):
+            runtime.slice_bytes_by_identity[("x", "y")] = (b"z",)
 
     def test_build_runtime_state_rejects_lookup_collisions(self):
         mapped_items = [

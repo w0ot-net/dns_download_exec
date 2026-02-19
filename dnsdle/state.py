@@ -63,6 +63,7 @@ RuntimeState = namedtuple(
         "budget_info",
         "publish_items",
         "lookup_by_key",
+        "slice_bytes_by_identity",
     ],
 )
 
@@ -70,6 +71,7 @@ RuntimeState = namedtuple(
 def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
     publish_items = []
     lookup = {}
+    slice_bytes_by_identity = {}
 
     for item in mapped_publish_items:
         publish_item = PublishItem(
@@ -86,6 +88,18 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
             wire_profile=item["wire_profile"],
         )
         publish_items.append(publish_item)
+        identity = (publish_item.file_id, publish_item.publish_version)
+        if identity in slice_bytes_by_identity:
+            raise StartupError(
+                "publish",
+                "duplicate_publish_identity",
+                "duplicate publish identity while building final state",
+                {
+                    "file_id": publish_item.file_id,
+                    "publish_version": publish_item.publish_version,
+                },
+            )
+        slice_bytes_by_identity[identity] = publish_item.slice_bytes_by_index
 
         for index, token in enumerate(publish_item.slice_tokens):
             key = (publish_item.file_tag, token)
@@ -107,4 +121,5 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
         budget_info=FrozenDict(dict(budget_info)),
         publish_items=tuple(publish_items),
         lookup_by_key=FrozenDict(lookup),
+        slice_bytes_by_identity=FrozenDict(slice_bytes_by_identity),
     )

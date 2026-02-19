@@ -5,6 +5,7 @@ import json
 import sys
 
 from dnsdle import build_startup_state
+from dnsdle import serve_runtime
 from dnsdle.state import StartupError
 
 
@@ -60,7 +61,21 @@ def main(argv=None):
             }
         )
 
-    return 0
+    try:
+        return serve_runtime(runtime_state, _emit_record)
+    except StartupError as exc:
+        _emit_record(exc.to_log_record())
+        return 1
+    except Exception as exc:
+        _emit_record(
+            {
+                "classification": "startup_error",
+                "phase": "server",
+                "reason_code": "unexpected_exception",
+                "message": str(exc),
+            }
+        )
+        return 1
 
 
 if __name__ == "__main__":

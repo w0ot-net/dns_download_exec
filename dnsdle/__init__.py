@@ -4,6 +4,7 @@ from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.config import parse_cli_config
 from dnsdle.mapping import apply_mapping
 from dnsdle.publish import build_publish_items
+from dnsdle.server import serve_runtime
 from dnsdle.state import build_runtime_state
 
 

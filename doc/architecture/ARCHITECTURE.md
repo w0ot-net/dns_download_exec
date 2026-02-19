@@ -1,16 +1,13 @@
 # Architecture Overview
 
 This document defines the v1 architecture for `dns_download_exec`: a DNS server
-that publishes selected files as DNS CNAME slice responses, and generates
-purpose-built Python clients that download, verify, and restore those files.
+that publishes selected files as DNS CNAME slice responses.
 
 The architecture is intentionally narrow:
 - server publishes operator-selected files only
-- generated clients are OS-specific (Windows or Linux target)
-- each generated client downloads one specific file
 - transport is DNS with CNAME responses only (v1)
 - Python 2.7/3.x, standard library only, Windows and Linux support
-- download-only workflow; no execution stage in v1
+- deterministic follow-up A handling for CNAME chase traffic
 
 ---
 
@@ -19,6 +16,8 @@ The architecture is intentionally narrow:
 The system uses a simple DNS request/response flow:
 - client sends slice requests
 - server returns CNAME responses containing the requested slice
+- recursive resolvers may issue follow-up A queries for CNAME targets
+- server returns a synthetic A response for follow-up queries
 - client retries missing slices until reconstruction is complete
 
 ---
@@ -59,10 +58,6 @@ Client behavior:
 │ (query parse, lookup, CNAME encode, reply)   │
 └──────────────────────┬──────────────────────┘
                        │
-┌──────────────────────┴──────────────────────┐
-│ Client Generator                             │
-│ (emit one-file downloader with embedded meta)│
-└──────────────────────────────────────────────┘
 ```
 
 ---
@@ -131,25 +126,7 @@ Fail-fast behavior:
 - invalid names or out-of-range slices are hard misses (no silent remap)
 - internal manifest inconsistency is fatal for request processing path
 
-### 4. Client Generator
-
-At server startup, generate Python clients per hosted file and target OS.
-
-Generated client embeds:
-- target domain set
-- target OS profile
-- deterministic `file_tag`
-- file identity metadata
-- expected total slices
-- integrity metadata (hash and crypto profile)
-- output reconstruction rules
-
-Each generated client is single-purpose:
-- downloads exactly one file definition for one target OS profile
-- is emitted as exactly one standalone Python file
-- does not rely on runtime negotiation for that file contract
-
-### 5. Generated Client Runtime
+### 4. Generated Client Runtime (Out of Scope for Server Runtime)
 
 Responsibilities:
 - request slices (any order)
@@ -178,7 +155,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 1. Operator starts server with domains, file list, and PSK.
 2. Server validates all inputs.
 3. Server builds in-memory publish artifacts for each file.
-4. Server generates downloader client artifacts per file and target OS.
+4. Server validates runtime-serving invariants for DNS response construction.
 5. Server binds DNS socket and begins serving queries.
 
 ### Download Flow
@@ -195,6 +172,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 The server has two main state classes:
 - immutable publish state (file manifests and slices)
+- immutable lookup indexes (`lookup_by_key`, `slice_bytes_by_identity`)
 - network service state (socket, request handling, logging)
 
 The server must not mutate publish bytes while serving.

@@ -212,10 +212,15 @@ Any invariant breach is fatal for the current operation context.
 ## Logging Requirements
 
 Minimum server log fields on request handling paths:
-- phase (`startup`, `request_parse`, `mapping`, `encode`, `internal`)
-- classification (`startup_error`, `followup`, `miss`, `runtime_fault`)
+- phase (`server` for runtime request paths)
+- classification (`served`, `followup`, `miss`, `runtime_fault`)
 - stable reason code
 - request key context when available (`file_tag`, `slice_token`)
+
+Shutdown logging:
+- classification `shutdown`
+- phase `server`
+- deterministic stop reason code and counters
 
 Minimum generated-client log fields on failure:
 - phase (`dns`, `parse`, `crypto`, `reassembly`, `write`)
