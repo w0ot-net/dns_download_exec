@@ -48,7 +48,9 @@ template in `dnsdle/client_template.py`).
   `dns_edns_size > 512`).
 - CNAME response parsing: header validation, question section skip, answer
   section CNAME RDATA extraction with DNS name decompression (pointer
-  support).
+  support). Walk answer RRs only; ignore remaining message bytes after the
+  last answer RR (authority/additional sections and trailing data are not
+  consumed -- recursive resolvers routinely append extra sections).
 - Payload label extraction from CNAME target (strip response_label and
   domain suffix).
 - Base32 decode (lowercase alphabet, no padding).
@@ -72,7 +74,8 @@ template in `dnsdle/client_template.py`).
 
 **Embedded constants** (filled at generation time):
 
-- `@@DOMAIN_LABELS@@`: domain label tuple (first configured domain).
+- `@@DOMAIN_LABELS@@`: domain label tuple for `config.domains[0]`
+  (lexicographically first configured domain).
 - `@@FILE_TAG@@`: file_tag of the client publish item.
 - `@@FILE_ID@@`: file_id.
 - `@@PUBLISH_VERSION@@`: publish_version.
