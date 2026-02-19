@@ -15,7 +15,7 @@ It complements:
 1. Define exact DNS header/question/answer behavior.
 2. Require deterministic packet construction for identical inputs.
 3. Maximize CNAME payload capacity with safe compression pointers.
-4. Define deterministic miss behavior for non-slice DNS queries.
+4. Handle recursive-resolver CNAME follow-up queries explicitly.
 
 ---
 
@@ -33,7 +33,8 @@ Generated client emits requests with:
 - `QDCOUNT = 1`
 - `ANCOUNT = 0`
 - `NSCOUNT = 0`
-- `ARCOUNT = 0`
+- `ARCOUNT = 1` by default (`dns_edns_size=1232`, OPT present)
+- `ARCOUNT = 0` only when `dns_edns_size=512` (EDNS disabled)
 - `QCLASS = IN`
 - `QTYPE = A` (fixed in v1)
 - `QNAME = <slice_token>.<file_tag>.<base_domain>`
@@ -71,7 +72,8 @@ For a valid mapped slice request:
 - `QDCOUNT = 1`
 - `ANCOUNT = 1`
 - `NSCOUNT = 0`
-- `ARCOUNT = 0`
+- `ARCOUNT = 1` by default (`dns_edns_size=1232`, OPT present)
+- `ARCOUNT = 0` only when `dns_edns_size=512` (EDNS disabled)
 
 Answer RR:
 - `NAME`: compression pointer to question name start (offset 12)
@@ -101,7 +103,7 @@ Parser safety:
 
 ---
 
-## Non-Slice Query Handling
+## CNAME-Chase Follow-Up Handling
 
 Recursive resolvers may issue follow-up A queries for CNAME targets.
 
@@ -110,11 +112,12 @@ Detection:
 - request qtype is `A`
 
 Follow-up response behavior:
-- classify as deterministic miss
-- `RCODE = NXDOMAIN`
-- no answer RRs
+- `RCODE = NOERROR`
+- one `A` answer for the queried name
+- `TTL = configured ttl`
+- address value is fixed synthetic `0.0.0.0` in v1
 
-This behavior keeps server handling aligned with the global miss matrix.
+This response is protocol plumbing only. Clients ignore follow-up A data.
 
 Follow-up queries must never be interpreted as slice-token requests.
 
@@ -135,11 +138,16 @@ Response code selection and classification are governed by
 
 ---
 
-## Size Handling
+## EDNS and Size Handling
 
-v1 message policy:
-- do not require or emit EDNS OPT records
-- responses must fit classic UDP DNS message bounds
+EDNS policy:
+- default configuration includes one OPT RR in additional section
+  (`dns_edns_size=1232`)
+- advertised UDP size follows configured EDNS size
+- `dns_edns_size=512` disables OPT emission for classic DNS behavior
+
+Packet size policy:
+- responses must fit configured UDP/EDNS bounds
 - oversized construction attempt is a runtime fault path, not silent truncation
 
 v1 does not emit truncated (`TC=1`) slice responses.
@@ -164,7 +172,7 @@ Any parse or format violation is fatal per client error policy.
 ## Determinism Requirements
 
 For fixed runtime state and identical request packet:
-- selected response class (`slice`, `miss`, `fault`) is deterministic
+- selected response class (`slice`, `followup`, `miss`, `fault`) is deterministic
 - response header counts/flags are deterministic
 - answer content and TTL are deterministic
 
@@ -175,7 +183,7 @@ For fixed runtime state and identical request packet:
 Any change to:
 - fixed request qtype behavior
 - compression-pointer requirements
-- non-slice query handling rules
+- follow-up chase response rules
 - response header/count semantics
 
 is a breaking wire change and requires synchronized updates to:
