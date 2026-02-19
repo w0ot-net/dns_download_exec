@@ -58,11 +58,11 @@ follow-up traffic cannot be misparsed as client slice requests.
 Before DNS text encoding, the server builds this binary record:
 
 ```
-+--------+--------+----------------+-------------------+--------------+
-| Byte 0 | Byte 1 | Bytes 2..3     | Bytes 4..N-17     | Bytes N-16.. |
-+--------+--------+----------------+-------------------+--------------+
-|profile | flags  | slice_len_u16  | slice bytes       | mac_trunc16  |
-+--------+--------+----------------+-------------------+--------------+
++--------+--------+----------------+-------------------+-------------+
+| Byte 0 | Byte 1 | Bytes 2..3     | Bytes 4..N-9      | Bytes N-8.. |
++--------+--------+----------------+-------------------+-------------+
+|profile | flags  | slice_len_u16  | slice bytes       | mac_trunc8   |
++--------+--------+----------------+-------------------+-------------+
 ```
 
 Field definitions:
@@ -70,7 +70,7 @@ Field definitions:
 - `flags` (1 byte): reserved. v1 requires `0x00`.
 - `slice_len_u16` (2 bytes, big-endian): canonical slice-byte length.
 - `slice bytes`: canonical bytes from startup publish state for this slice.
-- `mac_trunc16` (16 bytes): reserved field. v1 serves zero bytes in this field.
+- `mac_trunc8` (8 bytes): truncated HMAC-SHA256 over slice metadata and payload.
 
 Invariants:
 1. `slice_len_u16` must equal actual slice-byte length.
@@ -80,11 +80,20 @@ Invariants:
 
 ---
 
-## Reserved MAC Field
+## MAC Binding
 
-v1 runtime keeps `mac_trunc16` as a fixed-width reserved trailer and emits
-all-zero bytes. No MAC verification contract is defined in this runtime-serving
-phase.
+The transmitted MAC field authenticates:
+- `file_id`
+- `publish_version`
+- `slice_index`
+- `total_slices`
+- `compressed_size`
+- `slice bytes`
+
+The server derives per-file MAC key material from `psk`, `file_id`, and
+`publish_version`, then emits an 8-byte truncated HMAC-SHA256 value.
+
+Any MAC mismatch is fatal for client validation.
 
 ---
 
@@ -123,7 +132,7 @@ Inputs:
   using longest configured domain
 - DNS message envelope terms (header, echoed question, one CNAME answer,
   optional OPT additional RR)
-- binary record overhead (4-byte header + 16-byte reserved trailer)
+- binary record overhead (4-byte header + 8-byte truncated MAC)
 
 Startup algorithm:
 1. Compute max payload base32 characters that fit remaining CNAME target-name
@@ -169,7 +178,8 @@ For each response:
 1. Question/answer name must match request routing expectation.
 2. CNAME suffix must match expected response suffix.
 3. Record parse checks must pass (`profile`, flags, lengths).
-4. Stored bytes for duplicate slice index must match exactly.
+4. MAC must validate against mapped slice metadata.
+5. Stored bytes for duplicate slice index must match exactly.
 
 Any violation is a hard failure for that transfer session.
 

@@ -116,14 +116,13 @@ class BudgetPacketBoundsTests(unittest.TestCase):
             mapping_seed="0",
         )
 
-    def test_classic_mode_rejects_oversized_packet_envelope(self):
+    def test_classic_mode_allows_tight_packet_envelope_with_8_byte_mac(self):
         domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 22))
         config = self._build_config(domain, dns_edns_size=512, file_tag_len=16)
 
-        with self.assertRaises(StartupError) as ctx:
-            compute_max_ciphertext_slice_bytes(config)
-
-        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        max_ciphertext_slice_bytes, budget_info = compute_max_ciphertext_slice_bytes(config)
+        self.assertEqual(5, max_ciphertext_slice_bytes)
+        self.assertEqual(512, budget_info["response_size_estimate"])
 
     def test_budget_metadata_packet_estimate_is_bounded(self):
         config = self._build_config("example.com", dns_edns_size=1232, file_tag_len=6)
@@ -174,10 +173,9 @@ class BudgetPacketBoundsTests(unittest.TestCase):
             mapping_seed="0",
         )
 
-        with self.assertRaises(StartupError) as ctx:
-            compute_max_ciphertext_slice_bytes(config)
-
-        self.assertEqual("budget_unusable", ctx.exception.reason_code)
+        max_ciphertext_slice_bytes, budget_info = compute_max_ciphertext_slice_bytes(config)
+        self.assertEqual(5, max_ciphertext_slice_bytes)
+        self.assertEqual(config.longest_domain, budget_info["longest_domain"])
 
     def test_requires_longest_domain_labels(self):
         with self.assertRaises(StartupError) as ctx:

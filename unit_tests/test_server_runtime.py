@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import base64
 import os
 import shutil
 import socket
@@ -7,6 +8,7 @@ import struct
 import tempfile
 import unittest
 
+import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
 import dnsdle.server as server_module
 from dnsdle.config import parse_cli_config
@@ -16,6 +18,7 @@ from dnsdle.constants import DNS_QTYPE_CNAME
 from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
+from dnsdle.constants import PAYLOAD_MAC_TRUNC_LEN
 from dnsdle.state import FrozenDict
 from dnsdle.state import StartupError
 from dnsdle.state import build_runtime_state
@@ -55,6 +58,23 @@ def _query_message(labels, qtype=DNS_QTYPE_A, qclass=DNS_QCLASS_IN, qdcount=1):
 
 def _header(message):
     return struct.unpack("!HHHHHH", message[:12])
+
+
+def _decode_cname_record_bytes(message, qname_labels):
+    question_len = len(dnswire.encode_name(qname_labels)) + 4
+    answer_offset = 12 + question_len
+    rdlength = struct.unpack("!H", message[answer_offset + 10 : answer_offset + 12])[0]
+    rdata_offset = answer_offset + 12
+    _labels, name_end = dnswire._decode_name(message, rdata_offset)
+    if name_end != rdata_offset + rdlength:
+        raise AssertionError("decoded CNAME RDATA length mismatch")
+
+    payload_text = "".join(_labels[:-3])
+    pad_len = (8 - (len(payload_text) % 8)) % 8
+    padded = (payload_text + ("=" * pad_len)).upper()
+    if not isinstance(padded, bytes):
+        padded = padded.encode("ascii")
+    return base64.b32decode(padded)
 
 
 class ServerRuntimeTests(unittest.TestCase):
@@ -125,6 +145,19 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(DNS_QTYPE_CNAME, answer_type)
         self.assertEqual("served", record["classification"])
         self.assertEqual("slice_served", record["reason_code"])
+
+        record_bytes = _decode_cname_record_bytes(response, labels)
+        expected_record = cname_payload.build_slice_record(
+            runtime_state.config.psk,
+            "1" * 16,
+            "a" * 64,
+            0,
+            1,
+            10,
+            b"slice-data",
+        )
+        self.assertEqual(expected_record, record_bytes)
+        self.assertNotEqual(b"\x00" * PAYLOAD_MAC_TRUNC_LEN, record_bytes[-PAYLOAD_MAC_TRUNC_LEN:])
 
     def test_followup_shape_is_classified_before_slice_mapping(self):
         runtime_state = self._runtime_state(dns_edns_size=1232)
@@ -221,7 +254,7 @@ class ServerRuntimeTests(unittest.TestCase):
         original_payload_labels = server_module.cname_payload.payload_labels_for_slice
         original_socket_factory = server_module.socket.socket
 
-        def _raise_payload_error(_slice_bytes, _label_cap):
+        def _raise_payload_error(*_args, **_kwargs):
             raise ValueError("forced payload encode failure")
 
         def _counting_socket_factory(*_args, **_kwargs):

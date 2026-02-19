@@ -176,10 +176,43 @@ def handle_request_message(runtime_state, request_bytes):
                 "slice_count": len(slice_table),
             },
         )
+    publish_meta = runtime_state.publish_meta_by_identity.get(identity)
+    if publish_meta is None:
+        return _runtime_fault_response(
+            request,
+            config,
+            "publish_meta_missing",
+            {
+                "selected_base_domain": selected_domain,
+                "file_tag": file_tag,
+                "slice_token": slice_token,
+            },
+        )
+
+    total_slices, compressed_size = publish_meta
+    if total_slices != len(slice_table):
+        return _runtime_fault_response(
+            request,
+            config,
+            "slice_table_length_mismatch",
+            {
+                "selected_base_domain": selected_domain,
+                "file_tag": file_tag,
+                "slice_token": slice_token,
+                "total_slices": total_slices,
+                "slice_count": len(slice_table),
+            },
+        )
 
     slice_bytes = slice_table[slice_index]
     try:
         payload_labels = cname_payload.payload_labels_for_slice(
+            config.psk,
+            file_id,
+            publish_version,
+            slice_index,
+            total_slices,
+            compressed_size,
             slice_bytes,
             config.dns_max_label_len,
         )
@@ -240,7 +273,16 @@ def _validate_runtime_state_for_serving(runtime_state):
     ) + tuple(config.longest_domain_labels)
 
     try:
-        payload_labels = cname_payload.payload_labels_for_slice(b"x", config.dns_max_label_len)
+        payload_labels = cname_payload.payload_labels_for_slice(
+            config.psk,
+            "0" * 16,
+            "1" * 64,
+            0,
+            1,
+            1,
+            b"x",
+            config.dns_max_label_len,
+        )
         answer = dnswire.build_cname_answer(
             question_labels,
             2,

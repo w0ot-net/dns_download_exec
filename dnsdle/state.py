@@ -64,6 +64,7 @@ RuntimeState = namedtuple(
         "publish_items",
         "lookup_by_key",
         "slice_bytes_by_identity",
+        "publish_meta_by_identity",
     ],
 )
 
@@ -72,6 +73,7 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
     publish_items = []
     lookup = {}
     slice_bytes_by_identity = {}
+    publish_meta_by_identity = {}
 
     for item in mapped_publish_items:
         publish_item = PublishItem(
@@ -100,6 +102,10 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
                 },
             )
         slice_bytes_by_identity[identity] = publish_item.slice_bytes_by_index
+        publish_meta_by_identity[identity] = (
+            publish_item.total_slices,
+            publish_item.compressed_size,
+        )
 
         for index, token in enumerate(publish_item.slice_tokens):
             key = (publish_item.file_tag, token)
@@ -122,4 +128,5 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
         publish_items=tuple(publish_items),
         lookup_by_key=FrozenDict(lookup),
         slice_bytes_by_identity=FrozenDict(slice_bytes_by_identity),
+        publish_meta_by_identity=FrozenDict(publish_meta_by_identity),
     )
