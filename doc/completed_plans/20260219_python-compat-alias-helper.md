@@ -111,3 +111,4 @@ Update architecture docs to codify compatibility implementation policy:
 - Updated `doc/architecture/CRYPTO.md` Python compatibility constraints to explicitly require centralized compat helpers.
 - No deviations from planned scope.
 - Implementation commit: `0fac3f5`.
+- Additional implementation commit: `1292a0e`.
