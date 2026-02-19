@@ -197,3 +197,23 @@ change (clean break, no shim behavior), especially:
 - collision-resolution promotion behavior is deterministic for identical inputs.
 - startup failures emit stable classification/phase/reason_code fields.
 - No fallback remap behavior exists for invalid or ambiguous mapping state.
+
+## Execution Notes
+- Implemented `dnsdle.py` startup flow plus package modules:
+  `dnsdle/config.py`, `dnsdle/budget.py`, `dnsdle/publish.py`,
+  `dnsdle/mapping.py`, `dnsdle/state.py`, and `dnsdle/__init__.py`.
+- Implemented deterministic publish pipeline with duplicate-content rejection,
+  `publish_version` identity derivation from compressed bytes, deterministic
+  `file_id`, and immutable runtime-state assembly.
+- Implemented deterministic mapping derivation and deterministic global
+  collision-promotion algorithm with fail-fast termination when limits are
+  reached.
+- Implemented startup error taxonomy/log records (`classification`, `phase`,
+  `reason_code`) and machine-parseable JSON log output.
+- Validation matrix executed successfully for deterministic baseline, duplicate
+  content rejection, collision-pressure promotion, budget failure, and config
+  validation failure.
+- Validation case for unresolved collision-at-limits used a controlled
+  mapping-module run with constrained digest capacity to force deterministic
+  failure behavior; practical CLI reproduction is unlikely under current v1
+  limits before budget limits fail first.
