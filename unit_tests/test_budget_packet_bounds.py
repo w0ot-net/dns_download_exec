@@ -1,11 +1,9 @@
 from __future__ import absolute_import
 
-import os
-import tempfile
 import unittest
+from collections import namedtuple
 
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
-from dnsdle.config import parse_cli_config
 from dnsdle.constants import ANSWER_FIXED_BYTES
 from dnsdle.constants import BASE32_BITS_PER_CHAR
 from dnsdle.constants import BINARY_RECORD_OVERHEAD
@@ -18,6 +16,20 @@ from dnsdle.constants import OPT_RR_BYTES
 from dnsdle.constants import QUESTION_FIXED_BYTES
 from dnsdle.mapping import apply_mapping
 from dnsdle.state import StartupError
+
+
+_TestConfig = namedtuple(
+    "TestConfig",
+    [
+        "domain_labels",
+        "longest_domain_labels",
+        "dns_max_label_len",
+        "file_tag_len",
+        "response_label",
+        "dns_edns_size",
+        "mapping_seed",
+    ],
+)
 
 
 def _dns_name_wire_length(labels):
@@ -35,7 +47,9 @@ def _payload_labels_for_chars(char_count, label_cap):
 
 
 def _response_size_estimate(config, query_token_len, target_wire_len):
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + tuple(config.domain_labels)
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + tuple(
+        config.longest_domain_labels
+    )
     qname_wire_len = _dns_name_wire_length(qname_labels)
     question_size = qname_wire_len + QUESTION_FIXED_BYTES
     answer_size = ANSWER_FIXED_BYTES + target_wire_len
@@ -44,7 +58,7 @@ def _response_size_estimate(config, query_token_len, target_wire_len):
 
 
 def _max_ciphertext_for_query_token_len(config, query_token_len):
-    suffix_labels = (config.response_label,) + tuple(config.domain_labels)
+    suffix_labels = (config.response_label,) + tuple(config.longest_domain_labels)
     packet_size_limit = (
         config.dns_edns_size
         if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT
@@ -84,35 +98,21 @@ def _single_slice_token_len(config):
 
 
 class BudgetPacketBoundsTests(unittest.TestCase):
-    def setUp(self):
-        fd, self.file_path = tempfile.mkstemp(prefix="dnsdle_budget_", suffix=".bin")
-        os.close(fd)
-        with open(self.file_path, "wb") as handle:
-            handle.write(b"")
-
-    def tearDown(self):
-        if os.path.exists(self.file_path):
-            os.remove(self.file_path)
-
-    def _parse_config(self, domain, dns_edns_size, file_tag_len):
-        return parse_cli_config(
-            [
-                "--domain",
-                domain,
-                "--files",
-                self.file_path,
-                "--psk",
-                "k",
-                "--dns-edns-size",
-                str(dns_edns_size),
-                "--file-tag-len",
-                str(file_tag_len),
-            ]
+    def _build_config(self, domain, dns_edns_size, file_tag_len):
+        labels = tuple(domain.split("."))
+        return _TestConfig(
+            domain_labels=labels,
+            longest_domain_labels=labels,
+            dns_max_label_len=63,
+            file_tag_len=file_tag_len,
+            response_label="r-x",
+            dns_edns_size=dns_edns_size,
+            mapping_seed="0",
         )
 
     def test_classic_mode_rejects_oversized_packet_envelope(self):
         domain = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 22))
-        config = self._parse_config(domain, dns_edns_size=512, file_tag_len=16)
+        config = self._build_config(domain, dns_edns_size=512, file_tag_len=16)
 
         with self.assertRaises(StartupError) as ctx:
             compute_max_ciphertext_slice_bytes(config)
@@ -120,7 +120,7 @@ class BudgetPacketBoundsTests(unittest.TestCase):
         self.assertEqual("budget_unusable", ctx.exception.reason_code)
 
     def test_budget_metadata_packet_estimate_is_bounded(self):
-        config = self._parse_config("example.com", dns_edns_size=1232, file_tag_len=6)
+        config = self._build_config("example.com", dns_edns_size=1232, file_tag_len=6)
         max_ciphertext_slice_bytes, budget_info = compute_max_ciphertext_slice_bytes(config)
 
         self.assertGreater(max_ciphertext_slice_bytes, 0)
@@ -132,7 +132,7 @@ class BudgetPacketBoundsTests(unittest.TestCase):
 
     def test_classic_mode_allows_feasible_realized_token_lengths(self):
         domain = ".".join(("a" * 63, "b" * 63, "c" * 61))
-        config = self._parse_config(domain, dns_edns_size=512, file_tag_len=16)
+        config = self._build_config(domain, dns_edns_size=512, file_tag_len=16)
 
         token_len = _single_slice_token_len(config)
         self.assertEqual(1, token_len)
@@ -157,4 +157,3 @@ class BudgetPacketBoundsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

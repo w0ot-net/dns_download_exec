@@ -27,17 +27,48 @@ def _payload_labels_for_chars(char_count, label_cap):
     return tuple(labels)
 
 
-def _max_query_token_len_by_name(config):
-    max_len = 0
-    for token_len in range(1, config.dns_max_label_len + 1):
-        qname_labels = ("a" * token_len, "b" * config.file_tag_len) + tuple(config.domain_labels)
-        if _dns_name_wire_length(qname_labels) <= MAX_DNS_NAME_WIRE_LENGTH:
-            max_len = token_len
-    return max_len
+def _domain_labels(config):
+    labels = getattr(config, "domain_labels", None)
+    if labels is not None:
+        return tuple(labels)
+    labels = getattr(config, "longest_domain_labels", None)
+    if labels is not None:
+        return tuple(labels)
+    raise StartupError(
+        "budget",
+        "budget_unusable",
+        "config does not expose domain labels",
+    )
+
+
+def _validate_query_token_len(config, query_token_len):
+    if query_token_len <= 0:
+        raise StartupError(
+            "budget",
+            "budget_unusable",
+            "query token length must be positive",
+            {"query_token_len": query_token_len},
+        )
+    if query_token_len > config.dns_max_label_len:
+        raise StartupError(
+            "budget",
+            "budget_unusable",
+            "query token length exceeds dns_max_label_len",
+            {"query_token_len": query_token_len},
+        )
+
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
+    if _dns_name_wire_length(qname_labels) > MAX_DNS_NAME_WIRE_LENGTH:
+        raise StartupError(
+            "budget",
+            "budget_unusable",
+            "query name budget cannot fit query token and file tag labels",
+            {"query_token_len": query_token_len},
+        )
 
 
 def _response_size_estimate(config, query_token_len, target_wire_len):
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + tuple(config.domain_labels)
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
     qname_wire_len = _dns_name_wire_length(qname_labels)
     question_size = qname_wire_len + QUESTION_FIXED_BYTES
 
@@ -51,20 +82,15 @@ def _response_size_estimate(config, query_token_len, target_wire_len):
     return DNS_HEADER_BYTES + question_size + answer_size + additional_size
 
 
-def compute_max_ciphertext_slice_bytes(config):
-    suffix_labels = (config.response_label,) + tuple(config.domain_labels)
+def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
+    suffix_labels = (config.response_label,) + _domain_labels(config)
     packet_size_limit = (
         config.dns_edns_size
         if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT
         else CLASSIC_DNS_PACKET_LIMIT
     )
-    query_token_len = _max_query_token_len_by_name(config)
-    if query_token_len <= 0:
-        raise StartupError(
-            "budget",
-            "budget_unusable",
-            "query name budget cannot fit any slice-token label",
-        )
+    query_token_len = int(query_token_len)
+    _validate_query_token_len(config, query_token_len)
 
     max_payload_chars = 0
     # 253 textual chars is the practical upper bound without trailing dot.
