@@ -9,11 +9,16 @@ imported by any module and should be removed. All changes are in a single small 
 
 ## Problem
 
-- **`dnsdle/client_generator.py` lines 186 and 202**: raw `.encode("ascii")` calls on a
-  `str`/`unicode` value. On Python 2, calling `.encode("ascii")` on an already-bytes `str`
-  triggers a silent ASCII-decode-then-re-encode roundtrip. `compat.to_ascii_bytes()` avoids
-  this by short-circuiting on `binary_type` values. Neither call imports anything from
-  `compat`.
+- **`dnsdle/client_generator.py` line 186**: validation-only `.encode("ascii")` call inside a
+  try/except guard (result is discarded; the purpose is to verify the source is ASCII).
+  On Python 2, the implicit decode-then-re-encode roundtrip is what validates. Replacing
+  with `to_ascii_bytes()` would silently skip validation on Python 2 (short-circuits on
+  `binary_type`). The correct replacement is `to_ascii_text()` which validates by decoding
+  `str` → `unicode` on Python 2, and is a no-op on Python 3 (`str` is already text).
+
+- **`dnsdle/client_generator.py` line 202**: raw `.encode("ascii")` for byte conversion
+  (writing to a binary file handle). `to_ascii_bytes()` is the correct replacement here.
+  Neither call imports anything from `compat`.
 
 - **`dnsdle/__init__.py` line 98**: same raw `.encode("ascii")` pattern, also unguarded by
   `to_ascii_bytes()`:
@@ -31,7 +36,9 @@ imported by any module and should be removed. All changes are in a single small 
 
 ## Goal
 
-- No raw `.encode("ascii")` calls remain in server-side code outside of `compat.py` itself.
+- No raw `.encode("ascii")` calls remain in server-side code outside of `compat.py` and
+  `client_template.py` (which contains its own self-contained `_to_ascii_bytes()` helper
+  since generated client scripts cannot import from `dnsdle.compat`).
 - `mapping.py` uses `to_ascii_int_bytes()` for integer → bytes conversion, consistent with
   `cname_payload.py`.
 - `compat.py` no longer exports `string_types`; its definition is removed entirely.
@@ -41,15 +48,15 @@ imported by any module and should be removed. All changes are in a single small 
 
 ### `dnsdle/client_generator.py`
 
-Add `to_ascii_bytes` to the imports from `dnsdle.compat`. Replace both `.encode("ascii")`
-call sites:
+Add `to_ascii_bytes` and `to_ascii_text` to the imports from `dnsdle.compat`. Replace both
+`.encode("ascii")` call sites:
 
 ```python
-# line 186 — validation guard (inside try/except)
+# line 186 — validation guard (inside try/except, result discarded)
 # before:
 source.encode("ascii")
 # after:
-to_ascii_bytes(source)
+to_ascii_text(source)
 
 # line 202 — write to binary file handle
 # before:
@@ -101,8 +108,9 @@ string_types = (str, bytes)
 ## Affected Components
 
 - `dnsdle/compat.py`: remove dead `string_types` export from both `if PY2` / `else` branches.
-- `dnsdle/client_generator.py`: add `to_ascii_bytes` import; replace two raw
-  `.encode("ascii")` calls.
+- `dnsdle/client_generator.py`: add `to_ascii_bytes` and `to_ascii_text` imports; replace
+  line 186 validation guard with `to_ascii_text()`, line 202 conversion with
+  `to_ascii_bytes()`.
 - `dnsdle/__init__.py`: add `to_ascii_bytes` import; replace one raw `.encode("ascii")` call.
 - `dnsdle/mapping.py`: add `to_ascii_int_bytes` import; replace one
   `to_ascii_bytes(str(...))` call with `to_ascii_int_bytes`.
