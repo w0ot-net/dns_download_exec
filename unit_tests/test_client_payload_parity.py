@@ -64,6 +64,11 @@ def _patch_response_flags(message, clear_flags=0, set_flags=0):
 
 
 def _append_authority_rrs(message, rr_bytes_list):
+    """Append authority RRs at the end of the message and patch NSCOUNT.
+
+    Only valid when the message has no additional section (ARCOUNT=0),
+    since DNS wire order requires authority before additional.
+    """
     nscount = struct.unpack("!H", message[8:10])[0]
     nscount += len(rr_bytes_list)
     patched = message[:8] + struct.pack("!H", nscount) + message[10:]
@@ -383,7 +388,7 @@ class ClientPayloadParityTests(unittest.TestCase):
                 3,
                 321,
             )
-        self.assertEqual("required_cname_missing", raised.exception.reason_code)
+        self.assertEqual("required_cname_ambiguous", raised.exception.reason_code)
 
     def test_rejects_missing_matching_cname_answer(self):
         psk = "k"

@@ -170,8 +170,10 @@ def extract_response_cname_labels(
             _raise_parse("missing_cname_labels", "response CNAME answer did not decode CNAME labels")
         matching_answers.append(tuple(cname_labels))
 
-    if len(matching_answers) != 1:
-        _raise_parse("required_cname_missing", "response must contain exactly one matching IN CNAME answer")
+    if len(matching_answers) == 0:
+        _raise_parse("required_cname_missing", "response does not contain a matching IN CNAME answer")
+    if len(matching_answers) > 1:
+        _raise_parse("required_cname_ambiguous", "response contains multiple matching IN CNAME answers")
     return matching_answers[0]
 
 
