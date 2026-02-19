@@ -103,3 +103,17 @@ Targeted manual/runtime verification:
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: update request-validation order and reason taxonomy to include envelope checks.
 - `doc/architecture/SERVER_RUNTIME.md`: align request handling pipeline to include strict envelope validation before domain/mapping classification.
 - `doc/architecture/ARCHITECTURE.md`: align high-level transport/security wording with encrypted-slice serving reality.
+
+## Execution Notes
+- Implemented deterministic per-slice encryption in `dnsdle/cname_payload.py` using HMAC-SHA256 key derivation and deterministic keystream expansion, then MAC over metadata plus ciphertext.
+- Added strict pre-routing envelope validation in `dnsdle/server.py` for `QR`, opcode, query section counts, and EDNS-mode-dependent `ARCOUNT` policy, with stable miss reason codes.
+- Updated architecture contracts in `doc/architecture/CRYPTO.md`, `doc/architecture/CNAME_PAYLOAD_FORMAT.md`, `doc/architecture/DNS_MESSAGE_FORMAT.md`, `doc/architecture/ERRORS_AND_INVARIANTS.md`, `doc/architecture/SERVER_RUNTIME.md`, and `doc/architecture/ARCHITECTURE.md` to reflect encrypted payload semantics and envelope validation order.
+- Added unit coverage in:
+  - `unit_tests/test_cname_payload_encryption.py`
+  - `unit_tests/test_server_request_envelope_validation.py`
+  - `unit_tests/test_server_request_envelope_integration.py`
+- Validation run:
+  - `python3 -m unittest unit_tests.test_cname_payload unit_tests.test_cname_payload_encryption unit_tests.test_server_runtime unit_tests.test_server_request_envelope_validation unit_tests.test_server_request_envelope_integration unit_tests.test_dnswire`
+  - Result: `Ran 33 tests ... OK`
+  - Manual checks confirmed deterministic payload bytes across retries, ciphertext differs from canonical plaintext slice bytes, and invalid parseable envelopes return `NXDOMAIN` with deterministic reason codes.
+- Execution commit hash: `8187c2e`
