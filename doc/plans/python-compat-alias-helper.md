@@ -37,6 +37,13 @@ Refactor modules that currently contain compatibility branching to use `dnsdle.c
 - replace byte-iteration compatibility branches in payload and DNS parsing helpers
 - keep module logic and protocol semantics unchanged while removing duplicated compat logic
 
+### 3.1 Logging-runtime migration invariants (indirect validation allowed)
+For `dnsdle/logging_runtime.py`, preserve these behaviors while adopting `compat` helpers:
+- sensitive-key redaction semantics stay unchanged (`psk`, key/payload-derived names)
+- bytes values remain JSON-safe and deterministic in emitted records
+- nested map/list/tuple redaction and coercion remains deterministic
+- no new logging of raw payload/psk/derived-key bytes
+
 ### 4. Scope boundaries
 This change is an internal refactor only:
 - no CLI/config surface changes
@@ -60,6 +67,14 @@ Update architecture docs to codify compatibility implementation policy:
 - `dnsdle/logging_runtime.py`: replace inline bytes-redaction type checks and key/text coercion branches with `compat` helpers where applicable.
 - `doc/architecture/ARCHITECTURE.md`: document centralized compat-layer responsibility in the architecture overview.
 - `doc/architecture/CRYPTO.md`: align Python compatibility constraints with shared compat helper policy for crypto/payload byte handling.
+- `unit_tests/test_mapping.py`: verify mapping determinism/error behavior remains stable after compat refactor.
+- `unit_tests/test_publish.py`: verify publish pipeline byte-path behavior remains stable after compat refactor.
+- `unit_tests/test_cname_payload.py`: verify payload-record deterministic MAC/layout behavior remains stable.
+- `unit_tests/test_cname_payload_encryption.py`: verify encryption determinism and metadata binding remain stable.
+- `unit_tests/test_dnswire.py`: verify DNS parse/encode behavior and parse safety remain stable.
+- `unit_tests/test_server_runtime.py`: indirectly validate logging/runtime integration remains stable while request behavior stays deterministic.
+- `unit_tests/test_server_request_envelope_validation.py`: verify envelope validation ordering/invariants remain stable.
+- `unit_tests/test_server_request_envelope_integration.py`: verify envelope behavior remains stable end-to-end.
 
 ## Phased Execution
 1. Add `dnsdle/compat.py` with import-time alias bindings and strict helper contracts.
@@ -72,6 +87,17 @@ Update architecture docs to codify compatibility implementation policy:
 - No module outside `dnsdle/compat.py` keeps duplicated bytes/text compatibility helper implementations where aliasing applies.
 - Invalid input types still fail fast with explicit errors.
 - Python 2.7/3.x compatibility requirement remains satisfied with stdlib-only code.
+- Execute focused runtime test suites:
+  - `python -m unittest unit_tests.test_mapping`
+  - `python -m unittest unit_tests.test_publish`
+  - `python -m unittest unit_tests.test_cname_payload`
+  - `python -m unittest unit_tests.test_cname_payload_encryption`
+  - `python -m unittest unit_tests.test_dnswire`
+  - `python -m unittest unit_tests.test_server_runtime`
+  - `python -m unittest unit_tests.test_server_request_envelope_validation`
+  - `python -m unittest unit_tests.test_server_request_envelope_integration`
+- Syntax check touched runtime modules:
+  - `python -m py_compile dnsdle/compat.py dnsdle/mapping.py dnsdle/publish.py dnsdle/cname_payload.py dnsdle/dnswire.py dnsdle/logging_runtime.py`
 
 ## Success Criteria
 - Compatibility aliases/helpers live in one module and are used by all affected runtime modules.
