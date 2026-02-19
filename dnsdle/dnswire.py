@@ -92,13 +92,11 @@ def _decode_name(message, start_offset):
         if end_offset > message_len:
             raise DnsParseError("label extends past message")
         raw = message[offset:end_offset]
-        if not isinstance(raw, bytes):
-            try:
-                raw = raw.encode("ascii")
-            except Exception:
-                raise DnsParseError("label is not ASCII")
         try:
-            label = raw.decode("ascii")
+            if isinstance(raw, str):
+                label = raw
+            else:
+                label = raw.decode("ascii")
         except Exception:
             raise DnsParseError("label is not ASCII")
         labels.append(label.lower())
