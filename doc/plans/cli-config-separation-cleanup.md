@@ -1,0 +1,87 @@
+# Plan: CLI/Config Separation Cleanup
+
+## Summary
+Refactor startup configuration handling so CLI argument parsing and config
+normalization are separate responsibilities. Keep startup behavior and reason
+codes deterministic while reducing coupling and parser-specific logic in
+`dnsdle/config.py`. Clean up remaining config wording/structure issues so the
+module is easier to review and maintain.
+
+## Problem
+`dnsdle/config.py` currently mixes two concerns:
+- CLI transport parsing (`argparse`, raw argv handling, removed-flag detection).
+- Config normalization/invariant enforcement (domains/files/numeric bounds).
+
+This makes the file larger than necessary, harder to reason about in isolation,
+and pushes parser mechanics into the same module that defines core config
+invariants.
+
+## Goal
+After implementation:
+- CLI parsing lives in a dedicated module with explicit parse behavior.
+- `dnsdle/config.py` focuses on normalization/validation and derived values.
+- Startup contracts and failure semantics remain fail-fast and deterministic.
+- Architecture docs explicitly reflect parse-then-normalize startup flow.
+
+## Design
+### 1. Introduce a dedicated CLI parser module
+- Add `dnsdle/cli.py` for startup flag parsing only.
+- Move `argparse` parser construction from `dnsdle/config.py` into this module.
+- Set `allow_abbrev=False` to prevent ambiguous long-option prefix matching.
+- Keep explicit rejection for removed legacy `--domain` with stable startup
+  error semantics.
+- Return a parsed args object without applying config invariants in this module.
+
+### 2. Make `dnsdle/config.py` normalization-only
+- Remove `argparse` and argv parsing responsibilities from `dnsdle/config.py`.
+- Keep existing normalization helpers and fail-fast invariant checks in
+  `dnsdle/config.py` (domains, files, numeric bounds, derived longest-domain
+  fields, response suffix constraints).
+- Add one clear entrypoint that converts parsed args into immutable `Config`.
+- Normalize remaining singular-domain wording in config validation messages to
+  match the multi-domain contract where applicable.
+
+### 3. Rewire startup build path
+- Update startup assembly in `dnsdle/__init__.py` to:
+  1) parse argv via `dnsdle/cli.py`
+  2) normalize/build config via `dnsdle/config.py`
+  3) proceed with unchanged budget/publish/mapping pipeline
+- Keep runtime output/log shape unchanged unless a wording fix is required by
+  the config cleanup.
+
+### 4. Architecture document alignment
+- Update architecture text to represent startup as two explicit steps:
+  CLI parse and config normalization/validation.
+- Keep external config surface unchanged (`--domains`, etc.); this is a
+  structural refactor, not a config-contract expansion.
+
+### 5. Validation approach (no test-file edits in this plan)
+- Run startup command sanity checks that cover:
+  - valid multi-domain launch
+  - removed `--domain` rejection
+  - duplicate/overlap domain failures
+- Run Python syntax checks for touched runtime modules.
+- Do not modify files under `unit_tests/` in this plan execution.
+
+## Affected Components
+- `dnsdle/cli.py`: new module containing startup CLI parsing and removed-flag
+  handling.
+- `dnsdle/config.py`: reduced to config normalization/validation and immutable
+  config construction.
+- `dnsdle/__init__.py`: startup wiring updated to parse args before config
+  normalization.
+- `doc/architecture/ARCHITECTURE.md`: clarify component boundary between CLI
+  parsing and config normalization.
+- `doc/architecture/SERVER_RUNTIME.md`: update startup validation sequence to
+  reflect parse-then-normalize flow.
+- `doc/architecture/CONFIG.md`: clarify config processing flow while preserving
+  existing server config surface and invariants.
+
+## Success Criteria
+- `dnsdle/config.py` has no `argparse` usage and no direct raw-argv parsing.
+- CLI parsing behavior is centralized in `dnsdle/cli.py` with deterministic
+  fail-fast behavior for removed flags and invalid syntax.
+- Startup path still produces identical config-derived behavior for equivalent
+  valid inputs.
+- Architecture docs consistently describe startup config handling as a two-step
+  parse + normalization flow.
