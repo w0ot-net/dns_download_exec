@@ -94,6 +94,14 @@ The generated script must contain these sections:
 All helper code must be inlined in the generated file; external package or
 multi-file layouts are not allowed in v1.
 
+Each generated client contains only the resolver discovery code for its
+`target_os`. Linux clients include Unix resolver discovery
+(`/etc/resolv.conf`); Windows clients include Windows resolver discovery
+(`nslookup`). There is no runtime OS branching in `_discover_system_resolver`;
+it calls the single available loader directly. OS-specific imports (for
+example, `import subprocess` for Windows) and helper definitions (for example,
+`_IPV4_RE`) are emitted only when needed.
+
 When repository runtime helpers are used as references, generated logic must
 remain behavior-identical to:
 - `dnsdle/client_payload.py` for response-envelope validation, payload parse,

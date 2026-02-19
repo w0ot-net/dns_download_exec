@@ -98,3 +98,21 @@ instead of `from dnsdle.client_template import CLIENT_TEMPLATE`.
   discovery emission contract.
 - `doc/architecture/CLIENT_RUNTIME.md`: clarify resolver discovery is
   build-time OS-specific.
+
+## Execution Notes
+
+Executed 2026-02-19. All plan items implemented as specified with no deviations.
+
+- Split `CLIENT_TEMPLATE` into `_TEMPLATE_PREFIX`, `_RESOLVER_BLOCK_LINUX`,
+  `_RESOLVER_BLOCK_WINDOWS`, `_TEMPLATE_SUFFIX` (private constants).
+- Exposed `build_client_template(target_os)` as the sole public interface.
+- `@@EXTRA_IMPORTS@@` placeholder in prefix; replaced with `import subprocess`
+  for Windows or empty string for Linux.
+- `_IPV4_RE` moved into `_RESOLVER_BLOCK_WINDOWS`.
+- Each OS block has its own `_discover_system_resolver` calling the single
+  available loader directly (no `os.name` branch).
+- Updated `client_generator.py` import and `_render_client_source` call site.
+- Updated `CLIENT_GENERATION.md` and `CLIENT_RUNTIME.md`.
+- Verified: Linux template 892 lines, Windows template 925 lines. Both
+  compile as valid Python after placeholder substitution. All OS-specific
+  content correctly isolated.

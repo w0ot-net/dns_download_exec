@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 
 
-CLIENT_TEMPLATE = '''#!/usr/bin/env python
+_TEMPLATE_PREFIX = '''#!/usr/bin/env python
 # -*- coding: ascii -*-
 from __future__ import print_function
 
@@ -14,12 +14,11 @@ import random
 import re
 import socket
 import struct
-import subprocess
 import sys
 import tempfile
 import time
 import zlib
-
+@@EXTRA_IMPORTS@@
 
 BASE_DOMAINS = @@BASE_DOMAINS@@
 FILE_TAG = @@FILE_TAG@@
@@ -74,7 +73,6 @@ EXIT_WRITE = 7
 
 _TOKEN_RE = re.compile(r"^[a-z0-9]+$")
 _LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
 
 
 try:
@@ -613,7 +611,10 @@ def _parse_resolver_arg(raw_value):
         raise ClientError(EXIT_USAGE, "usage", "--resolver lookup failed: %s" % exc)
 
 
-def _load_unix_resolvers():
+'''
+
+
+_RESOLVER_BLOCK_LINUX = '''def _load_unix_resolvers():
     resolvers = []
     try:
         with open("/etc/resolv.conf", "r") as handle:
@@ -638,6 +639,24 @@ def _load_unix_resolvers():
     except Exception:
         return []
     return resolvers
+
+
+def _discover_system_resolver():
+    resolver_hosts = _load_unix_resolvers()
+
+    for host in resolver_hosts:
+        try:
+            return _resolve_udp_address(host, 53)
+        except Exception:
+            continue
+
+    raise ClientError(EXIT_TRANSPORT, "dns", "no system DNS resolver found")
+
+
+'''
+
+
+_RESOLVER_BLOCK_WINDOWS = '''_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
 
 
 def _run_nslookup():
@@ -698,10 +717,7 @@ def _load_windows_resolvers():
 
 
 def _discover_system_resolver():
-    if os.name == "nt":
-        resolver_hosts = _load_windows_resolvers()
-    else:
-        resolver_hosts = _load_unix_resolvers()
+    resolver_hosts = _load_windows_resolvers()
 
     for host in resolver_hosts:
         try:
@@ -712,7 +728,10 @@ def _discover_system_resolver():
     raise ClientError(EXIT_TRANSPORT, "dns", "no system DNS resolver found")
 
 
-def _send_dns_query(resolver_addr, query_packet, timeout_seconds):
+'''
+
+
+_TEMPLATE_SUFFIX = '''def _send_dns_query(resolver_addr, query_packet, timeout_seconds):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.settimeout(timeout_seconds)
@@ -956,3 +975,16 @@ def main(argv=None):
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 '''
+
+
+def build_client_template(target_os):
+    if target_os == "linux":
+        extra_imports = ""
+        resolver_block = _RESOLVER_BLOCK_LINUX
+    elif target_os == "windows":
+        extra_imports = "import subprocess"
+        resolver_block = _RESOLVER_BLOCK_WINDOWS
+    else:
+        raise ValueError("unsupported target_os: %s" % target_os)
+    template = _TEMPLATE_PREFIX + resolver_block + _TEMPLATE_SUFFIX
+    return template.replace("@@EXTRA_IMPORTS@@", extra_imports)

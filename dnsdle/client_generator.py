@@ -6,7 +6,7 @@ import re
 import shutil
 import time
 
-from dnsdle.client_template import CLIENT_TEMPLATE
+from dnsdle.client_template import build_client_template
 from dnsdle.constants import ALLOWED_TARGET_OS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
@@ -162,7 +162,7 @@ def _render_client_source(config, publish_item, target_os):
         ),
     }
 
-    source = CLIENT_TEMPLATE
+    source = build_client_template(target_os)
     for key, value in replacements.items():
         source = source.replace("@@%s@@" % key, repr(value))
 

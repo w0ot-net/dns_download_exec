@@ -70,7 +70,8 @@ Any invariant or crypto context setup failure is fatal.
 
 Resolver selection order:
 1. use `--resolver` if provided
-2. otherwise use embedded default resolver mode
+2. otherwise discover system resolver using the OS-specific path emitted at
+   generation time (Unix: `/etc/resolv.conf`; Windows: `nslookup`)
 
 Runtime resolver handling rules:
 - resolver endpoint must parse to valid host/port
