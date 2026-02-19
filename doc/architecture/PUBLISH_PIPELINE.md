@@ -64,11 +64,12 @@ For each configured file, process in this exact order:
 
 1. Read plaintext bytes from disk.
 2. Compute plaintext hash and identity fields.
-3. Compress plaintext with deterministic settings.
-4. Compute slice geometry from `max_ciphertext_slice_bytes`.
-5. Split compressed bytes into canonical ordered slices.
-6. Derive deterministic mapping identifiers (`file_tag`, `slice_tokens`).
-7. Build immutable publish object and lookup tables.
+3. Validate `file_version` uniqueness across all configured files.
+4. Compress plaintext with deterministic settings.
+5. Compute slice geometry from `max_ciphertext_slice_bytes`.
+6. Split compressed bytes into canonical ordered slices.
+7. Derive deterministic mapping identifiers (`file_tag`, `slice_tokens`).
+8. Build immutable publish object and lookup tables.
 
 No step may be skipped or reordered.
 
@@ -86,6 +87,7 @@ v1 defines:
 - `file_version = plaintext_sha256`
 
 This binds mapping identity to file content only.
+Within one launch, `file_version` must be unique across configured files.
 
 ### File ID
 
@@ -194,6 +196,7 @@ No runtime mutation of published slice bytes is allowed after freeze.
 Any of the following must fail startup:
 - unreadable file or read failure
 - hash/compression/slicing failure
+- duplicate `file_version` across configured files
 - `max_ciphertext_slice_bytes <= 0`
 - empty compressed output
 - any manifest length mismatch

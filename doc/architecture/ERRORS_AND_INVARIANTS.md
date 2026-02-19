@@ -19,6 +19,7 @@ Startup errors are fatal and must prevent listener startup.
 Examples:
 - invalid config values or bounds
 - unreadable input files
+- duplicate `file_version` across configured input files
 - invalid deterministic mapping derivation
 - unsupported profile values
 - slice budget computation failure
@@ -161,12 +162,14 @@ Retry policy:
 3. All input files exist and are readable before listener startup.
 4. Deterministic mapping parameters (`mapping_seed`, tag/token lengths) are
    valid and sufficient for all published slices.
+5. `file_version` values are unique across configured files in one launch.
 
 ### Mapping and Routing
 
 1. Same `(mapping_seed, file_version, slice_index)` always yields the same
-   `slice_token`.
-2. Same `(mapping_seed, file_version)` always yields the same `file_tag`.
+   `slice_token` when mapping materialization constraints are unchanged.
+2. Same `(mapping_seed, file_version)` always yields the same `file_tag` when
+   mapping materialization constraints are unchanged.
 3. Mapping keys resolve to exactly one canonical slice identity.
 4. No silent fallback to other file/version/index is allowed.
 

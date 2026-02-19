@@ -48,9 +48,10 @@ For each configured file:
 1. Read plaintext bytes.
 2. Compress deterministically.
 3. Compute `file_version` and `plaintext_sha256`.
-4. Split compressed bytes into slices.
-5. Derive deterministic `file_tag` and `slice_token` mapping.
-6. Build immutable manifest/slice tables.
+4. Enforce unique `file_version` across configured files.
+5. Split compressed bytes into slices.
+6. Derive deterministic `file_tag` and `slice_token` mapping.
+7. Build immutable manifest/slice tables.
 
 All publish tables become read-only before entering serve mode.
 Publish pipeline details are defined in
@@ -73,8 +74,8 @@ No persisted mapping state file is required for compatibility.
 Changing any of the following may break old clients:
 - `mapping_seed`
 - file content
-- relevant wire-format config (`domain`, `response_label`,
-  `dns_max_label_len`, profile values)
+- relevant mapping/wire config (`file_tag_len`, `dns_max_label_len`,
+  `domain`, `response_label`, profile values)
 
 ---
 

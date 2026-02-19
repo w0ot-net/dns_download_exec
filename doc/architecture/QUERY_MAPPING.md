@@ -26,9 +26,11 @@ Crypto binding for mapping fields is defined in `doc/architecture/CRYPTO.md`.
 
 ## Design Summary
 
-Mappings are deterministic from:
-- file content identity (`file_version`)
-- operator-configured `mapping_seed`
+Mappings use a two-layer deterministic model:
+- identity layer: digest derivation from (`mapping_seed`, `file_version`,
+  `slice_index`)
+- materialization layer: token-string truncation/length constraints from config
+  (`file_tag_len`, `dns_max_label_len`, DNS name limits)
 
 At server startup:
 1. Build canonical slice tables for all served files.
@@ -54,7 +56,8 @@ Each key resolves to:
 - `slice_index`
 
 Invariant:
-- mapping is deterministic for fixed `(mapping_seed, file_version)`
+- mapping is deterministic for fixed identity inputs and fixed materialization
+  constraints.
 
 ---
 
@@ -93,13 +96,35 @@ Deterministic inputs:
 - `slice_index`
 
 Deterministic derivation:
-- `file_tag = trunc_token(HMAC_SHA256(mapping_seed, "dnsdle:file:" + file_version))`
-- `slice_token[i] = trunc_token(HMAC_SHA256(mapping_seed, "dnsdle:slice:" +
-  file_version + ":" + i))`
+- `seed_bytes = ascii_bytes(mapping_seed)`
+- `file_version_bytes = ascii_bytes(file_version)` where `file_version` is
+  exactly 64 lowercase hex chars
+- `slice_index_bytes = ascii_bytes(base10(slice_index))` with no sign and no
+  leading zeros (except `0`)
+- `file_digest = HMAC_SHA256(seed_bytes,
+  b"dnsdle:file:v1|" + file_version_bytes)`
+- `slice_digest[i] = HMAC_SHA256(seed_bytes,
+  b"dnsdle:slice:v1|" + file_version_bytes + b"|" + slice_index_bytes)`
 
 `trunc_token(...)` means:
-- encode digest to the query alphabet
+- encode digest with RFC 4648 base32
+- lowercase output
+- strip `=` padding
 - truncate to configured/derived length
+
+Determinism model:
+- HMAC digest inputs define stable identity values.
+- final token strings additionally depend on configured length constraints.
+- for fixed digest inputs and fixed constraints, token output is stable.
+
+Encoding definition:
+- `digest_text = base32_lower_no_pad(digest)` where:
+  - `base32` is RFC 4648
+  - alphabet is `a-z2-7`
+  - `a-z2-7` is a subset of the allowed query alphabet `[a-z0-9]`
+  - output is lowercase and has no `=` padding
+- `file_tag = digest_text(file_digest)[:file_tag_len]`
+- `slice_token[i] = digest_text(slice_digest[i])[:slice_token_len]`
 
 Length selection:
 - `file_tag` uses configured `file_tag_len`
@@ -110,9 +135,14 @@ Length constraints:
 - `len(file_tag) <= dns_max_label_len`
 - `len(slice_token) <= dns_max_label_len`
 - full QNAME must satisfy DNS name-length limits
+- base32 text length from one SHA-256 digest is 52 chars; if required token
+  length exceeds available digest text length, startup fails
 
 The server must fail startup if valid deterministic identifiers cannot be
 constructed within configured limits.
+The server must also fail startup if duplicate `file_version` values are
+present across configured files, because that would produce identical mapping
+inputs for different file entries.
 
 ---
 
@@ -120,7 +150,8 @@ constructed within configured limits.
 
 Requirements:
 1. Derivation must be deterministic.
-2. Token collisions within a file are not allowed.
+2. Composite mapping-key collisions (`file_tag`, `slice_token`) are not
+   allowed within or across files in one launch.
 3. Resolve collisions by increasing token length (up to limits), never by
    adding randomness.
 4. Store forward lookup map (`token -> slice identity`).
@@ -128,8 +159,12 @@ Requirements:
    that target file.
 
 Grouping invariant:
-- mapping for one file depends only on `(mapping_seed, file_version)` and does
-  not depend on what other files are hosted in the same run.
+- mapping identity for one file depends only on
+  `(mapping_seed, file_version)`.
+- token materialization output additionally depends on fixed length constraints
+  for the launch (`file_tag_len`, `dns_max_label_len`, DNS name limits).
+- with duplicate `file_version` entries rejected at startup, one mapping key
+  always resolves to one canonical file context.
 
 ---
 
@@ -172,7 +207,8 @@ Short query names help response capacity because DNS responses include the
 question section; smaller QNAMEs leave more bytes for CNAME payload.
 
 Caching policy:
-- deterministic names come from `(mapping_seed, file_version)`
+- deterministic names come from mapping identity inputs plus fixed
+  materialization constraints
 - keeping `mapping_seed` stable preserves client compatibility across restarts
 - changing `mapping_seed` remaps identifiers and invalidates old clients
 
@@ -202,12 +238,14 @@ To reduce cross-run linkability, rotate `mapping_seed`.
 
 ## Invariants
 
-1. same `(mapping_seed, file_version, slice_index)` always yields same
-   `slice_token`.
-2. same `(mapping_seed, file_version)` always yields same `file_tag`.
+1. same identity inputs `(mapping_seed, file_version, slice_index)` and same
+   materialization constraints always yield the same `slice_token`.
+2. same identity inputs `(mapping_seed, file_version)` and same
+   materialization constraints always yield the same `file_tag`.
 3. `slice_token` is unique within one `file_tag` namespace.
 4. mapping tables are immutable while serving.
 5. one mapping key resolves to exactly one canonical slice identity.
 6. identical query name always produces the same slice payload for a running
    server instance.
-7. all parse, bounds, and mapping failures are explicit hard failures.
+7. duplicate `file_version` entries are rejected at startup.
+8. all parse, bounds, and mapping failures are explicit hard failures.
