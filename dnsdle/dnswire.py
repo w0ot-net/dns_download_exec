@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import struct
 
+from dnsdle.constants import DNS_HEADER_BYTES
 from dnsdle.constants import DNS_FLAG_AA
 from dnsdle.constants import DNS_FLAG_QR
 from dnsdle.constants import DNS_FLAG_RD
@@ -18,6 +19,10 @@ from dnsdle.constants import SYNTHETIC_A_RDATA
 
 class DnsParseError(Exception):
     pass
+
+
+def _message_length(message):
+    return len(message)
 
 
 def _ord_byte(value):
@@ -49,6 +54,7 @@ def encode_name(labels):
 
 
 def _decode_name(message, start_offset):
+    message_len = _message_length(message)
     labels = []
     offset = start_offset
     jumped = False
@@ -56,15 +62,15 @@ def _decode_name(message, start_offset):
     visited_offsets = set()
 
     while True:
-        if offset >= len(message):
+        if offset >= message_len:
             raise DnsParseError("name extends past message")
 
         first = _ord_byte(message[offset])
         if (first & DNS_POINTER_TAG) == DNS_POINTER_TAG:
-            if offset + 1 >= len(message):
+            if offset + 1 >= message_len:
                 raise DnsParseError("truncated name pointer")
             pointer = ((first & 0x3F) << 8) | _ord_byte(message[offset + 1])
-            if pointer >= len(message):
+            if pointer >= message_len:
                 raise DnsParseError("name pointer is out of bounds")
             if pointer in visited_offsets:
                 raise DnsParseError("name pointer loop detected")
@@ -83,14 +89,16 @@ def _decode_name(message, start_offset):
             break
 
         end_offset = offset + first
-        if end_offset > len(message):
+        if end_offset > message_len:
             raise DnsParseError("label extends past message")
         raw = message[offset:end_offset]
+        if not isinstance(raw, bytes):
+            try:
+                raw = raw.encode("ascii")
+            except Exception:
+                raise DnsParseError("label is not ASCII")
         try:
-            if isinstance(raw, str):
-                label = raw
-            else:
-                label = raw.decode("ascii")
+            label = raw.decode("ascii")
         except Exception:
             raise DnsParseError("label is not ASCII")
         labels.append(label.lower())
@@ -102,18 +110,20 @@ def _decode_name(message, start_offset):
     return tuple(labels), (read_end_offset if jumped else offset)
 
 
+def _unpack_header(message):
+    return struct.unpack("!HHHHHH", message[:DNS_HEADER_BYTES])
+
+
 def parse_request(message):
-    if len(message) < 12:
+    if _message_length(message) < DNS_HEADER_BYTES:
         raise DnsParseError("message shorter than DNS header")
 
-    request_id, flags, qdcount, ancount, nscount, arcount = struct.unpack(
-        "!HHHHHH", message[:12]
-    )
+    request_id, flags, qdcount, ancount, nscount, arcount = _unpack_header(message)
 
     question = None
     if qdcount >= 1:
-        labels, offset = _decode_name(message, 12)
-        if offset + 4 > len(message):
+        labels, offset = _decode_name(message, DNS_HEADER_BYTES)
+        if offset + 4 > _message_length(message):
             raise DnsParseError("truncated DNS question")
         qtype, qclass = struct.unpack("!HH", message[offset : offset + 4])
         question = {
@@ -154,8 +164,10 @@ def encode_name_with_pointer(prefix_labels, pointer_offset):
 
 
 def build_cname_answer(question_labels, domain_label_index, payload_labels, response_label, ttl):
-    owner_name = _pack_pointer(12)
-    domain_pointer = _qname_label_offset(question_labels, domain_label_index, 12)
+    owner_name = _pack_pointer(DNS_HEADER_BYTES)
+    domain_pointer = _qname_label_offset(
+        question_labels, domain_label_index, DNS_HEADER_BYTES
+    )
     rdata = encode_name_with_pointer(
         tuple(payload_labels) + (response_label,),
         domain_pointer,
@@ -165,7 +177,7 @@ def build_cname_answer(question_labels, domain_label_index, payload_labels, resp
 
 
 def build_a_answer(ttl):
-    owner_name = _pack_pointer(12)
+    owner_name = _pack_pointer(DNS_HEADER_BYTES)
     rr_head = struct.pack("!HHIH", DNS_QTYPE_A, DNS_QCLASS_IN, ttl, len(SYNTHETIC_A_RDATA))
     return owner_name + rr_head + SYNTHETIC_A_RDATA
 
@@ -186,16 +198,19 @@ def _response_flags(request_flags, rcode):
     )
 
 
+def _encode_question(question):
+    if question is None:
+        return b"", 0
+    return (
+        encode_name(question["qname_labels"])
+        + struct.pack("!HH", question["qtype"], question["qclass"]),
+        1,
+    )
+
+
 def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_size=512):
     question = request.get("question")
-    question_bytes = b""
-    qdcount = 0
-    if question is not None:
-        question_bytes = (
-            encode_name(question["qname_labels"])
-            + struct.pack("!HH", question["qtype"], question["qclass"])
-        )
-        qdcount = 1
+    question_bytes, qdcount = _encode_question(question)
 
     ancount = 1 if answer_bytes else 0
     arcount = 1 if include_opt else 0
