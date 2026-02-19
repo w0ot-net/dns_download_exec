@@ -1,14 +1,14 @@
 # Plan: Generated Client Single-File Emission (v1)
 
 ## Summary
-Implement the server-side generated-client emission phase so startup produces exactly one standalone Python file per `(published file, target_os)` pair. This phase focuses on deterministic artifact generation, embedded metadata contract correctness, run-level transactional output behavior, and startup fail-fast guarantees. It emits runnable one-file clients that satisfy the current architecture contract and use the parity crypto/parser behavior defined in the client-parity phase.
+Implement the server-side generated-client emission phase so startup produces exactly one standalone Python file per `(published file, target_os)` pair. This phase focuses on deterministic artifact generation, embedded metadata contract correctness, run-level transactional output behavior, and startup fail-fast guarantees. It emits runnable one-file clients that satisfy the current architecture contract and use the parity crypto/parser behavior defined in the client-parity phase without runtime imports from the server package.
 
 ## Problem
 The runtime server now publishes encrypted CNAME slices, but there is no implemented client artifact generator in code. Config fields (`target_os`, `client_out_dir`) exist but are not used to emit client files. Without this phase, operators cannot obtain generated one-file clients, and the architecture contract in `CLIENT_GENERATION.md` remains unimplemented.
 
 ## Goal
 After implementation:
-- Startup generates one standalone `.py` artifact per `(file_id, target_os)` in `client_out_dir`.
+- Startup generates one standalone `.py` artifact per `(file_id, target_os)` in a generator-managed subdirectory under `client_out_dir`.
 - Each artifact embeds required immutable constants (`BASE_DOMAINS`, `FILE_TAG`, `FILE_ID`, `PUBLISH_VERSION`, `TOTAL_SLICES`, `COMPRESSED_SIZE`, `PLAINTEXT_SHA256_HEX`, `SLICE_TOKENS`, profile IDs, wire knobs).
 - Artifact naming is deterministic and collision-safe for the current publish set.
 - Generation is transactional at run level: on failure, no newly generated artifact from that run remains.
@@ -33,7 +33,7 @@ Add a dedicated generator module (for example `dnsdle/generator.py`) that:
 1. Accepts immutable `RuntimeState` + config generation fields.
 2. Iterates publish items and selected target OS list deterministically.
 3. Renders one Python source template per `(publish_item, target_os)`.
-4. Writes files atomically into `client_out_dir`.
+4. Writes files atomically into the generator-managed output directory under `client_out_dir`.
 
 Deterministic iteration order:
 - primary key: canonical publish item order from runtime state
@@ -43,6 +43,7 @@ Template contract:
 - ASCII-only source
 - stdlib-only imports
 - one-file structure with sections required by `CLIENT_GENERATION.md`
+- emitted script has no runtime dependency on `dnsdle.*` modules
 - emitted script is minimally functional end-to-end for one file (query, parse, verify, decrypt, reassemble, hash-check, write), with conservative defaults
 
 Phase dependency:
@@ -52,17 +53,27 @@ Phase dependency:
 Define deterministic filename scheme:
 - `dnsdl_<file_id>_<file_tag>_<target_os>.py`
 
+Define managed output boundary:
+- generator owns only `client_out_dir/dnsdle_v1/`
+- stale-file pruning is allowed only inside this managed directory
+- generator must not delete or rewrite files outside this managed directory
+
 Fail-fast rules:
 - reject path traversal or invalid output path composition
 - ensure output dir exists (create if missing) or fail with explicit reason
 - transactional generation:
-  - render all artifacts into a per-run staging directory under `client_out_dir`
+  - render all artifacts into a per-run staging directory under the managed directory
   - if any artifact fails validation/write, delete staging directory and leave destination unchanged
-  - only after all artifacts succeed, commit staged files to destination
+  - commit uses explicit rollback-safe sequence:
+    - compute expected managed path set for this run and stale managed path set
+    - move all replace/remove targets into a per-run backup directory first
+    - place staged outputs into final managed paths using atomic replace semantics
+    - if any step fails, restore every moved file from backup, remove newly placed outputs, and fail startup
+    - only on full success, remove backup and staging directories
 - overwrite/idempotency policy (explicit):
   - for managed target paths in current run, replace destination atomically
-  - stale managed files (matching `dnsdl_*_<target_os>.py` naming policy) not in current expected set are removed during commit
-  - any failed replace/remove operation aborts commit and removes all newly staged outputs from this run
+  - stale managed files are defined as files inside managed directory matching `dnsdl_<file_id>_<file_tag>_<target_os>.py` not present in current expected set
+  - stale managed-file pruning runs only as part of the rollback-safe commit sequence above
 
 ### 3. Embedded metadata schema enforcement
 Before writing each artifact, validate generation invariants:
@@ -96,6 +107,9 @@ Ensure sensitive values are not logged (no PSK or raw slice bytes).
 Generation events use existing visible categories under default config:
 - category `startup` for lifecycle events (`generation_start`, `generation_summary`, `generation_error`)
 - category `publish` for per-artifact success details (`generation_ok`)
+Logging severity contract:
+- `generation_error` must emit at `ERROR` with `required=True` on fatal generation failure paths
+- `generation_start` and `generation_summary` emit at `INFO`
 No new logging category is introduced in this phase.
 
 ### 6. Architecture-doc synchronization
@@ -117,15 +131,13 @@ Validation for this phase:
 - `dnsdle/generator.py` (new): deterministic one-file client artifact rendering/writing and invariant checks.
 - `dnsdle/__init__.py`: integrate generation call in startup flow after runtime state build and before serving.
 - `dnsdle.py`: include generation lifecycle logging and startup failure handling integration.
-- `dnsdle/constants.py`: add generation-related constants (template/version identifiers, filename prefix policy, logging category if needed).
+- `dnsdle/constants.py`: add generation-related constants (template/version identifiers, managed subdirectory name, filename policy).
 - `dnsdle/config.py`: enforce/clarify generation-specific config invariants for `target_os` and `client_out_dir` as used by emitter.
 - `dnsdle/state.py`: extend runtime structures only if generator requires stable derived metadata view (avoid mutation).
-- `dnsdle/client_payload.py`: parity crypto/parser helpers consumed by generated client runtime body (or inline source builder from same logic).
-- `dnsdle/client_reassembly.py`: parity reassembly/hash verification helpers consumed by generated client runtime body (or inline source builder from same logic).
+- `dnsdle/client_payload.py`: parity crypto/parser helpers used as generation-time source for inlined emitted client logic (no runtime `dnsdle` import from generated artifact).
+- `dnsdle/client_reassembly.py`: parity reassembly/hash verification helpers used as generation-time source for inlined emitted client logic (no runtime `dnsdle` import from generated artifact).
 - `doc/architecture/CLIENT_GENERATION.md`: align implemented template/filename/startup behavior and failure semantics.
 - `doc/architecture/CONFIG.md`: align generation-related config behavior and defaults with implementation.
 - `doc/architecture/ARCHITECTURE.md`: reflect startup data flow now including concrete generation step.
 - `doc/architecture/SERVER_RUNTIME.md`: reflect generation as enforced pre-serve startup phase.
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: add/align startup generation failure classes and invariants.
-- `unit_tests/test_generator.py` (new): deterministic filename/render/invariant tests and transactional failure cleanup tests.
-- `unit_tests/test_generated_client_smoke.py` (new): generated-script end-to-end smoke against local runtime server for one hosted file.
