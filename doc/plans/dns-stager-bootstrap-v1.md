@@ -79,9 +79,10 @@ Restructure `build_startup_state()` in `dnsdle/__init__.py`:
 ### 3. Stager template
 
 A new file `dnsdle/stager_template.py` containing a readable Python stager
-script with placeholder constants. This is the source-of-truth stager logic
-that gets minified and compressed at generation time. It implements the
-minimum viable DNS download protocol needed to retrieve one file.
+script with placeholder constants. This is the source-of-truth stager logic.
+It is written as normal, readable Python and minified at generation time. It
+implements the minimum viable DNS download protocol needed to retrieve one
+file.
 
 **Included in the stager:**
 - Raw UDP DNS query construction (A record, RD flag, EDNS OPT when
@@ -132,15 +133,52 @@ credentials and network path.
 uses `b"..."` byte literals for all wire and crypto operations, and handles
 the str/bytes split for `sys.argv` values with a compact `encode` guard.
 
-### 4. Stager generation and compression
+**Template coding discipline:** The template is written in a constrained
+style that makes mechanical minification trivial:
+- Every statement on its own line (no multi-line expressions).
+- Comments always on their own line (never inline after code).
+- Consistent 4-space indentation.
+- No multi-line string literals containing `#`.
+- No nested functions or closures.
+- No decorators, `with` statements, or comprehensions spanning lines.
+
+### 4. Custom minifier
+
+A new module `dnsdle/stager_minify.py` containing a simple, deterministic
+minifier tailored to the template's disciplined coding style. No AST, no
+tokenizer, no external dependencies -- just mechanical text passes that are
+correct by construction given the template constraints above.
+
+**Minification passes (applied in order):**
+
+1. **Strip comment lines.** Drop any line whose `.strip()` starts with `#`.
+2. **Strip blank lines.** Drop lines that are empty after stripping.
+3. **Rename variables.** Apply a fixed rename table using word-boundary
+   regex: `re.sub(r'\benc_key\b', 'e', src)`. Process longest names first
+   to prevent substring interference. The rename table maps every
+   template-local variable to a single-character name and lives in the
+   minifier module, doubling as documentation of the mapping.
+4. **Reduce indentation.** Replace 4 spaces per indent level with 1 space.
+5. **Semicolon-join.** Consecutive lines at the same indent level that are
+   not control-flow openers (`if`, `for`, `while`, `try`, `except`, `else`,
+   `elif`, `finally`, `def`, `return`, `with`, `break`, `continue`) get
+   joined with `;`.
+
+The minifier exposes a single function: `minify(source) -> str`. It is
+deterministic: same input always produces same output.
+
+**Verification:** The generation pipeline `compile()`-checks the minified
+output. The minifier is also tested by round-tripping the stager template
+through minification and checking that it compiles and retains all expected
+function names and constants.
+
+### 5. Stager generation and compression
 
 A new module `dnsdle/stager_generator.py` that produces the final one-liner
 through a multi-stage pipeline:
 
 1. **Substitute** embedded constants into the readable stager template.
-2. **Minify** the result: strip comments, collapse whitespace, use
-   semicolons for statement separation, shorten variable names where the
-   template uses longer ones for readability.
+2. **Minify** using `stager_minify.minify()`.
 3. **Compress** the minified Python source with `zlib.compress()`.
 4. **Encode** the compressed bytes with `base64.b64encode()`.
 5. **Wrap** in a self-extracting bootstrap:
@@ -189,12 +227,17 @@ Output goes through the existing logging system at `info` level, category
   startup; Phase 1 publishes user files and generates clients; Phase 2
   auto-publishes client scripts, combines mappings, checks invariants,
   builds final RuntimeState, and generates stager one-liners.
-- `dnsdle/stager_template.py` (NEW): compact Python stager template string
+- `dnsdle/stager_template.py` (NEW): readable Python stager template string
   with placeholder constants implementing the minimum viable DNS download
-  protocol.
-- `dnsdle/stager_generator.py` (NEW): stager generation logic; constant
-  substitution; shell-quoted one-liner formatting; ASCII and compile
-  verification.
+  protocol. Written in disciplined style amenable to mechanical minification.
+- `dnsdle/stager_minify.py` (NEW): custom deterministic minifier for the
+  stager template. Five passes: strip comments, strip blanks, rename
+  variables (fixed table, word-boundary regex), reduce indentation (4-space
+  to 1-space), semicolon-join same-level statements. No AST, no tokenizer,
+  no external dependencies.
+- `dnsdle/stager_generator.py` (NEW): stager generation pipeline; constant
+  substitution, minification, zlib compression, base64 encoding,
+  self-extracting wrapper; ASCII and compile verification.
 - `dnsdle/constants.py`: stager placeholder names and any output format
   constants.
 - `doc/architecture/STAGER.md` (NEW): document the stager protocol,
