@@ -307,15 +307,33 @@ class RuntimeLogger(object):
         )
 
 
-def _create_logger(**kwargs):
+def _create_logger(
+    level,
+    categories,
+    sample_rate,
+    rate_limit_per_sec,
+    output,
+    log_file,
+    focus,
+    stream,
+):
     try:
-        return RuntimeLogger(**kwargs)
+        return RuntimeLogger(
+            level=level,
+            categories=categories,
+            sample_rate=sample_rate,
+            rate_limit_per_sec=rate_limit_per_sec,
+            output=output,
+            log_file=log_file,
+            focus=focus,
+            stream=stream,
+        )
     except IOError as exc:
         raise StartupError(
             "startup",
             "log_output_unusable",
             "failed to open log output file: %s" % exc,
-            {"log_file": kwargs.get("log_file")},
+            {"log_file": log_file},
         )
 
 
