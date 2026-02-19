@@ -294,8 +294,6 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
     rcode = flags & 0x000F
-    if rcode in (2, 5):
-        raise RetryableTransport("DNS rcode=%d" % rcode)
     if rcode != DNS_RCODE_NOERROR:
         raise ClientError(EXIT_PARSE, "parse", "unexpected DNS rcode=%d" % rcode)
     if qdcount != 1:
@@ -859,7 +857,7 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
             try:
                 response = _send_dns_query(resolver_addr, query_packet, request_timeout)
                 cname_labels = _parse_response_for_cname(response, query_id, qname_labels)
-            except RetryableTransport:
+            except (RetryableTransport, ClientError):
                 consecutive_timeouts += 1
                 if consecutive_timeouts > MAX_CONSECUTIVE_TIMEOUTS:
                     raise ClientError(
