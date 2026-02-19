@@ -239,4 +239,4 @@ After implementation:
 - Deviation: `dnsdle/state.py` and `dnsdle/__init__.py` required no code
   changes because existing startup-state wiring already carries updated config
   and budget structures after config/budget/module updates.
-- Execution commit hash: pending (added after commit creation).
+- Execution commit hash: `84924441f200b8d8c9ea3afe271528b24dfbb2af`.
