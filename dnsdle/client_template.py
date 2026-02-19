@@ -294,8 +294,8 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response opcode is not QUERY")
 
     rcode = flags & 0x000F
-    if rcode == 2:
-        raise RetryableTransport("DNS SERVFAIL (rcode=2)")
+    if rcode in (2, 5):
+        raise RetryableTransport("DNS rcode=%d" % rcode)
     if rcode != DNS_RCODE_NOERROR:
         raise ClientError(EXIT_PARSE, "parse", "unexpected DNS rcode=%d" % rcode)
     if qdcount != 1:
