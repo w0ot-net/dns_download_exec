@@ -45,7 +45,7 @@ the socket.
 ## Publish Preparation
 
 For each configured file:
-1. Read plaintext bytes.
+1. Read plaintext bytes in binary mode.
 2. Compute `plaintext_sha256`.
 3. Enforce unique `plaintext_sha256` across configured files.
 4. Compress deterministically.

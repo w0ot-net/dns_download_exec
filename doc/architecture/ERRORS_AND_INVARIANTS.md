@@ -179,8 +179,11 @@ Retry policy:
 
 1. Same mapped slice identity always yields the same CNAME payload text within
    a running process.
-2. With unchanged `(mapping_seed, publish_version)`, payload identity is stable
-   across restarts.
+2. With unchanged mapping, crypto, and wire inputs (`mapping_seed`,
+   `publish_version`, `compression_level`, `psk`, `base_domain`,
+   `response_label`, `dns_max_label_len`, profile ids, `ttl`, and
+   implementation profile from `doc/architecture/PUBLISH_PIPELINE.md`), payload
+   identity is stable across restarts.
 3. Server never emits multiple slice answers for one mapped request in v1.
 
 ### Client Assembly

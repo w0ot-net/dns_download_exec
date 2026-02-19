@@ -62,7 +62,7 @@ Invariants:
 
 For each configured file, process in this exact order:
 
-1. Read plaintext bytes from disk.
+1. Read plaintext bytes from disk in binary mode.
 2. Compute plaintext hash (`plaintext_sha256`).
 3. Validate `plaintext_sha256` uniqueness across all configured files.
 4. Compress plaintext with deterministic settings.
@@ -81,6 +81,8 @@ No step may be skipped or reordered.
 ### Plaintext Hash
 
 - `plaintext_sha256 = sha256(plaintext_bytes).hexdigest().lower()`
+- plaintext bytes must come from binary reads (`rb`); text-mode decoding or
+  newline translation is not allowed.
 
 Within one launch, `plaintext_sha256` must be unique across configured files.
 This is the duplicate-content rejection invariant.
