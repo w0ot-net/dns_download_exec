@@ -234,7 +234,6 @@ def _build_artifacts(runtime_state):
 
     artifacts = []
     seen_names = set()
-    seen_identities = set()
 
     for publish_item in runtime_state.publish_items:
         _validate_publish_item(publish_item)
@@ -257,25 +256,6 @@ def _build_artifacts(runtime_state):
                     },
                 )
             seen_names.add(filename)
-            identity = (
-                publish_item.file_id,
-                publish_item.publish_version,
-                publish_item.file_tag,
-                target_os,
-            )
-            if identity in seen_identities:
-                raise StartupError(
-                    "startup",
-                    "generator_invalid_contract",
-                    "duplicate artifact identity tuple",
-                    {
-                        "file_id": publish_item.file_id,
-                        "publish_version": publish_item.publish_version,
-                        "file_tag": publish_item.file_tag,
-                        "target_os": target_os,
-                    },
-                )
-            seen_identities.add(identity)
             source_text = _render_client_source(config, publish_item, target_os)
             artifacts.append(
                 {

@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+from dnsdle.state import StartupError
+
 
 _TEMPLATE_PREFIX = '''#!/usr/bin/env python
 # -*- coding: ascii -*-
@@ -988,6 +990,11 @@ def build_client_template(target_os):
         extra_imports = "import subprocess"
         resolver_block = _RESOLVER_BLOCK_WINDOWS
     else:
-        raise ValueError("unsupported target_os: %s" % target_os)
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "unsupported target_os for template",
+            {"target_os": target_os},
+        )
     template = _TEMPLATE_PREFIX + resolver_block + _TEMPLATE_SUFFIX
     return template.replace("@@EXTRA_IMPORTS@@", extra_imports)

@@ -117,9 +117,9 @@ class BuildArtifactsTests(unittest.TestCase):
         artifacts = _build_artifacts(state)
         self.assertEqual(2, len(artifacts))
 
-    def test_rejects_identity_tuple_collision(self):
+    def test_rejects_filename_collision(self):
         item_a = _make_publish_item()
-        item_b = _make_publish_item()  # same identity tuple
+        item_b = _make_publish_item()  # same file_id/file_tag produces same filename
         state = _make_runtime_state(publish_items=(item_a, item_b))
         with self.assertRaises(StartupError) as raised:
             _build_artifacts(state)
@@ -195,6 +195,35 @@ class RenderClientSourceTests(unittest.TestCase):
         self.assertGreater(qdcount_pos, 0, "qdcount check not found in source")
         self.assertLess(rcode_pos, qdcount_pos,
                         "rcode check must appear before qdcount check")
+
+    def test_windows_happy_path_produces_ascii_source(self):
+        config = _make_config()
+        item = _make_publish_item()
+        source = _render_client_source(config, item, "windows")
+        self.assertIsInstance(source, str)
+        source.encode("ascii")  # must not raise
+
+    def test_windows_no_unreplaced_placeholders(self):
+        config = _make_config()
+        item = _make_publish_item()
+        source = _render_client_source(config, item, "windows")
+        self.assertNotIn("@@", source)
+
+    def test_windows_includes_subprocess_and_ipv4re(self):
+        config = _make_config()
+        item = _make_publish_item()
+        source = _render_client_source(config, item, "windows")
+        self.assertIn("import subprocess", source)
+        self.assertIn("_IPV4_RE", source)
+        self.assertNotIn("_load_unix_resolvers", source)
+
+    def test_linux_excludes_subprocess_and_ipv4re(self):
+        config = _make_config()
+        item = _make_publish_item()
+        source = _render_client_source(config, item, "linux")
+        self.assertNotIn("import subprocess", source)
+        self.assertNotIn("_IPV4_RE", source)
+        self.assertNotIn("_load_windows_resolvers", source)
 
 
 class ValidatePublishItemTests(unittest.TestCase):
