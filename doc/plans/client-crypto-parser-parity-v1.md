@@ -34,11 +34,14 @@ Create a dedicated module for client-side protocol parity (for example `dnsdle/c
 - DNS response helper(s) to extract required CNAME target labels for a requested name.
 - Response envelope validation helper(s) that enforce `doc/architecture/DNS_MESSAGE_FORMAT.md` before payload decode:
   - response `ID` matches request transaction id
-  - `QR=1`, response opcode/query semantics are valid for v1 parse path
+  - `QR=1`, `AA=1`, `TC=0`, `RA=0`, and response opcode/query semantics are valid for v1 parse path
+  - success-path section counts are exact: `QDCOUNT=1`, `ANCOUNT=1`, `NSCOUNT=0`
+  - additional-section policy matches embedded mode: `ARCOUNT=1` when `dns_edns_size>512`, `ARCOUNT=0` when `dns_edns_size=512`
+  - success path requires `RCODE=NOERROR`; non-success response classes (`NXDOMAIN`, `SERVFAIL`) are parse/format violations for this parity-core phase
   - response question echoes original request qname/qtype/qclass
   - exactly one matching `IN CNAME` answer is selected for slice-success path
   - compressed-name decoding rejects pointer loops/out-of-bounds pointers
-  - non-success response classes (`NXDOMAIN`, `SERVFAIL`, missing required CNAME) are classified as parse/format violations for this parity-core phase
+  - missing required CNAME is a parse/format violation for this parity-core phase
 - Payload decode helper:
   - validate response suffix (`response_label` + selected base domain)
   - join payload labels
@@ -54,6 +57,12 @@ Create a dedicated module for client-side protocol parity (for example `dnsdle/c
 Fail-fast model:
 - no fallback parser modes
 - unknown profile, nonzero flags, malformed lengths, base32 errors, MAC mismatch, and decrypt-context mismatches are fatal errors.
+
+### Module ownership boundaries (anti-drift)
+- `dnsdle/dnswire.py` owns low-level DNS wire parsing primitives only (header/question/answer name decoding, pointer safety, RR traversal helpers).
+- `dnsdle/client_payload.py` owns response-envelope contract enforcement and CNAME payload decode + record parse + MAC/decrypt verification.
+- `dnsdle/client_reassembly.py` owns post-decrypt slice set validation and final reconstruct/decompress/hash checks.
+- Do not duplicate compressed-name decoding logic across modules; reuse one `dnswire` decode path to avoid parser drift.
 
 ### 2. Reassembly and final integrity helpers
 Add helper(s) that consume validated per-index slice plaintext bytes and enforce:
@@ -106,7 +115,7 @@ Replace live UDP check with deterministic in-process integration coverage:
 ## Affected Components
 - `dnsdle/cname_payload.py`: factor/reuse shared crypto primitives as needed so client/server derivations cannot drift.
 - `dnsdle/compat.py`: add missing base32 decode/no-pad helpers (if needed) for client payload decoding with Python 2/3 parity.
-- `dnsdle/dnswire.py`: add safe response-side helper(s) required to extract/validate client CNAME answer payloads.
+- `dnsdle/dnswire.py`: add safe response-side wire helpers only (pointer-safe decode and RR traversal) consumed by client payload parser; no client crypto logic here.
 - `dnsdle/constants.py`: extend payload/crypto constants only if needed to avoid hard-coded client parse values.
 - `dnsdle/client_payload.py` (new): client parity core for payload decode, verify, decrypt, and record invariant checks.
 - `dnsdle/client_reassembly.py` (new): deterministic reassembly/decompress/hash verification helpers.
@@ -114,6 +123,7 @@ Replace live UDP check with deterministic in-process integration coverage:
 - `unit_tests/test_client_reassembly.py` (new): index coverage, duplicate handling, decompress, and final hash verification tests.
 - `doc/architecture/CLIENT_RUNTIME.md`: align runtime phase details with implemented parity core boundaries.
 - `doc/architecture/CLIENT_GENERATION.md`: clarify generated client should call parity helpers/embedded equivalent logic exactly.
+- `doc/architecture/ARCHITECTURE.md`: add module-level ownership boundaries so parser/crypto responsibilities stay non-overlapping.
 - `doc/architecture/CRYPTO.md`: clarify client verification/decrypt ordering and parity requirements.
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`: clarify client-side binary record parse expectations and fatal validation cases.
 - `doc/architecture/DNS_MESSAGE_FORMAT.md`: clarify response-envelope validation order and fatal mismatch handling for client parity core.
