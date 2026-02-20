@@ -135,15 +135,46 @@ using the extraction approach:
    A `build_client_source()` function assembles the full standalone script
    by combining extracted utilities + client-specific code.
 
-The extracted functions are the same 15 identified in the previous analysis:
+The extracted functions (16 total):
 
-- **compat.py** (9): `encode_ascii`, `encode_utf8`, `decode_ascii`,
+- **compat.py** (10): `encode_ascii`, `encode_utf8`, `decode_ascii`,
   `encode_ascii_int`, `byte_value`, `iter_byte_values`,
-  `base32_decode_no_pad`, `is_binary`, `constant_time_equals`
+  `base32_decode_no_pad`, `base32_lower_no_pad`, `is_binary`,
+  `constant_time_equals`
 - **helpers.py** (2): `hmac_sha256`, `dns_name_wire_length`
 - **dnswire.py** (1): `_decode_name`
 - **cname_payload.py** (3): `_derive_file_bound_key`, `_keystream_bytes`,
   `_xor_bytes`
+
+`base32_lower_no_pad` is needed for runtime `file_tag` and slice token
+derivation (new functionality the current template inlines).
+
+**`_decode_name` extraction dependencies:** The canonical `_decode_name`
+calls two local helpers not in the extraction list: `_message_length(msg)`
+(just `len(msg)`) and `_ord_byte(val)` (just `byte_value(val)`).  The
+extraction rename table must map `_message_length` -> `len` and `_ord_byte`
+-> the extracted `byte_value` name so these references resolve.
+
+**Foundational type definitions:** Extracted functions (`byte_value`,
+`iter_byte_values`, `constant_time_equals`, `is_binary`, `encode_ascii_int`)
+depend on module-level `PY2`, `text_type`, `binary_type`, and
+`integer_types` from `compat.py`.  `client_standalone.py` must include the
+PY2/type-detection preamble (same block the current template uses at lines
+86-94).
+
+**Required constants from `dnsdle/constants.py`:** Extracted functions
+reference constants via module-level imports that will not be available in
+the standalone client.  `client_standalone.py` must define:
+- Payload crypto labels: `PAYLOAD_ENC_KEY_LABEL`, `PAYLOAD_ENC_STREAM_LABEL`,
+  `PAYLOAD_MAC_KEY_LABEL`, `PAYLOAD_MAC_MESSAGE_LABEL`, `PAYLOAD_MAC_TRUNC_LEN`,
+  `PAYLOAD_PROFILE_V1_BYTE`, `PAYLOAD_FLAGS_V1_BYTE`
+- DNS wire: `DNS_POINTER_TAG`, `DNS_POINTER_VALUE_MASK`, `DNS_HEADER_BYTES`,
+  `DNS_FLAG_QR`, `DNS_FLAG_TC`, `DNS_FLAG_RD`, `DNS_OPCODE_MASK`,
+  `DNS_QTYPE_A`, `DNS_QTYPE_CNAME`, `DNS_QTYPE_OPT`, `DNS_QCLASS_IN`,
+  `DNS_RCODE_NOERROR`
+- Runtime derivation labels: `MAPPING_FILE_LABEL` (`b"dnsdle:file:v1|"`),
+  `MAPPING_SLICE_LABEL` (`b"dnsdle:slice:v1|"`),
+  `FILE_ID_PREFIX` (`b"dnsdle:file-id:v1|"`)
 
 ### Stager changes
 
@@ -172,9 +203,8 @@ sys.argv = [
     "--file-tag-len", str(FILE_TAG_LEN),
     "--response-label", RESPONSE_LABEL,
     "--dns-edns-size", str(DNS_EDNS_SIZE),
+    "--resolver", resolver,
 ]
-if resolver:
-    sys.argv.extend(["--resolver", resolver])
 exec(client_source)
 ```
 
@@ -258,13 +288,14 @@ No behavioral changes to any module.
 ### Phase 2: Create universal client
 
 Write `dnsdle/client_standalone.py` containing:
+- PY2/type-detection preamble (`PY2`, `text_type`, `binary_type`,
+  `integer_types`)
+- All required constants from `dnsdle/constants.py` (payload crypto labels,
+  DNS wire constants, runtime derivation labels) defined inline
 - Client-specific logic (download loop, CLI, reassembly, output, validation)
 - Cross-platform resolver discovery (both implementations, runtime branch)
 - `build_client_source()` function that assembles the full standalone script
   via extraction
-
-Copy `dnsdle/client_template.py` to `dnsdle/client_template_legacy.py` for
-reference.
 
 Verify the assembled standalone client compiles and is ASCII-clean.
 
@@ -296,26 +327,39 @@ lifting.
 
 ### Phase 7: Remove dead code
 
-Delete `client_template.py` (the old one — the legacy copy remains for
-reference).  Remove `build_client_template()`,  `_lift_resolver_source()`,
-`_TEMPLATE_PREFIX`, `_TEMPLATE_SUFFIX`, `_DISCOVER_SYSTEM_RESOLVER`.  Remove
-`ALLOWED_TARGET_OS` usage from generator if no longer needed.
+Delete `client_template.py`.  Remove `build_client_template()`,
+`_lift_resolver_source()`, `_TEMPLATE_PREFIX`, `_TEMPLATE_SUFFIX`,
+`_DISCOVER_SYSTEM_RESOLVER`.  Git history preserves the original file for
+reference — no legacy copy needed.
+
+Remove vestigial `target_os` config surface:
+- Remove `target_os` and `target_os_csv` from `Config` namedtuple in
+  `config.py` and its `_normalize_target_os` validator.
+- Remove `--target-os` from `cli.py`.
+- Remove `ALLOWED_TARGET_OS` from `constants.py`.
+- Remove `GENERATED_CLIENT_FILENAME_TEMPLATE` from `constants.py` if no
+  longer used.
+- Update all call sites that reference these removed fields.
 
 ## Affected Components
 
-- `dnsdle/compat.py`: Add extract markers around 9 functions; improve
-  `constant_time_equals` to try `hmac.compare_digest` first.
+- `dnsdle/compat.py`: Add extract markers around 10 functions (including
+  `base32_lower_no_pad`); improve `constant_time_equals` to try
+  `hmac.compare_digest` first.
 - `dnsdle/helpers.py`: Add extract markers around 2 functions.
-- `dnsdle/dnswire.py`: Add extract markers around `_decode_name`.
+- `dnsdle/dnswire.py`: Add extract markers around `_decode_name`.  Extraction
+  rename table must map `_message_length` -> `len` and `_ord_byte` ->
+  extracted `byte_value` name.
 - `dnsdle/cname_payload.py`: Add extract markers around 3 functions.
 - `dnsdle/extract.py` (new): Marker parser, file reader, identifier renamer.
+  Rename table must include local-helper mappings for `_decode_name`
+  dependencies.
 - `dnsdle/client_standalone.py` (new): Universal client logic +
-  `build_client_source()` assembler.  Cross-platform resolver discovery.
-  Full CLI argument parser for all file/deployment/runtime parameters.
-- `dnsdle/client_template.py`: Replaced; preserved as
-  `client_template_legacy.py`.
-- `dnsdle/client_template_legacy.py` (new): Verbatim copy of original
-  template for reference/rollback.
+  `build_client_source()` assembler.  PY2/type-detection preamble.  All
+  required constants from `dnsdle/constants.py` defined inline.
+  Cross-platform resolver discovery.  Full CLI argument parser for all
+  file/deployment/runtime parameters.
+- `dnsdle/client_template.py`: Deleted (git history preserves original).
 - `dnsdle/client_generator.py`: Major rewrite — single universal client
   output via `build_client_source()`.  Template substitution removed.
 - `dnsdle/stager_template.py`: Add payload metadata placeholders; update
@@ -325,8 +369,13 @@ reference).  Remove `build_client_template()`,  `_lift_resolver_source()`,
 - `dnsdle/stager_minify.py`: Update rename table for new payload constants.
 - `dnsdle/__init__.py`: Simplify convergence loop — build 1 client, publish
   1 file, generate N stagers (not N * OS_COUNT).
+- `dnsdle/cli.py`: Remove `--target-os` argument.
+- `dnsdle/config.py`: Remove `target_os`, `target_os_csv` from `Config`;
+  remove `_normalize_target_os`.
+- `dnsdle/constants.py`: Remove `ALLOWED_TARGET_OS`,
+  `GENERATED_CLIENT_FILENAME_TEMPLATE` if unused.
 - `dnsdle/resolver_linux.py`: No changes (still used by server); its source
-  is read by extraction or inlined into `client_standalone.py`.
+  is inlined into `client_standalone.py`.
 - `dnsdle/resolver_windows.py`: Same as above.
 - `doc/architecture/CLIENT_GENERATION.md`: Rewrite for universal client
   architecture.
