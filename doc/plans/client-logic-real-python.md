@@ -104,7 +104,12 @@ QUERY_INTERVAL_MS           = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
 EXIT_USAGE = 2; EXIT_TRANSPORT = 3; EXIT_PARSE = 4
 EXIT_CRYPTO = 5; EXIT_REASSEMBLY = 6; EXIT_WRITE = 7
 
-class ClientError(SystemExit): pass
+class ClientError(Exception):
+    def __init__(self, code, phase, message):
+        Exception.__init__(self, message)
+        self.code = int(code)
+        self.phase = phase
+        self.message = message
 class RetryableTransport(Exception): pass
 ```
 
@@ -154,8 +159,21 @@ python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').wri
 ```
 
 Append all `_CLIENT_SUFFIX` content into the `client_runtime` extract block
-as real Python, converting the 3 double-escaped sites in `_CLIENT_SUFFIX` to
-their real-Python forms:
+as real Python.
+
+**Spacing rule (required for byte-compare):** `_CLIENT_SUFFIX` starts with
+`\n\ndef _derive_file_id` (one blank line before the first function).
+Within the suffix, all subsequent function pairs use two blank lines (PEP 8).
+In `client_runtime.py` the transition from `_LABEL_RE` (the last stage-1
+item) to `def _derive_file_id` (the first stage-2 item) must use exactly
+**one blank line** -- matching what `_CLIENT_SUFFIX`'s leading `\n\n`
+produces when concatenated after the extract block in stage 1.  All
+subsequent function pairs use two blank lines, matching the suffix's
+internal spacing.  Using PEP 8 standard two blank lines at the `_LABEL_RE`
+/ `_derive_file_id` boundary would add an extra `\n` and break `cmp`.
+
+Convert the 3 double-escaped sites in `_CLIENT_SUFFIX` to their real-Python
+forms:
 - `b"\\x00"` → `b"\x00"` in `_encode_name` (line 182 of `_CLIENT_SUFFIX`)
 - `b"\\x00"` → `b"\x00"` in `_build_dns_query` (line 202 of `_CLIENT_SUFFIX`)
 - `r"(\\d{1,3}(?:\\.\\d{1,3}){3})"` → `r"(\d{1,3}(?:\.\d{1,3}){3})"` in
