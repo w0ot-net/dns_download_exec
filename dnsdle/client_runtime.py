@@ -1,6 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
-# stdlib -- mirrors what _CLIENT_PREAMBLE injects into the assembled client
+# stdlib -- mirrors what _PREAMBLE_HEADER injects into the assembled client
 import sys, os, re, struct, socket, subprocess, time, random
 import hashlib, zlib, argparse, base64, hmac, tempfile
 

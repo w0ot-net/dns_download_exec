@@ -132,12 +132,21 @@ class DnsParseError(ClientError):
 '''
 
 
+_PY2 = (str is bytes)
+
 _UNIVERSAL_CLIENT_FILENAME = "dnsdle_universal_client.py"
+
+
+def _const_repr(value):
+    r = repr(value)
+    if _PY2 and isinstance(value, bytes):
+        return "b" + r
+    return r
 
 
 def build_client_source():
     constants_lines = "\n".join(
-        "%s = %s" % (name, repr(getattr(_c, name)))
+        "%s = %s" % (name, _const_repr(getattr(_c, name)))
         for name in _PREAMBLE_CONSTANTS
     )
     preamble = _PREAMBLE_HEADER + constants_lines + "\n" + _PREAMBLE_FOOTER
