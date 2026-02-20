@@ -130,13 +130,13 @@ extracted_parts = (
     + cname_blocks + runtime_blocks
 )
 extracted_source = "\n\n".join(extracted_parts)
-source = _CLIENT_PREAMBLE + extracted_source + "\n"
+source = _CLIENT_PREAMBLE + extracted_source + _CLIENT_SUFFIX
 ```
 
-`_CLIENT_SUFFIX` remains unchanged at the end of this stage.  The assembled
-output changes structurally (the four functions move to after the utility
-extractions) but no escape conversions occur, so correctness is verifiable by
-inspection.
+`_CLIENT_SUFFIX` is unchanged and still concatenated.  The assembled output
+changes structurally (the four functions move from end-of-preamble to after
+the utility extractions, before the suffix) but no escape conversions occur,
+so correctness is verifiable by inspection.
 
 ### Stage 2: Move `_CLIENT_SUFFIX` to real Python (escape-only changes)
 
@@ -169,8 +169,14 @@ there is nothing to convert in stage 2 for that function.)  The full extract blo
 `_validate_cli_params`, `_download_slices`, `_build_parser`,
 `_parse_runtime_args`, `main`, and the `if __name__` block.
 
-Delete `_CLIENT_SUFFIX` from `client_standalone.py`.  Remove the now-dead
-`import os` and `import re` statements.
+Delete `_CLIENT_SUFFIX` from `client_standalone.py`.  Update the assembly
+formula to drop the suffix concatenation:
+
+```python
+source = _CLIENT_PREAMBLE + extracted_source + "\n"
+```
+
+Remove the now-dead `import os` and `import re` statements.
 
 **Validation**: capture the stage-2 assembled output and byte-compare against
 the stage-1 baseline:
@@ -180,10 +186,15 @@ python -c "import dnsdle.client_standalone as m; open('/tmp/stage2.py','wb').wri
 cmp /tmp/stage1.py /tmp/stage2.py
 ```
 
-Stage 1 and stage 2 have identical assembly structure (same preamble, same
-utility blocks, same `client_runtime` block in the same position), so `cmp`
-is a valid comprehensive check.  A byte-identical result confirms all escape
-sites were converted correctly with no semantic regression.
+Stage 1 and stage 2 must produce identical bytes.  In stage 1 the seam
+between the extract block and `_CLIENT_SUFFIX` is: `[last extracted
+line]` + `\n\n` (suffix opens with `\n\n`).  In stage 2 the same position
+is inside the extract block.  To match, `client_runtime.py` must use exactly
+one blank line between `_LABEL_RE` and `_derive_file_id` (matching the
+suffix's leading `\n\n`), and two blank lines between all subsequent
+top-level functions (matching the suffix's internal spacing).  A
+byte-identical `cmp` result confirms all escape sites were converted
+correctly with no semantic regression.
 
 ## Affected Components
 
