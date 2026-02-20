@@ -20,7 +20,13 @@ _COMPAT_EXTRACTIONS = [
     "is_binary",
 ]
 
-_HELPERS_EXTRACTIONS = ["hmac_sha256", "dns_name_wire_length"]
+_HELPERS_EXTRACTIONS = [
+    "hmac_sha256",
+    "dns_name_wire_length",
+    "_derive_file_id",
+    "_derive_file_tag",
+    "_derive_slice_token",
+]
 
 _DNSWIRE_EXTRACTIONS = ["_decode_name"]
 

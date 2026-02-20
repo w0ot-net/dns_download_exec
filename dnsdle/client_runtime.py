@@ -10,7 +10,10 @@ from dnsdle.compat import (
     base32_lower_no_pad, base32_decode_no_pad,
     byte_value, constant_time_equals,
 )
-from dnsdle.helpers import hmac_sha256, dns_name_wire_length
+from dnsdle.helpers import (
+    hmac_sha256, dns_name_wire_length,
+    _derive_file_id, _derive_file_tag, _derive_slice_token,
+)
 from dnsdle.dnswire import _decode_name
 from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_bytes
 
@@ -56,32 +59,6 @@ def _log(message):
 
 _TOKEN_RE = re.compile(r"^[a-z0-9]+$")
 _LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-
-def _derive_file_id(publish_version):
-    return hashlib.sha256(
-        FILE_ID_PREFIX + encode_ascii(publish_version)
-    ).hexdigest()[:16]
-
-
-def _derive_file_tag(mapping_seed, publish_version, file_tag_len):
-    digest = hmac_sha256(
-        encode_ascii(mapping_seed),
-        MAPPING_FILE_LABEL + encode_ascii(publish_version),
-    )
-    tag = base32_lower_no_pad(digest)
-    return tag[:file_tag_len]
-
-
-def _derive_slice_token(mapping_seed, publish_version, index, token_len):
-    msg = (
-        MAPPING_SLICE_LABEL
-        + encode_ascii(publish_version)
-        + b"|"
-        + encode_ascii_int(index, "index")
-    )
-    digest = hmac_sha256(encode_ascii(mapping_seed), msg)
-    token = base32_lower_no_pad(digest)
-    return token[:token_len]
 
 
 def _encode_name(labels):
@@ -585,6 +562,7 @@ def _validate_cli_params(base_domains, file_tag, mapping_seed, token_len, total_
 def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices, compressed_size, mapping_seed, token_len, resolver_addr, request_timeout, no_progress_timeout, max_rounds, query_interval_ms, domain_labels_by_domain, base_domains, response_label, dns_max_label_len, dns_edns_size):
     missing = set(range(total_slices))
     stored = {}
+    seed_bytes = encode_ascii(mapping_seed)
     enc_key_bytes = _enc_key(psk_value, file_id, publish_version)
     mac_key_bytes = _mac_key(psk_value, file_id, publish_version)
 
@@ -607,7 +585,7 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
                 raise ClientError(EXIT_TRANSPORT, "dns", "no-progress timeout")
 
             domain_labels = domain_labels_by_domain[domain_index]
-            slice_token = _derive_slice_token(mapping_seed, publish_version, slice_index, token_len)
+            slice_token = _derive_slice_token(seed_bytes, publish_version, slice_index, token_len)
             qname_labels = (slice_token, file_tag) + domain_labels
             query_id = random.randint(0, 0xFFFF)
             query_packet = _build_dns_query(query_id, qname_labels, dns_edns_size)
@@ -716,7 +694,7 @@ def _parse_runtime_args(argv):
     dns_edns_size = _parse_positive_int(args.dns_edns_size, "--dns-edns-size")
 
     file_id = _derive_file_id(publish_version)
-    file_tag = _derive_file_tag(mapping_seed, publish_version, file_tag_len)
+    file_tag = _derive_file_tag(encode_ascii(mapping_seed), publish_version, file_tag_len)
 
     timeout_seconds = _parse_positive_float(args.timeout, "--timeout")
     no_progress_timeout = _parse_positive_float(

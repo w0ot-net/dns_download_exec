@@ -150,3 +150,43 @@ Add `encode_ascii_int`, `base32_lower_no_pad`, `MAPPING_FILE_LABEL`,
   update two call sites to pass `encode_ascii(mapping_seed)` as `seed_bytes`
 - `dnsdle/client_standalone.py`: add `_derive_file_id`, `_derive_file_tag`,
   `_derive_slice_token` to `_HELPERS_EXTRACTIONS`
+
+## Execution Notes
+
+Executed 2026-02-20.
+
+All four deduplication tasks implemented as designed:
+
+1. **Stager resolver wiring**: renamed `_STAGER_PREFIX` to `_STAGER_PRE_RESOLVER`,
+   stripped 80+ lines of hardcoded resolver functions, wired `_read_resolver_source`
+   into `build_stager_template()`.  Template assembly verified -- all resolver
+   functions present from canonical files.
+
+2. **Publish delegation**: collapsed `build_publish_items` from 45 lines to 20 lines;
+   reads files then delegates to `build_publish_items_from_sources`.  Budget guard
+   and set init now live only in `build_publish_items_from_sources`.
+
+3. **`_derive_file_id` to helpers**: added to `helpers.py` with `__EXTRACT__`
+   markers.  Removed from `publish.py` (kept `_sha256_hex` which is still used)
+   and from `client_runtime.py` extraction block.  Added to `_HELPERS_EXTRACTIONS`.
+
+4. **`_derive_file_tag` / `_derive_slice_token` to helpers**: unified API on
+   `seed_bytes` (bytes).  Removed four functions from `mapping.py`
+   (`_derive_file_digest`, `_derive_slice_digest`, `_derive_file_tag`,
+   `_derive_slice_token`), importing the last two from helpers.  Removed from
+   `client_runtime.py` extraction block.  Updated `_download_slices` to
+   pre-compute `seed_bytes = encode_ascii(mapping_seed)` once (review finding:
+   avoids repeated encoding in per-slice loop).  Updated `_parse_runtime_args`
+   call site with inline `encode_ascii(mapping_seed)`.
+
+Deviations from plan:
+- `_download_slices` pre-computes `seed_bytes` at function top rather than
+  encoding inline at the call site, per review finding about avoiding
+  redundant per-iteration encoding.
+
+Validation:
+- All six changed modules pass `py_compile`.
+- All module imports succeed (no circular dependency).
+- `build_stager_template()` produces template with all resolver functions.
+- `build_client_source()` produces valid universal client with all three
+  extracted functions.

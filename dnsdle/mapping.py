@@ -1,45 +1,14 @@
 from __future__ import absolute_import, unicode_literals
 
-from dnsdle.compat import base32_lower_no_pad
 from dnsdle.compat import encode_ascii
-from dnsdle.compat import encode_ascii_int
 from dnsdle.constants import DIGEST_TEXT_CAPACITY
-from dnsdle.constants import MAPPING_FILE_LABEL
-from dnsdle.constants import MAPPING_SLICE_LABEL
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
+from dnsdle.helpers import _derive_file_tag
+from dnsdle.helpers import _derive_slice_token
 from dnsdle.helpers import dns_name_wire_length
-from dnsdle.helpers import hmac_sha256
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
-
-
-def _derive_file_digest(seed_bytes, publish_version_bytes):
-    return hmac_sha256(seed_bytes, MAPPING_FILE_LABEL + publish_version_bytes)
-
-
-def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
-    slice_index_bytes = encode_ascii_int(slice_index, "slice_index")
-    return hmac_sha256(
-        seed_bytes,
-        MAPPING_SLICE_LABEL + publish_version_bytes + b"|" + slice_index_bytes,
-    )
-
-
-def _derive_file_tag(seed_bytes, publish_version, file_tag_len):
-    publish_version_bytes = encode_ascii(publish_version)
-    digest_text = base32_lower_no_pad(
-        _derive_file_digest(seed_bytes, publish_version_bytes)
-    )
-    return digest_text[:file_tag_len]
-
-
-def _derive_slice_token(seed_bytes, publish_version, slice_index, token_len):
-    publish_version_bytes = encode_ascii(publish_version)
-    digest_text = base32_lower_no_pad(
-        _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index)
-    )
-    return digest_text[:token_len]
 
 
 def _compute_tokens(seed_bytes, publish_version, total_slices, token_len):

