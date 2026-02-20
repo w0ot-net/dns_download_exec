@@ -680,7 +680,7 @@ def _build_parser():
     parser.add_argument("--out", default="")
     parser.add_argument("--file-tag-len", default="4")
     parser.add_argument("--response-label", default="r-x")
-    parser.add_argument("--dns-max-label-len", default="63")
+    parser.add_argument("--dns-max-label-len", default="40")
     parser.add_argument("--dns-edns-size", default="512")
     parser.add_argument("--timeout", default=str(REQUEST_TIMEOUT_SECONDS))
     parser.add_argument(
