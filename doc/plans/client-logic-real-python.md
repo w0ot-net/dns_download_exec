@@ -82,7 +82,7 @@ from dnsdle.constants import (
     DNS_QCLASS_IN, DNS_QTYPE_A, DNS_QTYPE_CNAME, DNS_QTYPE_OPT,
     DNS_RCODE_NOERROR,
     FILE_ID_PREFIX, MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL,
-    PAYLOAD_ENC_KEY_LABEL, PAYLOAD_ENC_STREAM_LABEL,
+    PAYLOAD_ENC_KEY_LABEL,
     PAYLOAD_FLAGS_V1_BYTE, PAYLOAD_MAC_KEY_LABEL,
     PAYLOAD_MAC_MESSAGE_LABEL, PAYLOAD_MAC_TRUNC_LEN,
     PAYLOAD_PROFILE_V1_BYTE,
@@ -127,8 +127,11 @@ any extra blank line inside the block shifts the assembled output and breaks
 the stage-1/stage-2 byte-compare.
 
 Remove `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE` from `_CLIENT_PREAMBLE`.
-The preamble retains only pure declarations: shebang, stdlib imports,
-constants, PY2/type detection, and the three exception classes (`ClientError`,
+The trimmed preamble must end with `\n\n` (a blank line before the closing
+`'''`), preserving the two-blank-line separation between `DnsParseError` and
+the first extracted utility function in the assembled output.  The preamble
+retains only pure declarations: shebang, stdlib imports, constants, PY2/type
+detection, and the three exception classes (`ClientError`,
 `RetryableTransport`, `DnsParseError`).  ~75 lines, no logic.
 
 Add `_CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]` and update
@@ -149,6 +152,17 @@ source = _CLIENT_PREAMBLE + extracted_source + _CLIENT_SUFFIX
 changes structurally (the four functions move from end-of-preamble to after
 the utility extractions, before the suffix) but no escape conversions occur,
 so correctness is verifiable by inspection.
+
+**Stage-1 smoke test**: capture the assembled output and confirm it is
+parseable and executable:
+
+```
+python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').write(m.build_client_source().encode('ascii'))"
+python /tmp/stage1.py --help
+```
+
+`--help` exercises the CLI parser (`_build_parser`, `argparse`) and exits
+cleanly, confirming the reordering did not break name resolution.
 
 ### Stage 2: Move `_CLIENT_SUFFIX` to real Python (escape-only changes)
 
