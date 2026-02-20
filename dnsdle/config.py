@@ -36,6 +36,7 @@ Config = namedtuple(
         "listen_port",
         "ttl",
         "dns_edns_size",
+        "dns_max_response_bytes",
         "dns_max_label_len",
         "response_label",
         "mapping_seed",
@@ -357,6 +358,12 @@ def build_config(parsed_args):
         MIN_DNS_EDNS_SIZE,
         MAX_DNS_EDNS_SIZE,
     )
+    dns_max_response_bytes = _parse_int_in_range(
+        "dns_max_response_bytes",
+        _arg_value_default(parsed_args, "dns_max_response_bytes", "0"),
+        0,
+        65535,
+    )
     dns_max_label_len = _parse_int_in_range(
         "dns_max_label_len",
         _arg_value(parsed_args, "dns_max_label_len"),
@@ -410,6 +417,7 @@ def build_config(parsed_args):
         listen_port=listen_port,
         ttl=ttl,
         dns_edns_size=dns_edns_size,
+        dns_max_response_bytes=dns_max_response_bytes,
         dns_max_label_len=dns_max_label_len,
         response_label=response_label,
         mapping_seed=mapping_seed,

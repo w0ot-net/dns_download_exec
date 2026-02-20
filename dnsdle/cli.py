@@ -15,6 +15,7 @@ _LONG_OPTIONS = (
     "--listen-addr",
     "--ttl",
     "--dns-edns-size",
+    "--dns-max-response-bytes",
     "--dns-max-label-len",
     "--response-label",
     "--mapping-seed",
@@ -102,6 +103,8 @@ def _build_parser():
     dns_wire = parser.add_argument_group("dns/wire")
     dns_wire.add_argument("--dns-edns-size", default="1232",
                           help="EDNS UDP size, 512..4096 (default: %(default)s)")
+    dns_wire.add_argument("--dns-max-response-bytes", default="0",
+                          help="cap CNAME response bytes, 0=disabled (default: %(default)s)")
     dns_wire.add_argument("--dns-max-label-len", default="40",
                           help="payload label cap, 16..63 (default: %(default)s)")
     dns_wire.add_argument("--response-label", default="r-x",

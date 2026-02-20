@@ -104,3 +104,18 @@ Add `"dns_max_response_bytes": config.dns_max_response_bytes` to the
   deterministic-restart "breaking changes" list alongside `dns_max_label_len`,
   since changing it alters `max_ciphertext_slice_bytes` and therefore slice
   count and mapping.
+
+## Execution Notes
+
+Executed 2026-02-20. All plan items implemented as specified with no deviations.
+
+- `dnsdle/cli.py`: added `--dns-max-response-bytes` to `_LONG_OPTIONS` and
+  `dns/wire` parser group with default `"0"`.
+- `dnsdle/config.py`: added `dns_max_response_bytes` field to `Config`
+  namedtuple; parsed via `_arg_value_default` with range `0..65535`.
+- `dnsdle/budget.py`: two-line cap applied to `packet_size_limit` when
+  `dns_max_response_bytes > 0`.
+- `dnsdle.py`: added `dns_max_response_bytes` to `startup_ok` log record.
+- `doc/architecture/CONFIG.md`: documented in Optional section and Numeric
+  Bounds.
+- `doc/architecture/SERVER_RUNTIME.md`: added to breaking-changes list.

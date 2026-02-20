@@ -83,7 +83,8 @@ Changing any of the following may break old clients:
 - implementation profile (python implementation/version and zlib runtime
   version; see `doc/architecture/PUBLISH_PIPELINE.md`)
 - relevant mapping/wire config (`file_tag_len`, `dns_max_label_len`,
-  configured domain set, `response_label`, profile values)
+  `dns_max_response_bytes`, configured domain set, `response_label`,
+  profile values)
 
 ---
 

@@ -82,6 +82,8 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
     domain_labels = _domain_labels(config)
     suffix_labels = (config.response_label,) + domain_labels
     packet_size_limit = max(config.dns_edns_size, CLASSIC_DNS_PACKET_LIMIT)
+    if config.dns_max_response_bytes > 0:
+        packet_size_limit = min(packet_size_limit, config.dns_max_response_bytes)
     query_token_len = int(query_token_len)
     _validate_query_token_len(config, query_token_len)
 

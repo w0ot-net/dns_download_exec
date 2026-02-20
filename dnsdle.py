@@ -83,6 +83,7 @@ def main(argv=None):
             "file_count": len(runtime_state.publish_items),
             "max_ciphertext_slice_bytes": runtime_state.max_ciphertext_slice_bytes,
             "dns_edns_size": config.dns_edns_size,
+            "dns_max_response_bytes": config.dns_max_response_bytes,
             "dns_max_label_len": config.dns_max_label_len,
             "compression_level": config.compression_level,
             "universal_client": generation_result["filename"],

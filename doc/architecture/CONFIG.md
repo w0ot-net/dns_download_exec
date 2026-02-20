@@ -34,6 +34,11 @@ Processing flow is two-step:
 - `dns_edns_size` (`--dns-edns-size`): EDNS UDP size advertisement,
   default `1232`, valid `512..4096`. No-OPT mode is non-default and requires
   explicit `--dns-edns-size 512`.
+- `dns_max_response_bytes` (`--dns-max-response-bytes`): cap on CNAME response
+  packet size in bytes, default `0` (disabled), valid `0..65535`. When positive,
+  the effective packet-size ceiling becomes
+  `min(max(dns_edns_size, 512), dns_max_response_bytes)`. Does not affect EDNS
+  OPT advertisement.
 - `dns_max_label_len` (`--dns-max-label-len`): payload label cap, default `63`,
   valid `16..63`.
 - `response_label` (`--response-label`): fixed CNAME response discriminator,
@@ -161,6 +166,8 @@ Startup fails if any derived value cannot be computed within constraints.
 - `dns_edns_size` controls whether OPT is emitted:
   - `> 512` emits OPT (EDNS enabled)
   - `= 512` omits OPT (DNS classic size)
+- `dns_max_response_bytes` caps the response-packet budget independently of
+  EDNS advertisement; `0` disables the cap.
 ### Logging
 
 - `log_level` must be one of:
