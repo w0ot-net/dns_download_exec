@@ -159,18 +159,35 @@ parseable and executable:
 ```
 python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').write(m.build_client_source().encode('ascii'))"
 python /tmp/stage1.py --help
+python /tmp/stage1.py --psk x --domains "INVALID DOMAIN" --mapping-seed s --publish-version v --total-slices 1 --compressed-size 1 --sha256 0000000000000000000000000000000000000000000000000000000000000000 --token-len 4 --verbose; echo "exit=$?"
 ```
 
-`--help` exercises the CLI parser (`_build_parser`, `argparse`) and exits
-cleanly, confirming the reordering did not break name resolution.
+`--help` exercises the CLI parser.  The second invocation exercises early
+validation paths: `_validate_cli_params` applies `_LABEL_RE` to the domain,
+`--verbose` sets `_VERBOSE` and exercises `_log`, and the invalid domain
+triggers a `ClientError` exit.  Both confirm the reordering did not break
+name resolution.
 
 ### Stage 2: Move `_CLIENT_SUFFIX` to real Python (escape-only changes)
 
-Before beginning stage 2, capture the stage-1 assembled output as a baseline:
+Before beginning stage 2, capture the stage-1 assembled output as a baseline
+(reuses the `/tmp/stage1.py` already written by the smoke test):
 
 ```
-python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').write(m.build_client_source())"
+python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').write(m.build_client_source().encode('ascii'))"
 ```
+
+**Pre-flight seam check**: before writing any stage-2 code, verify the
+stage-1 baseline has the expected spacing at the `_LABEL_RE` /
+`_derive_file_id` boundary:
+
+```
+grep -A2 '_LABEL_RE' /tmp/stage1.py | head -4
+```
+
+The output must show `_LABEL_RE = ...`, one blank line, then
+`def _derive_file_id`.  If two blank lines appear, the preamble or extract
+block boundaries are wrong -- fix before proceeding.
 
 Append all `_CLIENT_SUFFIX` content into the `client_runtime` extract block
 as real Python.
@@ -221,7 +238,7 @@ Remove the now-dead `import os` and `import re` statements.
 the stage-1 baseline:
 
 ```
-python -c "import dnsdle.client_standalone as m; open('/tmp/stage2.py','wb').write(m.build_client_source())"
+python -c "import dnsdle.client_standalone as m; open('/tmp/stage2.py','wb').write(m.build_client_source().encode('ascii'))"
 cmp /tmp/stage1.py /tmp/stage2.py
 ```
 
@@ -250,8 +267,10 @@ correctly with no semantic regression.
     as the 5th canonical module alongside compat, helpers, dnswire, and
     cname_payload.
   - Architecture bullet 3 ("The client source file contains only
-    client-specific logic"): rewrite to name `client_runtime.py` as the
-    source of client logic, extracted via the marker mechanism.
+    client-specific logic"): rewrite to clarify that `client_runtime.py`
+    is where client logic is authored (as real Python), and that
+    `build_client_source()` assembles it via marker extraction -- not via
+    string literal concatenation.
   - "Extracted functions (16 total)": the count and per-function listing
     become incorrect; update to reflect that `client_runtime.py` contributes
     1 extraction block (not individual named functions) in addition to the
