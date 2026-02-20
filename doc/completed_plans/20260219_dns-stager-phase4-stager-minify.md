@@ -111,3 +111,38 @@ coding discipline, but handling it defensively costs nothing).
 - `dnsdle/stager_minify.py` (NEW): deterministic minifier. Exports
   `minify()`. Contains the variable rename table as a module-level
   constant.
+
+## Execution Notes
+
+Implemented 2026-02-19.
+
+All five minification passes implemented as specified:
+1. Strip comment lines
+2. Strip blank lines
+3. Rename variables (106-entry table, longest-first ordering)
+4. Reduce indentation (4-space to 1-space)
+5. Semicolon-join same-indent non-block lines
+
+Deviations from plan:
+
+- The plan states "maps every template-local variable and function name
+  to a single-character name." In practice 106 names are renamed; 48 get
+  single-char names and 58 get two-char names (insufficient single-char
+  namespace for all). This still achieves 40% size reduction.
+- Six names are excluded from the rename table:
+  - `mac`, `msg`, `stream`: appear as `\b`-delimited words inside
+    hardcoded crypto label strings (`dnsdle-mac-v1|`, `dnsdle-mac-msg-v1|`,
+    `dnsdle-enc-stream-v1|`).
+  - `upper`: collides with the `.upper()` method call on the same
+    variable.
+  - `psk`, `resolver`: appear as whole words inside `"--psk"` and
+    `"--resolver"` string literals.
+- Four single-char names (`v`, `i`, `j`, `r`) are not renamed since
+  there is no size benefit.
+- The 10 ALL_CAPS template constants (`DOMAIN_LABELS`, `FILE_TAG`, etc.)
+  are included in the rename table since they remain as variable names
+  in the fully-substituted source.
+- Regex patterns are pre-compiled at module load for performance.
+- The semicolon-join pass strips trailing `:` from the first token
+  before the block-starter check, so bare `else:` / `try:` / `finally:`
+  lines are correctly detected.
