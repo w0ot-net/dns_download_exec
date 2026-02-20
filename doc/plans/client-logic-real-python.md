@@ -43,8 +43,14 @@ structurally valid.
 
 Create `dnsdle/client_runtime.py` with a development header and a single
 extract block `# __EXTRACT: client_runtime__` containing only `_VERBOSE`,
-`_log`, `_TOKEN_RE`, and `_LABEL_RE`, copied verbatim from `_CLIENT_PREAMBLE`
-with no escape changes.
+`_log`, `_TOKEN_RE`, and `_LABEL_RE`, written as correct real Python.
+
+"Correct real Python" means writing the functions as they would appear in any
+normal `.py` file -- not copying raw source text from inside the
+`_CLIENT_PREAMBLE` triple-quoted string.  Concretely: `_CLIENT_PREAMBLE`'s
+raw source has `"\\n"` (two chars: `\` + `n`) because it sits inside a string
+literal; as real Python in `client_runtime.py` the same newline is written
+`"\n"`.  No stage-2 escape conversion is needed for `_log`.
 
 **Development header** (NOT extracted): imports from `dnsdle` packages for
 DNS/payload/mapping constants.  `ClientError`, `RetryableTransport`, and the
@@ -106,13 +112,15 @@ python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').wri
 ```
 
 Append all `_CLIENT_SUFFIX` content into the `client_runtime` extract block
-as real Python, converting the 4 double-escaped sites to their real-Python
-forms:
-- `"\\n"` → `"\n"` in `_log` (line 136 of `_CLIENT_PREAMBLE`)
+as real Python, converting the 3 double-escaped sites in `_CLIENT_SUFFIX` to
+their real-Python forms:
 - `b"\\x00"` → `b"\x00"` in `_encode_name` (line 182 of `_CLIENT_SUFFIX`)
 - `b"\\x00"` → `b"\x00"` in `_build_dns_query` (line 202 of `_CLIENT_SUFFIX`)
 - `r"(\\d{1,3}(?:\\.\\d{1,3}){3})"` → `r"(\d{1,3}(?:\.\d{1,3}){3})"` in
-  `_IPV4_RE` (line 504 of `_CLIENT_SUFFIX`)  The full extract block now contains all client functions:
+  `_IPV4_RE` (line 504 of `_CLIENT_SUFFIX`)
+
+(`_log`'s `"\n"` was already written correctly as real Python in stage 1;
+there is nothing to convert in stage 2 for that function.)  The full extract block now contains all client functions:
 `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE`, `_derive_file_id`,
 `_derive_file_tag`, `_derive_slice_token`, `_encode_name`,
 `_build_dns_query`, `_parse_response_for_cname`, `_extract_payload_text`,
