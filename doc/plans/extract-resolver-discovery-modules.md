@@ -82,15 +82,28 @@ Importable for testing:
 
 ### 4. Update `client_template.py`
 
+- Add `import os` at module level (currently only imports `absolute_import` and
+  `StartupError`; the `import os` on line 14 of the file is inside the
+  `_TEMPLATE_PREFIX` string literal, not a real module-level import).
 - Remove `_RESOLVER_BLOCK_LINUX` and `_RESOLVER_BLOCK_WINDOWS` string literals.
-- Add `_lift_resolver_source(filename)`: reads sibling `.py` file, finds the
-  `# __TEMPLATE_SOURCE__` sentinel, returns everything after it. Raises
-  `StartupError` if sentinel is missing (fail-fast invariant).
+- Add `_lift_resolver_source(filename)`: resolves sibling `.py` file via
+  `os.path.dirname(os.path.abspath(__file__))`, reads its contents, finds the
+  `# __TEMPLATE_SOURCE__` sentinel, returns everything after it (including the
+  newline immediately following the sentinel line). Raises `StartupError` with
+  `reason_code="generator_invalid_contract"` and the filename in context if
+  the file cannot be read or the sentinel is missing (fail-fast invariant).
 - Add `_DISCOVER_SYSTEM_RESOLVER` string literal containing the 7-line
   `_discover_system_resolver()` wrapper with a `@@LOADER_FN@@` placeholder.
   This wrapper bridges the platform loader to the template-internal
   `_resolve_udp_address` and `ClientError` and is identical across platforms
   except for the loader function name.
+- Newline boundary contract: `_lift_resolver_source` returns text that begins
+  with a newline (the line after the sentinel) so no extra padding is needed at
+  the prefix join. `_DISCOVER_SYSTEM_RESOLVER` must include its own leading
+  `\n\n` separator and trailing `\n\n\n` to match the current resolver block
+  endings. The three-section concatenation `_TEMPLATE_PREFIX + lifted_source +
+  discover_wrapper + _TEMPLATE_SUFFIX` must produce output identical to the
+  current two-section concatenation.
 - Update `build_client_template(target_os)`:
   - Call `_lift_resolver_source("resolver_linux.py")` or
     `_lift_resolver_source("resolver_windows.py")`.
@@ -101,7 +114,14 @@ Importable for testing:
   - Handle `@@EXTRA_IMPORTS@@` as before (`import subprocess` for Windows,
     empty for Linux).
 
-### 5. Update architecture docs
+### 5. Validate output identity
+
+Generate client templates for both `linux` and `windows` targets before and
+after the change using identical inputs. Diff the outputs to confirm they are
+byte-identical. This is the primary verification that the refactoring preserves
+behavior.
+
+### 6. Update architecture docs
 
 Update `doc/architecture/CLIENT_GENERATION.md` to note that OS-specific resolver
 discovery source is maintained in standalone modules under `dnsdle/` and lifted
