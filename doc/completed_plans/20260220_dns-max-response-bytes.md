@@ -119,3 +119,5 @@ Executed 2026-02-20. All plan items implemented as specified with no deviations.
 - `doc/architecture/CONFIG.md`: documented in Optional section and Numeric
   Bounds.
 - `doc/architecture/SERVER_RUNTIME.md`: added to breaking-changes list.
+
+Commit: `22b5e7a`
