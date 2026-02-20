@@ -100,15 +100,3 @@ DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LOG_FILE = ""
 
 REQUIRED_LIFECYCLE_CLASSIFICATIONS = ("server_start", "shutdown")
-
-
-def dns_name_wire_length(labels):
-    return 1 + sum(1 + len(label) for label in labels)
-
-
-def labels_is_suffix(suffix_labels, full_labels):
-    suffix_len = len(suffix_labels)
-    full_len = len(full_labels)
-    if suffix_len > full_len:
-        return False
-    return full_labels[full_len - suffix_len:] == suffix_labels

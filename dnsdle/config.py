@@ -12,8 +12,8 @@ from dnsdle.constants import LOG_LEVELS
 from dnsdle.constants import MAX_DNS_EDNS_SIZE
 from dnsdle.constants import MIN_DNS_EDNS_SIZE
 from dnsdle.constants import TOKEN_ALPHABET_CHARS
-from dnsdle.constants import dns_name_wire_length
-from dnsdle.constants import labels_is_suffix
+from dnsdle.helpers import dns_name_wire_length
+from dnsdle.helpers import labels_is_suffix
 from dnsdle.state import StartupError
 
 

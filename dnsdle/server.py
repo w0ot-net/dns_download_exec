@@ -13,7 +13,7 @@ from dnsdle.constants import DNS_RCODE_NOERROR
 from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.constants import DNS_UDP_RECV_MAX
-from dnsdle.constants import labels_is_suffix
+from dnsdle.helpers import labels_is_suffix
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError

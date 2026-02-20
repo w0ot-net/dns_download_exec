@@ -10,7 +10,7 @@ from dnsdle.constants import MAX_DNS_NAME_TEXT_LENGTH
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.constants import OPT_RR_BYTES
 from dnsdle.constants import QUESTION_FIXED_BYTES
-from dnsdle.constants import dns_name_wire_length
+from dnsdle.helpers import dns_name_wire_length
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError

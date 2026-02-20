@@ -1,7 +1,5 @@
 from __future__ import absolute_import
 
-import hashlib
-import hmac
 import struct
 
 from dnsdle.compat import base32_lower_no_pad
@@ -16,10 +14,7 @@ from dnsdle.constants import PAYLOAD_MAC_KEY_LABEL
 from dnsdle.constants import PAYLOAD_MAC_MESSAGE_LABEL
 from dnsdle.constants import PAYLOAD_MAC_TRUNC_LEN
 from dnsdle.constants import PAYLOAD_PROFILE_V1_BYTE
-
-
-def _hmac_sha256(key_bytes, message_bytes):
-    return hmac.new(key_bytes, message_bytes, hashlib.sha256).digest()
+from dnsdle.helpers import hmac_sha256
 
 
 def _split_payload_labels(payload_text, label_cap):
@@ -43,7 +38,7 @@ def _derive_file_bound_key(psk, file_id, publish_version, key_label):
         raise ValueError("psk must be non-empty")
     file_id_bytes = to_ascii_bytes(file_id)
     publish_version_bytes = to_ascii_bytes(publish_version)
-    return _hmac_sha256(psk_bytes, key_label + file_id_bytes + b"|" + publish_version_bytes)
+    return hmac_sha256(psk_bytes, key_label + file_id_bytes + b"|" + publish_version_bytes)
 
 
 def _enc_key(psk, file_id, publish_version):
@@ -76,7 +71,7 @@ def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len)
             + b"|"
             + counter_bytes
         )
-        block = _hmac_sha256(enc_key, block_input)
+        block = hmac_sha256(enc_key, block_input)
         blocks.append(block)
         produced += len(block)
         counter += 1
@@ -145,7 +140,7 @@ def _mac_bytes(
         publish_version,
         PAYLOAD_MAC_KEY_LABEL,
     )
-    return _hmac_sha256(mac_key, message)[:PAYLOAD_MAC_TRUNC_LEN]
+    return hmac_sha256(mac_key, message)[:PAYLOAD_MAC_TRUNC_LEN]
 
 
 def decrypt_slice_ciphertext(psk, file_id, publish_version, slice_index, ciphertext_bytes):
