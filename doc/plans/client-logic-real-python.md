@@ -77,7 +77,15 @@ from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_
 
 # dnsdle constants -- DNS/payload/mapping values used by the extract block
 from dnsdle.constants import (
-    MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL, FILE_ID_PREFIX,
+    DNS_FLAG_QR, DNS_FLAG_TC, DNS_FLAG_RD,
+    DNS_HEADER_BYTES, DNS_OPCODE_MASK, DNS_OPCODE_QUERY,
+    DNS_QCLASS_IN, DNS_QTYPE_A, DNS_QTYPE_CNAME, DNS_QTYPE_OPT,
+    DNS_RCODE_NOERROR,
+    FILE_ID_PREFIX, MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL,
+    PAYLOAD_ENC_KEY_LABEL, PAYLOAD_ENC_STREAM_LABEL,
+    PAYLOAD_FLAGS_V1_BYTE, PAYLOAD_MAC_KEY_LABEL,
+    PAYLOAD_MAC_MESSAGE_LABEL, PAYLOAD_MAC_TRUNC_LEN,
+    PAYLOAD_PROFILE_V1_BYTE,
 )
 
 # client runtime-tuning constants: canonical home is constants.py under the
