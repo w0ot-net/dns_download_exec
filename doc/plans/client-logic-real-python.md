@@ -52,32 +52,67 @@ raw source has `"\\n"` (two chars: `\` + `n`) because it sits inside a string
 literal; as real Python in `client_runtime.py` the same newline is written
 `"\n"`.  No stage-2 escape conversion is needed for `_log`.
 
-**Development header** (NOT extracted): imports from `dnsdle` packages for
-DNS/payload/mapping constants.  `ClientError`, `RetryableTransport`, and the
-six EXIT_* codes (`EXIT_USAGE` through `EXIT_WRITE`) are defined locally --
-they are client-only concepts with no canonical module home.
+**Development header** (NOT extracted): all imports needed so that
+`client_runtime.py` is importable and lint-clean as standalone Python.
+These provide name resolution for linters and IDEs; they are not included in
+the assembled standalone client (the preamble and extracted utility blocks
+supply those names instead).
 
-The seven runtime-tuning constants used in `_CLIENT_PREAMBLE` under plain
-names (`REQUEST_TIMEOUT_SECONDS`, `NO_PROGRESS_TIMEOUT_SECONDS`, `MAX_ROUNDS`,
-`MAX_CONSECUTIVE_TIMEOUTS`, `RETRY_SLEEP_BASE_MS`, `RETRY_SLEEP_JITTER_MS`,
-`QUERY_INTERVAL_MS`) have canonical counterparts in `constants.py` under the
-`GENERATED_CLIENT_DEFAULT_` prefix.  The development header aliases them:
+The complete import block:
 
 ```python
+# stdlib -- mirrors what _CLIENT_PREAMBLE injects into the assembled client
+import sys, os, re, struct, socket, subprocess, time, random
+import hashlib, zlib, argparse, base64, hmac, tempfile
+
+# dnsdle utility functions extracted into the assembled client ahead of this block
+from dnsdle.compat import (
+    encode_ascii, encode_ascii_int,
+    base32_lower_no_pad, base32_decode_no_pad,
+    byte_value, constant_time_equals,
+)
+from dnsdle.helpers import hmac_sha256, dns_name_wire_length
+from dnsdle.dnswire import _decode_name
+from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_bytes
+
+# dnsdle constants -- DNS/payload/mapping values used by the extract block
+from dnsdle.constants import (
+    LABEL_MAX_BYTES, NAME_MAX_BYTES,
+    MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL, FILE_ID_PREFIX,
+)
+
+# client runtime-tuning constants: canonical home is constants.py under the
+# GENERATED_CLIENT_DEFAULT_ prefix; aliased here to match the plain names
+# used in _CLIENT_PREAMBLE and referenced directly by _build_parser et al.
 from dnsdle import constants as _c
-REQUEST_TIMEOUT_SECONDS          = _c.GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
-NO_PROGRESS_TIMEOUT_SECONDS      = _c.GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
-MAX_ROUNDS                       = _c.GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
-MAX_CONSECUTIVE_TIMEOUTS         = _c.GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
-RETRY_SLEEP_BASE_MS              = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
-RETRY_SLEEP_JITTER_MS            = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
-QUERY_INTERVAL_MS                = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
+REQUEST_TIMEOUT_SECONDS     = _c.GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
+NO_PROGRESS_TIMEOUT_SECONDS = _c.GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
+MAX_ROUNDS                  = _c.GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
+MAX_CONSECUTIVE_TIMEOUTS    = _c.GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
+RETRY_SLEEP_BASE_MS         = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
+RETRY_SLEEP_JITTER_MS       = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
+QUERY_INTERVAL_MS           = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
+
+# client-only: no canonical module home; defined locally like EXIT_*
+EXIT_USAGE = 2; EXIT_TRANSPORT = 3; EXIT_PARSE = 4
+EXIT_CRYPTO = 5; EXIT_REASSEMBLY = 6; EXIT_WRITE = 7
+
+class ClientError(SystemExit): pass
+class RetryableTransport(Exception): pass
 ```
 
-This avoids duplicating the magic numbers (EXIT_* have no canonical home;
-these seven do) while giving linters the plain names that `_build_parser` and
-other extract-block functions reference.  These provide name resolution for
-linters and IDEs and are not included in the assembled standalone client.
+The exact set of `dnsdle.constants` names imported (e.g. `LABEL_MAX_BYTES`,
+`MAPPING_FILE_LABEL`, etc.) should be verified against the extract block's
+actual usages during execution; the list above covers the known references
+but may need adjustment if additional constants are found.
+
+The extract block boundaries are exact: the first non-marker line is
+`_VERBOSE = False` (no blank line between the opening marker and `_VERBOSE`),
+and the last non-marker line is `    sys.exit(main(sys.argv[1:]))` (no
+trailing blank line before the closing marker).  This is required because
+`"\n\n".join()` in `build_client_source()` controls inter-block spacing;
+any extra blank line inside the block shifts the assembled output and breaks
+the stage-1/stage-2 byte-compare.
 
 Remove `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE` from `_CLIENT_PREAMBLE`.
 The preamble retains only pure declarations: shebang, stdlib imports,
