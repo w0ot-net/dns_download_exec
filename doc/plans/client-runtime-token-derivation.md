@@ -61,6 +61,8 @@ query time.
 **Templates** -- replace the `SLICE_TOKENS` constant with `MAPPING_SEED` +
 `SLICE_TOKEN_LEN`, and add a small derivation function:
 
+Stager template (uses short helpers `_ab`/`_ib` already defined in template):
+
 ```python
 def _derive_slice_token(index):
     d = hmac.new(
@@ -72,9 +74,13 @@ def _derive_slice_token(index):
     return t[:SLICE_TOKEN_LEN]
 ```
 
+Client template uses its own existing helpers (`_to_ascii_bytes`,
+`_to_ascii_int_bytes`) for the same derivation.
+
 Download loops call `_derive_slice_token(i)` instead of `SLICE_TOKENS[i]`.
 
-**Generators** -- substitute `MAPPING_SEED` and `SLICE_TOKEN_LEN` instead of
+**Generators** -- substitute `MAPPING_SEED` (from `config.mapping_seed`) and
+`SLICE_TOKEN_LEN` (from `publish_item.slice_token_len`) instead of
 `SLICE_TOKENS`. Remove `SLICE_TOKENS`-specific validation (length, uniqueness)
 from the generator; those checks remain in `mapping.py` where they belong.
 
@@ -91,15 +97,29 @@ files.
 
 - `dnsdle/client_template.py`: remove `SLICE_TOKENS` constant, add
   `MAPPING_SEED` + `SLICE_TOKEN_LEN` constants, add `_derive_slice_token()`
-  helper, update download loop to compute tokens.
-- `dnsdle/stager_template.py`: same changes as client_template.
+  helper (using `_to_ascii_bytes`/`_to_ascii_int_bytes`), update download loop
+  to compute tokens; update `_validate_embedded_constants()` to validate
+  `MAPPING_SEED` (non-empty) and `SLICE_TOKEN_LEN` (positive, within
+  `DNS_MAX_LABEL_LEN`) instead of `SLICE_TOKENS` length/uniqueness/format
+  checks.
+- `dnsdle/stager_template.py`: same constant/function/loop changes as
+  client_template (using `_ab`/`_ib` helpers). No validation function exists
+  in the stager template.
 - `dnsdle/client_generator.py`: replace `SLICE_TOKENS` replacement with
-  `MAPPING_SEED` + `SLICE_TOKEN_LEN`; remove `SLICE_TOKENS` length/uniqueness
+  `MAPPING_SEED` (from `config.mapping_seed`) + `SLICE_TOKEN_LEN` (from
+  `publish_item.slice_token_len`); remove `SLICE_TOKENS` length/uniqueness
   validation from `_validate_publish_item`.
 - `dnsdle/stager_generator.py`: replace `SLICE_TOKENS` replacement with
-  `MAPPING_SEED` + `SLICE_TOKEN_LEN`.
+  `MAPPING_SEED` (from `config.mapping_seed`) + `SLICE_TOKEN_LEN` (from
+  `client_publish_item["slice_token_len"]`).
+- `dnsdle/stager_minify.py`: update rename table -- remove `SLICE_TOKENS`
+  entry, add entries for `MAPPING_SEED`, `SLICE_TOKEN_LEN`, and
+  `_derive_slice_token`.
 - `doc/architecture/QUERY_MAPPING.md`: update "Generated Client Mapping"
   section to describe runtime derivation instead of embedded token list.
 - `doc/architecture/CLIENT_GENERATION.md`: update "Embedded Constants
   Contract" to list `MAPPING_SEED` + `SLICE_TOKEN_LEN` instead of
-  `SLICE_TOKENS`; update "Download Algorithm" to describe runtime derivation.
+  `SLICE_TOKENS`; update "Download Algorithm" to describe runtime derivation;
+  update "Generator Failure Conditions" to replace `SLICE_TOKENS`-specific
+  conditions (token array length mismatch, duplicate token, token exceeds
+  label len) with `MAPPING_SEED`/`SLICE_TOKEN_LEN` validation conditions.
