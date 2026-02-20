@@ -1,0 +1,178 @@
+# Plan: Dynamic local resolver detection in the stager
+
+## Summary
+
+Add OS-specific resolver auto-discovery to the stager so it no longer requires
+`--resolver` as a mandatory argument. The stager will lift the same resolver
+logic from `resolver_linux.py` / `resolver_windows.py` that the client template
+already uses, following the identical `# __TEMPLATE_SOURCE__` sentinel pattern.
+The one-liner becomes fully zero-argument (PSK is already embedded, resolver is
+now auto-discovered).
+
+## Problem
+
+The stager currently requires an explicit `--resolver HOST` argument on every
+invocation. The generated client already has OS-specific resolver discovery
+(parsing `/etc/resolv.conf` on Linux, running `nslookup` on Windows), but the
+stager hard-codes `raise ValueError("--resolver required")` when the argument
+is absent. This forces users to know and supply the target machine's DNS
+resolver at invocation time, which is unnecessary since every machine already
+has a configured resolver.
+
+## Goal
+
+1. The stager discovers the system resolver when `--resolver` is not provided.
+2. `--resolver` remains available as an optional override.
+3. Resolver source code is lifted from the same modules the client uses -- no
+   duplication of discovery logic.
+4. The stager template becomes OS-specific (`build_stager_template(target_os)`),
+   matching the client template pattern.
+5. The generated one-liner is fully standalone: no arguments required.
+6. The discovered resolver is forwarded to the exec'd client via `sys.argv`
+   to avoid redundant re-discovery.
+
+## Design
+
+### Template restructuring
+
+Split the monolithic `_STAGER_TEMPLATE` string in `stager_template.py` into
+three parts, mirroring `client_template.py`'s architecture:
+
+- **`_STAGER_PREFIX`**: shebang, imports (with `@@EXTRA_IMPORTS@@` placeholder),
+  embedded constants, and all helper function definitions through `_send_query`.
+- **`_STAGER_DISCOVER`**: a small `_discover_resolver()` wrapper function with
+  a `@@LOADER_FN@@` build-time placeholder.
+- **`_STAGER_SUFFIX`**: the `# __RUNTIME__` section, modified to call
+  `_discover_resolver()` when `--resolver` is absent.
+
+`build_stager_template(target_os)` assembles:
+`prefix + lifted_resolver_source + discover + suffix`
+
+For `target_os == "linux"`:
+- `@@EXTRA_IMPORTS@@` = empty string (no extra imports needed)
+- Lifted source from `resolver_linux.py` (after sentinel)
+- `@@LOADER_FN@@` = `_load_unix_resolvers`
+
+For `target_os == "windows"`:
+- `@@EXTRA_IMPORTS@@` = `import re\nimport subprocess`
+- Lifted source from `resolver_windows.py` (after sentinel)
+- `@@LOADER_FN@@` = `_load_windows_resolvers`
+
+### Resolver discovery wrapper
+
+Minimal function inlined into the stager:
+
+```python
+def _discover_resolver():
+    _rh = @@LOADER_FN@@()
+    if not _rh:
+        raise ValueError("no resolver")
+    return _rh[0]
+```
+
+Returns the first resolver host string. Fails fast with `ValueError` if the
+OS-specific loader returns an empty list (no resolvers configured).
+
+### Runtime section changes
+
+Replace:
+```python
+if not resolver:
+    raise ValueError("--resolver required")
+```
+
+With:
+```python
+if not resolver:
+    resolver = _discover_resolver()
+    _sa = ["--resolver", resolver] + list(_sa)
+```
+
+The discovered resolver is injected into `_sa` so the exec'd client receives
+it via `sys.argv` and does not need to re-discover.
+
+### One-liner format
+
+Remove the trailing ` --resolver RESOLVER` from the generated one-liner in
+`stager_generator.py`. The one-liner becomes:
+```
+python3 -c "import base64,zlib;exec(zlib.decompress(base64.b64decode('...')))"
+```
+
+### Resolver source lifting
+
+Import `_lift_resolver_source` from `dnsdle.client_template` rather than
+duplicating it. Both template modules live in the same package and share the
+same resolver source files; the coupling is justified and avoids code
+duplication. No circular import exists (`client_template` does not import
+`stager_template`).
+
+### Minifier updates
+
+Add rename entries to `_RENAME_TABLE` in `stager_minify.py` for all new
+identifiers introduced by the lifted resolver code. Entries must be inserted
+at length-sorted positions to maintain the longest-first ordering invariant.
+
+New function/constant names requiring entries (both platforms, since the rename
+table is shared and unmatched entries are harmless no-ops):
+
+- `_discover_resolver`
+- `_load_unix_resolvers`
+- `_parse_nslookup_output`
+- `_load_windows_resolvers`
+- `_run_nslookup`
+- `server_index`
+- `_IPV4_RE`
+- `resolvers`
+- `raw_line`
+- `run_fn`
+
+Local variables like `handle`, `stripped`, `result`, `proc`, `lines`, `output`,
+`match`, `ip` should be evaluated for addition based on whether they provide
+worthwhile compression without introducing word-boundary collisions in string
+literals (e.g., `"nameserver"`, `"Server:"`, `"non-authoritative answer"`).
+
+### Generator changes
+
+In `generate_stagers()`, build the template per `target_os` instead of once:
+
+```python
+template_by_os = {}
+...
+for artifact in generation_result["artifacts"]:
+    target_os = artifact["target_os"]
+    if target_os not in template_by_os:
+        template_by_os[target_os] = build_stager_template(target_os)
+    template = template_by_os[target_os]
+    stager = generate_stager(config, template, client_item, target_os)
+```
+
+## Affected Components
+
+- `dnsdle/stager_template.py`: split monolithic template into prefix/discover/
+  suffix; import `_lift_resolver_source` from `client_template`; change
+  `build_stager_template()` to `build_stager_template(target_os)`; add
+  `_discover_resolver` wrapper and `@@EXTRA_IMPORTS@@`/`@@LOADER_FN@@`
+  build-time placeholders; modify runtime section to auto-discover.
+- `dnsdle/stager_generator.py`: build template per `target_os` in
+  `generate_stagers()`; remove ` --resolver RESOLVER` from one-liner format.
+- `dnsdle/stager_minify.py`: add rename entries for resolver-related
+  identifiers from both platform resolver modules.
+- `dnsdle/resolver_linux.py`: no changes (source of truth, lifted via sentinel).
+- `dnsdle/resolver_windows.py`: no changes (source of truth, lifted via
+  sentinel).
+- `dnsdle/client_template.py`: no changes (`_lift_resolver_source` imported
+  from here).
+
+## Test Breakage
+
+The following tests call `build_stager_template()` with no arguments and will
+fail after the signature changes to `build_stager_template(target_os)`:
+
+- `unit_tests/test_stager_template.py`: `_build_ns()` helper on line 26.
+- `unit_tests/test_stager_minify.py`: `test_full_template_compiles_after_minify`
+  on line 98. This test also uses stale `SLICE_TOKENS` substitution (pre-
+  existing breakage).
+- `unit_tests/test_stager_generator.py`: three tests on lines 44, 57, 76.
+
+Tests are not modified per repository policy.
