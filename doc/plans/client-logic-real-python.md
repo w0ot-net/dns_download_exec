@@ -36,18 +36,60 @@ untouchable by linters, IDEs, and static analysis.
 
 ## Design
 
-### New module: `dnsdle/client_runtime.py`
+The change is executed in two stages so that the byte-compare validation is
+structurally valid.
 
-A real Python module containing all client-specific functions.  Structured in
-two sections:
+### Stage 1: Relocate four preamble functions (no escape changes)
 
-**Development header** (NOT extracted): module-level imports from `dnsdle`
-packages plus local definitions of `ClientError`, `RetryableTransport`, and
-constants.  These provide name resolution for linters and IDEs.  They are not
-included in the assembled standalone client -- the preamble and extracted
-utility blocks provide those names instead.
+Create `dnsdle/client_runtime.py` with a development header and a single
+extract block `# __EXTRACT: client_runtime__` containing only `_VERBOSE`,
+`_log`, `_TOKEN_RE`, and `_LABEL_RE`, copied verbatim from `_CLIENT_PREAMBLE`
+with no escape changes.
 
-**Extract block** `# __EXTRACT: client_runtime__`: wraps all client functions:
+**Development header** (NOT extracted): imports from `dnsdle` packages for
+DNS/payload/mapping constants.  `ClientError`, `RetryableTransport`, and the
+six EXIT_* codes (`EXIT_USAGE` through `EXIT_WRITE`) are defined locally --
+they are client-only concepts with no canonical module home, and three lines
+of local definitions keeps `constants.py` free of client exit-code semantics.
+These provide name resolution for linters and IDEs and are not included in the
+assembled standalone client.
+
+Remove `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE` from `_CLIENT_PREAMBLE`.
+The preamble retains only pure declarations: shebang, stdlib imports,
+constants, PY2/type detection, and the three exception classes (`ClientError`,
+`RetryableTransport`, `DnsParseError`).  ~75 lines, no logic.
+
+Add `_CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]` and update
+`build_client_source()` to extract from `client_runtime.py`, appending after
+the cname block:
+
+```python
+runtime_blocks = extract_functions("client_runtime.py", _CLIENT_RUNTIME_EXTRACTIONS)
+extracted_parts = (
+    compat_blocks + helpers_blocks + dnswire_blocks
+    + cname_blocks + runtime_blocks
+)
+extracted_source = "\n\n".join(extracted_parts)
+source = _CLIENT_PREAMBLE + extracted_source + "\n"
+```
+
+`_CLIENT_SUFFIX` remains unchanged at the end of this stage.  The assembled
+output changes structurally (the four functions move to after the utility
+extractions) but no escape conversions occur, so correctness is verifiable by
+inspection.
+
+### Stage 2: Move `_CLIENT_SUFFIX` to real Python (escape-only changes)
+
+Before beginning stage 2, capture the stage-1 assembled output as a baseline:
+
+```
+python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').write(m.build_client_source())"
+```
+
+Append all `_CLIENT_SUFFIX` content into the `client_runtime` extract block
+as real Python, converting double-escapes to single-escapes (`"\\n"` →
+`"\n"`, `b"\\x00"` → `b"\x00"`, `"\\d"` → `r"\d"`, etc.) at all ~8-10
+escape sites.  The full extract block now contains all client functions:
 `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE`, `_derive_file_id`,
 `_derive_file_tag`, `_derive_slice_token`, `_encode_name`,
 `_build_dns_query`, `_parse_response_for_cname`, `_extract_payload_text`,
@@ -61,70 +103,21 @@ utility blocks provide those names instead.
 `_validate_cli_params`, `_download_slices`, `_build_parser`,
 `_parse_runtime_args`, `main`, and the `if __name__` block.
 
-The development header imports from `dnsdle.constants` for all DNS/payload/
-mapping constants.  `ClientError`, `RetryableTransport`, and the six EXIT_*
-codes (`EXIT_USAGE` through `EXIT_WRITE`) are defined locally in the
-development header -- they are client-only concepts with no canonical module
-home, and three lines of local definitions keeps `constants.py` free of
-client exit-code semantics.
+Delete `_CLIENT_SUFFIX` from `client_standalone.py`.  Remove the now-dead
+`import os` and `import re` statements.
 
-### Shrink `_CLIENT_PREAMBLE`
+**Validation**: capture the stage-2 assembled output and byte-compare against
+the stage-1 baseline:
 
-Remove `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE` from the preamble --
-they move into the `client_runtime` extract block.  The preamble retains
-only pure declarations: shebang, stdlib imports, constants, PY2/type
-detection, and the three exception classes (`ClientError`,
-`RetryableTransport`, `DnsParseError`).  ~75 lines, no logic.
-
-### Delete `_CLIENT_SUFFIX`
-
-The entire `_CLIENT_SUFFIX` string literal is deleted.  Its content becomes
-real Python inside the `client_runtime` extract block.
-
-### Update `build_client_source()`
-
-Add a `_CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]` spec.  Extract
-from `client_runtime.py` and append the block after the canonical utility
-extractions:
-
-```python
-runtime_blocks = extract_functions("client_runtime.py", _CLIENT_RUNTIME_EXTRACTIONS)
-extracted_parts = (
-    compat_blocks + helpers_blocks + dnswire_blocks
-    + cname_blocks + runtime_blocks
-)
-extracted_source = "\n\n".join(extracted_parts)
-source = _CLIENT_PREAMBLE + extracted_source + "\n"
+```
+python -c "import dnsdle.client_standalone as m; open('/tmp/stage2.py','wb').write(m.build_client_source())"
+cmp /tmp/stage1.py /tmp/stage2.py
 ```
 
-This preserves the existing assembly order: preamble -> extracted utilities
--> client logic.  The trailing `"\n"` ensures the assembled source ends
-with a newline.
-
-### Remove dead imports from `client_standalone.py`
-
-After removing `_CLIENT_SUFFIX`, the `import os` and `import re` statements
-in `client_standalone.py` are unused by any real Python code.  Remove them.
-
-### Un-escape backslashes
-
-The `_CLIENT_SUFFIX` string literal double-escapes backslashes (e.g.
-`"\\n"` for newline, `b"\\x00"` for null byte, `"\\d"` for regex digit).
-When the code moves to real Python in `client_runtime.py`, these become
-normal single-backslash escapes (`"\n"`, `b"\x00"`, `r"\d"`).
-
-There are roughly 8-10 escape sites in the suffix.  The `compile()` check
-in `build_client_source()` validates only syntax; a wrong un-escape (e.g.
-`\\.` left as `\\.` in `_IPV4_RE`, or a byte literal with a wrong escape)
-would produce an assembled client that compiles but has subtly broken
-behavior.
-
-**Validation**: before starting the change, capture the assembled standalone
-output with `python -c "import dnsdle.client_standalone as m; open('/tmp/before.py','wb').write(m.build_client_source())"`.
-After the change, capture the new output identically to `/tmp/after.py` and
-byte-compare: `cmp /tmp/before.py /tmp/after.py`.  A byte-identical result
-confirms all escape sites were converted correctly and no semantic regression
-was introduced.
+Stage 1 and stage 2 have identical assembly structure (same preamble, same
+utility blocks, same `client_runtime` block in the same position), so `cmp`
+is a valid comprehensive check.  A byte-identical result confirms all escape
+sites were converted correctly with no semantic regression.
 
 ## Affected Components
 
