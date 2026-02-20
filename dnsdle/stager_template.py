@@ -476,7 +476,7 @@ sys.argv = [
     "--response-label", RESPONSE_LABEL,
     "--dns-edns-size", str(DNS_EDNS_SIZE),
     "--resolver", resolver,
-]
+] + _sa
 exec(client_source)
 '''
 
