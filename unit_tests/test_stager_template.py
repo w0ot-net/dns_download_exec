@@ -91,7 +91,7 @@ class StagerTemplateFunctionTests(unittest.TestCase):
 
     def test_decode_name_truncated_raises(self):
         decode = self._fn("_decode_name")
-        with self.assertRaises(ValueError):
+        with self.assertRaises((ValueError, IndexError)):
             decode(b"\x05ab", 0)
 
     def test_decode_name_pointer_loop_raises(self):

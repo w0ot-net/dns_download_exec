@@ -57,21 +57,16 @@ def _encode_name(labels):
 # Decode DNS name from wire format with pointer decompression
 def _decode_name(msg, off):
     ba = bytearray(msg)
-    ml = len(ba)
     labels = []
     jumped = False
     end = None
     visited = set()
     while True:
-        if off >= ml:
-            raise ValueError()
         first = ba[off]
         if (first & 0xC0) == 0xC0:
-            if off + 1 >= ml:
-                raise ValueError()
             ptr = ((first & 0x3F) << 8) | ba[off + 1]
             if ptr in visited:
-                raise ValueError()
+                raise ValueError("loop", ptr)
             visited.add(ptr)
             if not jumped:
                 end = off + 2
@@ -79,13 +74,11 @@ def _decode_name(msg, off):
             off = ptr
             continue
         if first & 0xC0:
-            raise ValueError()
+            raise ValueError("ltype", first)
         off += 1
         if first == 0:
             break
         eo = off + first
-        if eo > ml:
-            raise ValueError()
         label = "".join(chr(ba[j]) for j in range(off, eo)).lower()
         labels.append(label)
         off = eo
@@ -107,21 +100,19 @@ def _build_query(qid, labels):
 
 # Parse DNS response and extract CNAME target labels
 def _parse_cname(msg, qid, qname_labels):
-    if len(msg) < 12:
-        raise ValueError()
     rid, flags, qdcount, ancount = struct.unpack("!HHHH", msg[:8])
     if rid != (qid & 0xFFFF):
-        raise ValueError()
+        raise ValueError("id", rid, qid & 0xFFFF)
     if not (flags & 0x8000):
-        raise ValueError()
+        raise ValueError("qr", flags)
     if flags & 0x0200:
-        raise ValueError()
+        raise ValueError("tc", flags)
     if flags & 0x7800:
-        raise ValueError()
+        raise ValueError("op", flags)
     if (flags & 0x000F) != 0:
-        raise ValueError()
+        raise ValueError("rc", flags & 0xF)
     if qdcount != 1:
-        raise ValueError()
+        raise ValueError("qd", qdcount)
     off = 12
     _qlabels, off = _decode_name(msg, off)
     off += 4
@@ -129,8 +120,6 @@ def _parse_cname(msg, qid, qname_labels):
     cname = None
     for _i in range(ancount):
         rr_name, off = _decode_name(msg, off)
-        if off + 10 > len(msg):
-            raise ValueError()
         rr_type, rr_class, _ttl, rdlen = struct.unpack("!HHIH", msg[off:off + 10])
         off += 10
         rdata_off = off
@@ -138,7 +127,7 @@ def _parse_cname(msg, qid, qname_labels):
         if rr_type == 5 and rr_class == 1 and rr_name == expected:
             cname, _ce = _decode_name(msg, rdata_off)
     if cname is None:
-        raise ValueError()
+        raise ValueError("no_cname", ancount)
     return cname
 
 
@@ -147,9 +136,9 @@ def _extract_payload(cname_labels):
     suffix = (RESPONSE_LABEL,) + tuple(DOMAIN_LABELS)
     slen = len(suffix)
     if len(cname_labels) <= slen:
-        raise ValueError()
+        raise ValueError("short_cname", cname_labels)
     if tuple(cname_labels[-slen:]) != suffix:
-        raise ValueError()
+        raise ValueError("bad_suffix", cname_labels)
     return "".join(cname_labels[:-slen])
 
 
@@ -230,22 +219,20 @@ def _expected_mac(mk, si, ciphertext):
 def _process_slice(ek, mk, si, payload_text):
     record = _b32d(payload_text)
     ba = bytearray(record)
-    if len(ba) < 12:
-        raise ValueError()
     if ba[0] != 0x01:
-        raise ValueError()
+        raise ValueError("ver", ba[0])
     if ba[1] != 0x00:
-        raise ValueError()
+        raise ValueError("rsvd", ba[1])
     clen = struct.unpack("!H", record[2:4])[0]
     if clen == 0:
-        raise ValueError()
+        raise ValueError("zero_ct")
     if 4 + clen + 8 != len(record):
-        raise ValueError()
+        raise ValueError("rec_sz", len(record), 4 + clen + 8)
     ciphertext = record[4:4 + clen]
     mac = record[4 + clen:]
     em = _expected_mac(mk, si, ciphertext)
     if not _secure_compare(em, mac):
-        raise ValueError()
+        raise ValueError("mac", si)
     stream = _keystream(ek, si, clen)
     return _xor(ciphertext, stream)
 
@@ -288,10 +275,10 @@ for si in range(TOTAL_SLICES):
     slices[si] = _process_slice(ek, mk, si, payload)
 compressed = b"".join(slices[i] for i in range(TOTAL_SLICES))
 if len(compressed) != COMPRESSED_SIZE:
-    raise ValueError()
+    raise ValueError("sz", len(compressed), COMPRESSED_SIZE)
 plaintext = zlib.decompress(compressed)
 if hashlib.sha256(plaintext).hexdigest().lower() != PLAINTEXT_SHA256_HEX:
-    raise ValueError()
+    raise ValueError("sha256")
 client_source = plaintext
 if not isinstance(client_source, str):
     client_source = client_source.decode("ascii")
