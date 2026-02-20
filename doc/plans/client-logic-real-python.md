@@ -49,10 +49,29 @@ with no escape changes.
 **Development header** (NOT extracted): imports from `dnsdle` packages for
 DNS/payload/mapping constants.  `ClientError`, `RetryableTransport`, and the
 six EXIT_* codes (`EXIT_USAGE` through `EXIT_WRITE`) are defined locally --
-they are client-only concepts with no canonical module home, and three lines
-of local definitions keeps `constants.py` free of client exit-code semantics.
-These provide name resolution for linters and IDEs and are not included in the
-assembled standalone client.
+they are client-only concepts with no canonical module home.
+
+The seven runtime-tuning constants used in `_CLIENT_PREAMBLE` under plain
+names (`REQUEST_TIMEOUT_SECONDS`, `NO_PROGRESS_TIMEOUT_SECONDS`, `MAX_ROUNDS`,
+`MAX_CONSECUTIVE_TIMEOUTS`, `RETRY_SLEEP_BASE_MS`, `RETRY_SLEEP_JITTER_MS`,
+`QUERY_INTERVAL_MS`) have canonical counterparts in `constants.py` under the
+`GENERATED_CLIENT_DEFAULT_` prefix.  The development header aliases them:
+
+```python
+from dnsdle import constants as _c
+REQUEST_TIMEOUT_SECONDS          = _c.GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
+NO_PROGRESS_TIMEOUT_SECONDS      = _c.GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
+MAX_ROUNDS                       = _c.GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
+MAX_CONSECUTIVE_TIMEOUTS         = _c.GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
+RETRY_SLEEP_BASE_MS              = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
+RETRY_SLEEP_JITTER_MS            = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
+QUERY_INTERVAL_MS                = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
+```
+
+This avoids duplicating the magic numbers (EXIT_* have no canonical home;
+these seven do) while giving linters the plain names that `_build_parser` and
+other extract-block functions reference.  These provide name resolution for
+linters and IDEs and are not included in the assembled standalone client.
 
 Remove `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE` from `_CLIENT_PREAMBLE`.
 The preamble retains only pure declarations: shebang, stdlib imports,
