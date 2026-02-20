@@ -12,6 +12,7 @@ from dnsdle.mapping import apply_mapping
 from dnsdle.publish import build_publish_items
 from dnsdle.publish import build_publish_items_from_sources
 from dnsdle.server import serve_runtime
+from dnsdle.stager_generator import generate_stagers
 from dnsdle.state import build_runtime_state
 from dnsdle.state import StartupError
 from dnsdle.state import to_publish_item
@@ -149,4 +150,15 @@ def build_startup_state(argv=None):
         budget_info=budget_info,
     )
 
-    return runtime_state, generation_result
+    # Partition client mapped items for stager generation
+    artifact_filenames = set(
+        a["filename"] for a in generation_result["artifacts"]
+    )
+    client_mapped_items = [
+        item for item in combined_mapped
+        if item["source_filename"] in artifact_filenames
+    ]
+
+    stagers = generate_stagers(config, generation_result, client_mapped_items)
+
+    return runtime_state, generation_result, stagers

@@ -29,7 +29,7 @@ class StartupStateTests(unittest.TestCase):
         file_path = self._write_file("sample.bin", payload)
         client_out = os.path.join(self.tmpdir, "clients_out")
 
-        runtime, generation_result = build_startup_state(
+        runtime, generation_result, stagers = build_startup_state(
             [
                 "--domains",
                 "example.com",

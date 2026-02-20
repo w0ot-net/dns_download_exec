@@ -22,7 +22,7 @@ def _emit_record(record, level=None, category=None, required=False):
 def main(argv=None):
     reset_active_logger()
     try:
-        runtime_state, generation_result = build_startup_state(argv)
+        runtime_state, generation_result, stagers = build_startup_state(argv)
     except StartupError as exc:
         _emit_record(
             exc.to_log_record(),
@@ -74,6 +74,20 @@ def main(argv=None):
         level="info",
         category="startup",
     )
+
+    for stager in stagers:
+        _emit_record(
+            {
+                "classification": "stager_ready",
+                "phase": "startup",
+                "reason_code": "stager_ready",
+                "source_filename": stager["source_filename"],
+                "target_os": stager["target_os"],
+                "oneliner": stager["oneliner"],
+            },
+            level="info",
+            category="startup",
+        )
 
     config = runtime_state.config
     _emit_record(

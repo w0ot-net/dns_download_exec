@@ -16,6 +16,7 @@ _PATCHABLE = (
     "build_runtime_state",
     "generate_client_artifacts",
     "build_publish_items_from_sources",
+    "generate_stagers",
 )
 
 
@@ -27,6 +28,10 @@ def _noop_build_publish_items_from_sources(
     sources, compression_level, max_ciphertext_slice_bytes,
     seen_plaintext_sha256=None, seen_file_ids=None,
 ):
+    return []
+
+
+def _noop_generate_stagers(config, generation_result, client_publish_items):
     return []
 
 
@@ -55,6 +60,7 @@ class StartupConvergenceTests(unittest.TestCase):
         runtime_stub,
         generate_stub=None,
         source_publish_stub=None,
+        stager_stub=None,
     ):
         startup_module.parse_cli_args = parse_stub
         startup_module.build_config = build_config_stub
@@ -68,6 +74,9 @@ class StartupConvergenceTests(unittest.TestCase):
         )
         startup_module.build_publish_items_from_sources = (
             source_publish_stub or _noop_build_publish_items_from_sources
+        )
+        startup_module.generate_stagers = (
+            stager_stub or _noop_generate_stagers
         )
 
     def test_converges_over_multiple_promotions_for_collision_heavy_manifest(self):
@@ -120,6 +129,7 @@ class StartupConvergenceTests(unittest.TestCase):
                     "file_id": "m%d" % idx,
                     "file_tag": "t%d" % idx,
                     "slice_tokens": tuple("s%d_%d" % (idx, j) for j in range(value)),
+                    "source_filename": "f%d.bin" % idx,
                 }
                 for idx, value in enumerate(token_lens)
             ]
@@ -151,7 +161,7 @@ class StartupConvergenceTests(unittest.TestCase):
             mapping_stub,
             runtime_stub,
         )
-        runtime_state, generation_result = startup_module.build_startup_state(["--dummy"])
+        runtime_state, generation_result, _stagers = startup_module.build_startup_state(["--dummy"])
 
         budget_queries = [entry[1] for entry in call_log if entry[0] == "budget"]
         publish_budgets = [entry[1] for entry in call_log if entry[0] == "publish"]
@@ -210,6 +220,7 @@ class StartupConvergenceTests(unittest.TestCase):
                     "file_id": "m%d" % idx,
                     "file_tag": "t%d" % idx,
                     "slice_tokens": tuple("s%d_%d" % (idx, j) for j in range(value)),
+                    "source_filename": "f%d.bin" % idx,
                 }
                 for idx, value in enumerate(token_lens)
             ]
@@ -231,7 +242,7 @@ class StartupConvergenceTests(unittest.TestCase):
             mapping_stub,
             runtime_stub,
         )
-        runtime_state, _generation_result = startup_module.build_startup_state(["--dummy"])
+        runtime_state, _generation_result, _stagers = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual([1, 4], budget_calls)
         self.assertEqual((64, 4, (2, 2, 1)), runtime_state)
@@ -267,12 +278,12 @@ class StartupConvergenceTests(unittest.TestCase):
         def mapping_stub(publish_items, _config):
             if publish_items[0]["budget"] == 72:
                 return [
-                    {"slice_token_len": 3, "file_id": "m0", "file_tag": "t0", "slice_tokens": ("a", "b", "c")},
-                    {"slice_token_len": 2, "file_id": "m1", "file_tag": "t1", "slice_tokens": ("x", "y")},
+                    {"slice_token_len": 3, "file_id": "m0", "file_tag": "t0", "slice_tokens": ("a", "b", "c"), "source_filename": "f0.bin"},
+                    {"slice_token_len": 2, "file_id": "m1", "file_tag": "t1", "slice_tokens": ("x", "y"), "source_filename": "f1.bin"},
                 ]
             return [
-                {"slice_token_len": 3, "file_id": "m0", "file_tag": "t0", "slice_tokens": ("a", "b", "c")},
-                {"slice_token_len": 3, "file_id": "m1", "file_tag": "t1", "slice_tokens": ("x", "y", "z")},
+                {"slice_token_len": 3, "file_id": "m0", "file_tag": "t0", "slice_tokens": ("a", "b", "c"), "source_filename": "f0.bin"},
+                {"slice_token_len": 3, "file_id": "m1", "file_tag": "t1", "slice_tokens": ("x", "y", "z"), "source_filename": "f1.bin"},
             ]
 
         def runtime_stub(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
@@ -291,7 +302,7 @@ class StartupConvergenceTests(unittest.TestCase):
             mapping_stub,
             runtime_stub,
         )
-        result, _generation_result = startup_module.build_startup_state(["--dummy"])
+        result, _generation_result, _stagers = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual("ok", result)
         self.assertIs(fake_config, captured["config"])
@@ -424,12 +435,15 @@ class StartupConvergenceTests(unittest.TestCase):
         def mapping_stub(publish_items, _config):
             if len(publish_items) == 1:
                 return [{"file_id": "u0", "file_tag": "tf0",
-                         "slice_token_len": 1, "slice_tokens": ("a",)}]
+                         "slice_token_len": 1, "slice_tokens": ("a",),
+                         "source_filename": "u0.bin"}]
             return [
                 {"file_id": "u0", "file_tag": "tf0",
-                 "slice_token_len": 1, "slice_tokens": ("a",)},
+                 "slice_token_len": 1, "slice_tokens": ("a",),
+                 "source_filename": "u0.bin"},
                 {"file_id": "c0", "file_tag": "cf0",
-                 "slice_token_len": 1, "slice_tokens": ("b",)},
+                 "slice_token_len": 1, "slice_tokens": ("b",),
+                 "source_filename": "client.py"},
             ]
 
         captured = {}
@@ -445,12 +459,13 @@ class StartupConvergenceTests(unittest.TestCase):
             generate_stub=generate_stub,
             source_publish_stub=source_publish_stub,
         )
-        runtime_state, generation_result = startup_module.build_startup_state(["--dummy"])
+        runtime_state, generation_result, stagers = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual("final_state", runtime_state)
         self.assertEqual(1, generation_result["artifact_count"])
         self.assertEqual(2, captured["mapped_count"])
         self.assertEqual(["u0", "c0"], captured["file_ids"])
+        self.assertEqual([], stagers)
 
 
 if __name__ == "__main__":
