@@ -83,9 +83,8 @@ class StartupConvergenceTests(unittest.TestCase):
         call_log = []
         fake_config = _FakeConfig()
 
-        budget_by_query_len = {1: 120, 3: 80, 5: 48}
+        budget_by_query_len = {4: 80, 5: 48}
         mapping_len_by_budget = {
-            120: (3, 2, 3),
             80: (5, 4, 5),
             48: (5, 5, 4),
         }
@@ -167,9 +166,9 @@ class StartupConvergenceTests(unittest.TestCase):
         publish_budgets = [entry[1] for entry in call_log if entry[0] == "publish"]
         map_lens = [entry[1] for entry in call_log if entry[0] == "map"]
 
-        self.assertEqual([1, 3, 5], budget_queries)
-        self.assertEqual([120, 80, 48], publish_budgets)
-        self.assertEqual([(3, 2, 3), (5, 4, 5), (5, 5, 4), (5, 5, 4)], map_lens)
+        self.assertEqual([4, 5], budget_queries)
+        self.assertEqual([80, 48], publish_budgets)
+        self.assertEqual([(5, 4, 5), (5, 5, 4), (5, 5, 4)], map_lens)
         self.assertEqual(48, runtime_state["max_ciphertext_slice_bytes"])
         self.assertEqual(5, runtime_state["query_token_len"])
         self.assertEqual((5, 5, 4), runtime_state["realized_token_lens"])
@@ -182,9 +181,8 @@ class StartupConvergenceTests(unittest.TestCase):
         fake_config = _FakeConfig()
         budget_calls = []
 
-        budget_by_query_len = {1: 100, 4: 64}
+        budget_by_query_len = {4: 64}
         mapping_len_by_budget = {
-            100: (4, 4, 3),
             64: (2, 2, 1),
         }
 
@@ -244,7 +242,7 @@ class StartupConvergenceTests(unittest.TestCase):
         )
         runtime_state, _generation_result, _stagers = startup_module.build_startup_state(["--dummy"])
 
-        self.assertEqual([1, 4], budget_calls)
+        self.assertEqual([4], budget_calls)
         self.assertEqual((64, 4, (2, 2, 1)), runtime_state)
 
     def test_runtime_state_is_built_from_final_iteration_only(self):
@@ -427,7 +425,7 @@ class StartupConvergenceTests(unittest.TestCase):
         runtime_state, generation_result, stagers = startup_module.build_startup_state(["--dummy"])
 
         self.assertEqual("final_state", runtime_state)
-        self.assertEqual(2, captured["query_token_len"])
+        self.assertEqual(4, captured["query_token_len"])
         self.assertEqual(["u0", "c0"], captured["file_ids"])
 
     def test_phase2_combines_client_items_into_final_runtime_state(self):

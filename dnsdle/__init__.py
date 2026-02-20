@@ -51,7 +51,7 @@ def build_startup_state(argv=None):
     # Convergence loop: Phase 1 converges user files, Phase 2 adds client
     # scripts.  If client scripts push the combined token length past the
     # Phase 1 budget we restart with the higher requirement.
-    query_token_len = 1
+    query_token_len = 4
     for _outer in range(10):
         # Phase 1: user files -- inner convergence loop
         while True:
