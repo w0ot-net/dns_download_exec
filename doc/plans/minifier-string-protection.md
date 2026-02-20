@@ -62,3 +62,17 @@ No changes to the rename table, the template, or any other file.
 - `dnsdle/stager_minify.py`: Add `_STRING_RE` compiled regex; wrap the
   rename loop in `minify()` with extract-before / restore-after logic
   (roughly +15 lines).
+
+## Execution Notes
+
+Executed 2026-02-20.  Implemented as specified with no deviations.
+
+- Added `_STRING_RE` and `_PLACEHOLDER_RE` compiled regexes.
+- Wrapped Pass 3 in `minify()` with extract-before / restore-after using
+  a closure that appends to a `saved` list and returns `__S<n>__`.
+- Validated: all three previously-corrupted flags (`--total-slices`,
+  `--compressed-size`, `--response-label`) are now preserved.  All 12
+  CLI flag names verified intact.  Minified output compiles cleanly
+  (12374 -> 7508 bytes with dummy substitution values).
+
+Commit: PENDING

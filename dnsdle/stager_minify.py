@@ -164,6 +164,11 @@ _RENAME_COMPILED = [
     for old, new in _RENAME_TABLE
 ]
 
+# Match string literals (single/double quoted, optional b prefix) so the
+# rename pass never touches content inside quotes.
+_STRING_RE = re.compile(r'''b?(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')''')
+_PLACEHOLDER_RE = re.compile(r"__S(\d+)__")
+
 
 def minify(source):
     """Minify stager source. Deterministic: same input -> same output."""
@@ -173,9 +178,18 @@ def minify(source):
     # Pass 2: strip blank lines.
     lines = [ln for ln in lines if ln.strip()]
     src = "\n".join(lines)
+    # Extract string literals before renaming so renames cannot corrupt
+    # content inside quotes.
+    saved = []
+    def _extract(m):
+        saved.append(m.group(0))
+        return "__S%d__" % (len(saved) - 1)
+    src = _STRING_RE.sub(_extract, src)
     # Pass 3: rename variables (longest names first).
     for pattern, new in _RENAME_COMPILED:
         src = pattern.sub(new, src)
+    # Restore original string literals.
+    src = _PLACEHOLDER_RE.sub(lambda m: saved[int(m.group(1))], src)
     lines = src.split("\n")
     # Pass 4: reduce indentation (4 spaces -> 1 space per level).
     reduced = []
