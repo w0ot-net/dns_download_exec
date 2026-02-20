@@ -55,32 +55,44 @@ After implementation:
 
 The client becomes a real standalone Python file (`dnsdle/client_standalone.py`)
 that is assembled at server startup from canonical source modules.  It takes
-ALL parameters via CLI:
+ALL parameters via CLI.  Several values that the current template embeds
+are derived at runtime instead, significantly reducing the parameter count.
 
-**Required (per-file):**
-- `--file-id`, `--publish-version`, `--file-tag`
-- `--total-slices`, `--compressed-size`
-- `--sha256` (plaintext SHA-256 hex)
-- `--mapping-seed`, `--token-len`
-- `--source-filename`
-- `--domains` (comma-separated base domains)
+**Derived at runtime (not passed):**
+- `file_id` = `sha256("dnsdle:file-id:v1|" + publish_version).hexdigest()[:16]`.
+  Computed from `--publish-version`.
+- `file_tag` = `base32_lower_no_pad(HMAC-SHA256(mapping_seed, "dnsdle:file:v1|" + publish_version))[:file_tag_len]`.
+  Computed from `--mapping-seed`, `--publish-version`, and `--file-tag-len`.
+  `file_tag_len` is deployment-wide (collision resolution never promotes it;
+  only `slice_token_len` is promoted).
+- `source_filename` = `"dnsdle_" + file_id`.  Used for the default output
+  path when `--out` is not specified.
+- `TARGET_OS` — detected via `sys.platform`.
+- `CRYPTO_PROFILE`, `WIRE_PROFILE` — hardcoded to `"v1"` in client source.
 
-**Required (runtime):**
+**Required per-file (5 values):**
+- `--publish-version` — root identity; `file_id` and `file_tag` derive from it
+- `--total-slices` — needed to know when download is complete
+- `--compressed-size` — needed for MAC verification (part of MAC message)
+- `--sha256` — plaintext SHA-256 hex for final verification
+- `--token-len` — slice token truncation length (per-file, varies with
+  collision resolution)
+
+**Required deployment-wide:**
 - `--psk`
+- `--domains` (comma-separated base domains)
+- `--mapping-seed`
 
-**Optional (with defaults):**
+**Optional deployment-wide (with defaults):**
 - `--resolver` (default: system resolver discovery)
-- `--out` (default: deterministic temp path from `--source-filename`)
+- `--out` (default: deterministic temp path from derived `file_id`)
+- `--file-tag-len` (default: `4`; deployment-wide, set by server config)
 - `--response-label` (default: `"r"`)
 - `--dns-max-label-len` (default: `63`)
 - `--dns-edns-size` (default: `512`)
 - `--timeout`, `--no-progress-timeout`, `--max-rounds`,
   `--max-consecutive-timeouts`, `--query-interval` (current defaults)
 - `--verbose`
-
-**Removed:**
-- `TARGET_OS` — detected at runtime via `sys.platform`.
-- `CRYPTO_PROFILE`, `WIRE_PROFILE` — hardcoded to `"v1"` in client source.
 
 ### Cross-platform resolver discovery
 
@@ -151,15 +163,13 @@ sys.argv = [
     "c",
     "--psk", psk,
     "--domains", DOMAINS_STR,
-    "--file-id", PAYLOAD_FILE_ID,
+    "--mapping-seed", MAPPING_SEED,
     "--publish-version", PAYLOAD_PUBLISH_VERSION,
     "--total-slices", str(PAYLOAD_TOTAL_SLICES),
     "--compressed-size", str(PAYLOAD_COMPRESSED_SIZE),
     "--sha256", PAYLOAD_SHA256,
-    "--file-tag", PAYLOAD_FILE_TAG,
-    "--mapping-seed", MAPPING_SEED,
     "--token-len", str(PAYLOAD_TOKEN_LEN),
-    "--source-filename", PAYLOAD_SOURCE_FILENAME,
+    "--file-tag-len", str(FILE_TAG_LEN),
     "--response-label", RESPONSE_LABEL,
     "--dns-edns-size", str(DNS_EDNS_SIZE),
 ]
@@ -168,17 +178,24 @@ if resolver:
 exec(client_source)
 ```
 
+The client derives `file_id`, `file_tag`, and the output filename at
+runtime — the stager does not need to pass them.
+
 The stager now embeds two sets of metadata:
 - **Client download params** (from universal client publish item): used by
   the stager's own download logic — `FILE_TAG`, `FILE_ID`,
   `PUBLISH_VERSION`, `TOTAL_SLICES`, `COMPRESSED_SIZE`,
   `PLAINTEXT_SHA256_HEX`, `SLICE_TOKEN_LEN`.  Same for all stagers.
-- **Payload params** (from per-file publish item): passed to the client —
-  the values listed in the `sys.argv` block above.  Varies per stager.
+- **Payload params** (5 per-file values + deployment config): passed to the
+  client via `sys.argv`.  Only the 5 per-file values
+  (`PAYLOAD_PUBLISH_VERSION`, `PAYLOAD_TOTAL_SLICES`,
+  `PAYLOAD_COMPRESSED_SIZE`, `PAYLOAD_SHA256`, `PAYLOAD_TOKEN_LEN`) vary
+  per stager; the deployment values (`DOMAINS_STR`, `MAPPING_SEED`,
+  `RESPONSE_LABEL`, `DNS_EDNS_SIZE`, `FILE_TAG_LEN`) are shared.
 
-The stager grows by ~9 embedded values (the payload params).  These are
-short strings and integers; after minification and zlib compression the
-size increase is modest.
+The stager grows by 5 per-file values.  These are short strings and
+integers; after minification and zlib compression the size increase is
+modest.
 
 ### Generator changes
 
@@ -201,7 +218,7 @@ Its public interface changes:
   universal client's mapped publish item) and `payload_publish_item` (the
   specific payload file's mapped publish item).
 - The replacements dict gains payload metadata entries (prefixed to
-  distinguish from client metadata, e.g. `PAYLOAD_FILE_ID`).
+  distinguish from client metadata, e.g. `PAYLOAD_PUBLISH_VERSION`).
 - `generate_stagers()` iterates over payload files (not client artifacts),
   producing one stager per payload file (not per file * OS).
 
@@ -224,8 +241,9 @@ only one client artifact.
 ### Stager minify changes
 
 `stager_minify.py` rename table needs entries for the new payload metadata
-constants (`PAYLOAD_FILE_ID`, `PAYLOAD_FILE_TAG`, etc.) and the new
-`sys.argv` construction.  The `DOMAINS_STR` value needs an entry.
+constants (`PAYLOAD_PUBLISH_VERSION`, `PAYLOAD_TOTAL_SLICES`,
+`PAYLOAD_COMPRESSED_SIZE`, `PAYLOAD_SHA256`, `PAYLOAD_TOKEN_LEN`,
+`FILE_TAG_LEN`, `DOMAINS_STR`) and the new `sys.argv` construction.
 
 ## Phases
 
