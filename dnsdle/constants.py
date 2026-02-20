@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 
 # Fixed v1 profiles
@@ -10,7 +10,7 @@ QTYPE_RESPONSE_CNAME = "CNAME"
 TOKEN_ALPHABET_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 ALLOWED_TARGET_OS = ("windows", "linux")
 DIGEST_TEXT_CAPACITY = 52  # base32(lower, no-pad) chars from SHA-256 digest
-FILE_ID_PREFIX = "dnsdle:file-id:v1|"
+FILE_ID_PREFIX = b"dnsdle:file-id:v1|"
 MAPPING_FILE_LABEL = b"dnsdle:file:v1|"
 MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
 

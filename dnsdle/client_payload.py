@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import struct
 
@@ -6,7 +6,6 @@ import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
 from dnsdle.compat import base32_decode_no_pad
 from dnsdle.compat import constant_time_equals
-from dnsdle.compat import to_ascii_bytes
 from dnsdle.constants import DNS_FLAG_QR
 from dnsdle.constants import DNS_FLAG_TC
 from dnsdle.constants import DNS_OPCODE_QUERY
@@ -67,14 +66,13 @@ def _decode_payload_record_bytes(payload_labels):
 
 
 def parse_payload_record(record_bytes):
-    raw = to_ascii_bytes(record_bytes)
     min_record_len = 4 + PAYLOAD_MAC_TRUNC_LEN
-    if len(raw) <= min_record_len:
+    if len(record_bytes) <= min_record_len:
         _raise_parse("record_too_short", "payload record is shorter than minimum record size")
 
-    profile = struct.unpack("!B", raw[0:1])[0]
-    flags = struct.unpack("!B", raw[1:2])[0]
-    cipher_len = struct.unpack("!H", raw[2:4])[0]
+    profile = struct.unpack("!B", record_bytes[0:1])[0]
+    flags = struct.unpack("!B", record_bytes[1:2])[0]
+    cipher_len = struct.unpack("!H", record_bytes[2:4])[0]
 
     if profile != PAYLOAD_PROFILE_V1_BYTE:
         _raise_parse("unsupported_profile", "unsupported payload profile")
@@ -84,15 +82,15 @@ def parse_payload_record(record_bytes):
         _raise_parse("invalid_cipher_len", "ciphertext length must be positive")
 
     expected_len = 4 + cipher_len + PAYLOAD_MAC_TRUNC_LEN
-    if len(raw) != expected_len:
+    if len(record_bytes) != expected_len:
         _raise_parse("record_length_mismatch", "payload record length does not match encoded ciphertext length")
 
     return {
         "profile": profile,
         "flags": flags,
         "cipher_len": cipher_len,
-        "ciphertext": raw[4 : 4 + cipher_len],
-        "mac_trunc": raw[4 + cipher_len :],
+        "ciphertext": record_bytes[4 : 4 + cipher_len],
+        "mac_trunc": record_bytes[4 + cipher_len :],
     }
 
 

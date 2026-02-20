@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 from dnsdle.constants import ANSWER_FIXED_BYTES
 from dnsdle.constants import BASE32_BITS_PER_CHAR

@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import os
 import random
@@ -7,8 +7,7 @@ import shutil
 import time
 
 from dnsdle.client_template import build_client_template
-from dnsdle.compat import to_ascii_bytes
-from dnsdle.compat import to_ascii_text
+from dnsdle.compat import encode_ascii
 from dnsdle.constants import ALLOWED_TARGET_OS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
 from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
@@ -185,7 +184,7 @@ def _render_client_source(config, publish_item, target_os):
         )
 
     try:
-        to_ascii_text(source)
+        encode_ascii(source)
     except Exception:
         raise StartupError(
             "startup",
@@ -201,7 +200,7 @@ def _write_staged_file(stage_dir, filename, source_text):
     temp_path = final_path + ".tmp"
     try:
         with open(temp_path, "wb") as handle:
-            handle.write(to_ascii_bytes(source_text))
+            handle.write(encode_ascii(source_text))
         os.rename(temp_path, final_path)
     except Exception as exc:
         _cleanup_tree(temp_path)

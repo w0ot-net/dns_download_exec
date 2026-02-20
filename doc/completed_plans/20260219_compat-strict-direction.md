@@ -305,3 +305,23 @@ expected_hash = decode_ascii(plaintext_sha256).lower()
 - `dnsdle/publish.py`: rename 1 import, remove 1 conversion call
   (`FILE_ID_PREFIX`).
 - `dnsdle/client_reassembly.py`: rename 1 import and 1 call site.
+
+## Execution Notes
+
+Executed 2026-02-19.
+
+All plan items implemented as specified. Key observations:
+
+- The plan stated 18 modules under `dnsdle/`; the actual count is 23 (5 modules
+  added since plan was drafted: `resolver_linux.py`, `resolver_windows.py`,
+  `stager_generator.py`, `stager_minify.py`, `stager_template.py`). All 23
+  received `unicode_literals`. The resolver files have `# __TEMPLATE_SOURCE__`
+  sentinels; the lifted source starts after the sentinel so the `__future__`
+  import is not embedded into generated clients.
+- `client_template.py` contains a triple-quoted template string with its own
+  `_to_ascii_bytes`/`_to_utf8_bytes`/etc. helper definitions for the generated
+  client. These are standalone self-contained functions and were not renamed.
+- `cname_payload.py` `build_slice_record`: removed the `payload = to_ascii_bytes(slice_bytes)`
+  alias and updated the header `struct.pack` call to use `len(slice_bytes)`
+  instead of `payload_len`.
+- No deviations from the plan's design.

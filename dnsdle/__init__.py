@@ -1,8 +1,8 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.cli import parse_cli_args
-from dnsdle.compat import to_ascii_bytes
+from dnsdle.compat import encode_ascii
 from dnsdle.config import build_config
 from dnsdle.client_generator import generate_client_artifacts
 from dnsdle.logging_runtime import configure_active_logger
@@ -98,7 +98,7 @@ def build_startup_state(argv=None):
         seen_file_ids = set(item["file_id"] for item in publish_items)
 
         sources = [
-            (artifact["filename"], to_ascii_bytes(artifact["source"]))
+            (artifact["filename"], encode_ascii(artifact["source"]))
             for artifact in generation_result["artifacts"]
         ]
 

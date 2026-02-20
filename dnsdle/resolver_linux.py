@@ -1,5 +1,5 @@
 # -*- coding: ascii -*-
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 # __TEMPLATE_SOURCE__
 def _load_unix_resolvers():

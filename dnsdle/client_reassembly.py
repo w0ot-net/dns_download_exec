@@ -1,10 +1,10 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import hashlib
 import zlib
 
+from dnsdle.compat import decode_ascii
 from dnsdle.compat import is_binary
-from dnsdle.compat import to_ascii_text
 
 
 class ClientReassemblyError(Exception):
@@ -81,7 +81,7 @@ def reassemble_and_verify(
         _raise_reassembly("decompress_failed", "zlib decompression failed: %s" % exc)
 
     try:
-        expected_hash = to_ascii_text(plaintext_sha256).lower()
+        expected_hash = decode_ascii(plaintext_sha256).lower()
     except Exception:
         _raise_reassembly("plaintext_sha256_invalid", "plaintext_sha256 must be ASCII text")
     if len(expected_hash) != 64:

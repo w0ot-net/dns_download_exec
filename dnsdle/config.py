@@ -1,9 +1,10 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import os
 import re
 from collections import namedtuple
 
+from dnsdle.compat import binary_type
 from dnsdle.constants import ALLOWED_TARGET_OS
 from dnsdle.constants import DEFAULT_LOG_FILE
 from dnsdle.constants import DEFAULT_LOG_LEVEL
@@ -374,6 +375,11 @@ def build_config(parsed_args):
     psk = _arg_value(parsed_args, "psk")
     if psk is None or psk == "":
         raise StartupError("config", "invalid_config", "psk must be non-empty")
+    if isinstance(psk, binary_type):
+        try:
+            psk = psk.decode("utf-8")
+        except UnicodeDecodeError:
+            raise StartupError("config", "invalid_config", "psk must be valid UTF-8")
 
     listen_addr, listen_host, listen_port = _normalize_listen_addr(
         _arg_value(parsed_args, "listen_addr")

@@ -1,10 +1,10 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import struct
 
 from dnsdle.compat import byte_value
-from dnsdle.compat import to_ascii_bytes
-from dnsdle.compat import to_ascii_text
+from dnsdle.compat import decode_ascii
+from dnsdle.compat import encode_ascii
 from dnsdle.constants import DNS_HEADER_BYTES
 from dnsdle.constants import DNS_FLAG_AA
 from dnsdle.constants import DNS_FLAG_QR
@@ -35,7 +35,7 @@ def _ord_byte(value):
 
 
 def _to_label_bytes(label):
-    raw = to_ascii_bytes(label)
+    raw = encode_ascii(label)
     if not raw:
         raise ValueError("label must be non-empty")
     if len(raw) > 63:
@@ -93,7 +93,7 @@ def _decode_name(message, start_offset):
             raise DnsParseError("label extends past message")
         raw = message[offset:end_offset]
         try:
-            label = to_ascii_text(raw)
+            label = decode_ascii(raw)
         except Exception:
             raise DnsParseError("label is not ASCII")
         labels.append(label.lower())

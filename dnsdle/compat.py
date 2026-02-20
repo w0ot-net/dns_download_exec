@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import base64
 import sys
@@ -16,38 +16,28 @@ else:
     integer_types = (int,)
 
 
-def to_ascii_bytes(value):
-    if isinstance(value, binary_type):
-        return value
-    if isinstance(value, text_type):
-        return value.encode("ascii")
-    raise TypeError("value must be text or bytes")
+def encode_ascii(value):
+    return value.encode("ascii")
 
 
-def to_utf8_bytes(value):
-    if isinstance(value, binary_type):
-        return value
-    if isinstance(value, text_type):
-        return value.encode("utf-8")
-    raise TypeError("value must be text or bytes")
+def encode_utf8(value):
+    return value.encode("utf-8")
 
 
-def to_ascii_text(value):
+def decode_ascii(value):
     if isinstance(value, text_type):
         return value
-    if isinstance(value, binary_type):
-        return value.decode("ascii")
-    raise TypeError("value must be text or bytes")
+    return value.decode("ascii")
 
 
 def base32_lower_no_pad(raw_bytes):
     encoded = base64.b32encode(raw_bytes)
-    text = to_ascii_text(encoded)
+    text = decode_ascii(encoded)
     return text.rstrip("=").lower()
 
 
 def base32_decode_no_pad(value):
-    text = to_ascii_text(value)
+    text = decode_ascii(value)
     if not text:
         raise ValueError("base32 text must be non-empty")
     if "=" in text:
@@ -57,7 +47,7 @@ def base32_decode_no_pad(value):
     padding_len = (-len(text)) % 8
     padded = text.upper() + ("=" * padding_len)
     try:
-        return base64.b32decode(to_ascii_bytes(padded))
+        return base64.b32decode(encode_ascii(padded))
     except Exception:
         raise ValueError("invalid base32 text")
 
@@ -93,14 +83,14 @@ def constant_time_equals(left_value, right_value):
     return result == 0
 
 
-def to_ascii_int_bytes(value, field_name):
+def encode_ascii_int(value, field_name):
     try:
         int_value = int(value)
     except (TypeError, ValueError):
         raise ValueError("%s must be an integer" % field_name)
     if int_value < 0:
         raise ValueError("%s must be non-negative" % field_name)
-    return to_ascii_bytes(str(int_value))
+    return encode_ascii(text_type(int_value))
 
 
 def is_binary(value):
@@ -112,7 +102,7 @@ def key_text(value):
         return value
     if is_binary(value):
         try:
-            return to_ascii_text(value)
+            return decode_ascii(value)
         except Exception:
-            return str(value)
-    return str(value)
+            return text_type(value)
+    return text_type(value)

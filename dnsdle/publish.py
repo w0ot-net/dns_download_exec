@@ -1,11 +1,11 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 import hashlib
 import zlib
 
 import os
 
-from dnsdle.compat import to_ascii_bytes
+from dnsdle.compat import encode_ascii
 from dnsdle.constants import FILE_ID_PREFIX
 from dnsdle.constants import PROFILE_V1
 from dnsdle.logging_runtime import log_event
@@ -18,7 +18,7 @@ def _sha256_hex(data):
 
 
 def _derive_file_id(publish_version):
-    file_id_input = to_ascii_bytes(FILE_ID_PREFIX) + to_ascii_bytes(publish_version)
+    file_id_input = FILE_ID_PREFIX + encode_ascii(publish_version)
     return _sha256_hex(file_id_input)[:16]
 
 

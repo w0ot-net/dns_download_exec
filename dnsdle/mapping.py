@@ -1,8 +1,8 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 
 from dnsdle.compat import base32_lower_no_pad
-from dnsdle.compat import to_ascii_bytes
-from dnsdle.compat import to_ascii_int_bytes
+from dnsdle.compat import encode_ascii
+from dnsdle.compat import encode_ascii_int
 from dnsdle.constants import DIGEST_TEXT_CAPACITY
 from dnsdle.constants import MAPPING_FILE_LABEL
 from dnsdle.constants import MAPPING_SLICE_LABEL
@@ -19,7 +19,7 @@ def _derive_file_digest(seed_bytes, publish_version_bytes):
 
 
 def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
-    slice_index_bytes = to_ascii_int_bytes(slice_index, "slice_index")
+    slice_index_bytes = encode_ascii_int(slice_index, "slice_index")
     return hmac_sha256(
         seed_bytes,
         MAPPING_SLICE_LABEL + publish_version_bytes + b"|" + slice_index_bytes,
@@ -27,7 +27,7 @@ def _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index):
 
 
 def _derive_file_tag(seed_bytes, publish_version, file_tag_len):
-    publish_version_bytes = to_ascii_bytes(publish_version)
+    publish_version_bytes = encode_ascii(publish_version)
     digest_text = base32_lower_no_pad(
         _derive_file_digest(seed_bytes, publish_version_bytes)
     )
@@ -35,7 +35,7 @@ def _derive_file_tag(seed_bytes, publish_version, file_tag_len):
 
 
 def _derive_slice_token(seed_bytes, publish_version, slice_index, token_len):
-    publish_version_bytes = to_ascii_bytes(publish_version)
+    publish_version_bytes = encode_ascii(publish_version)
     digest_text = base32_lower_no_pad(
         _derive_slice_digest(seed_bytes, publish_version_bytes, slice_index)
     )
@@ -92,7 +92,7 @@ def _entry_sort_key(entry):
 
 
 def apply_mapping(publish_items, config):
-    seed_bytes = to_ascii_bytes(config.mapping_seed)
+    seed_bytes = encode_ascii(config.mapping_seed)
 
     entries = []
     max_len_by_index = []
