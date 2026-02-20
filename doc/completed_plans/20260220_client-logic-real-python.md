@@ -280,3 +280,34 @@ correctly with no semantic regression.
 - `dnsdle/client_generator.py`: no change -- imports `build_client_source`
   and `_UNIVERSAL_CLIENT_FILENAME` from `client_standalone`; both are
   unchanged (same name, same signature, same return type).
+
+## Execution Notes
+
+Executed 2026-02-20.
+
+**Stage 1** -- Created `dnsdle/client_runtime.py` with development header
+and extract block containing `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE`.
+Removed these four items from `_CLIENT_PREAMBLE`.  Added
+`_CLIENT_RUNTIME_EXTRACTIONS` and updated `build_client_source()`.  Smoke
+tests passed: `--help` exercised CLI parser; invalid-domain invocation with
+`--verbose` exercised `_VERBOSE`, `_log`, `_LABEL_RE`.  Seam check confirmed
+one blank line between `_LABEL_RE` and `_derive_file_id`.
+
+**Stage 2** -- Appended all `_CLIENT_SUFFIX` functions into the
+`client_runtime` extract block as real Python.  Converted 3 escape sites:
+`b"\\x00"` to `b"\x00"` in `_encode_name` and `_build_dns_query`;
+`r"(\\d{1,3}(?:\\.\\d{1,3}){3})"` to `r"(\d{1,3}(?:\.\d{1,3}){3})"` in
+`_IPV4_RE`.  Deleted `_CLIENT_SUFFIX` (~790 lines) from
+`client_standalone.py`.  Updated assembly formula to
+`_CLIENT_PREAMBLE + extracted_source + "\n"`.  Removed dead `import os` and
+`import re`.  Byte-compare (`cmp`) confirmed stage-1 and stage-2 assembled
+output are identical.
+
+**Architecture doc** -- Updated `CLIENT_GENERATION.md`: added
+`client_runtime.py` to canonical modules list, rewrote bullet 3 to describe
+real-Python authoring model, updated extracted blocks listing.
+
+**Final sizes** -- `client_standalone.py`: 165 lines (down from ~960).
+`client_runtime.py`: ~560 lines (development header + full extract block).
+
+No deviations from plan.  All validation steps passed.

@@ -24,27 +24,34 @@ The universal client (`dnsdle/client_standalone.py`) is assembled at server
 startup from canonical source modules using an extraction system:
 
 1. Canonical modules (`compat.py`, `helpers.py`, `dnswire.py`,
-   `cname_payload.py`) have `# __EXTRACT: name__` / `# __END_EXTRACT__`
-   markers around shared functions.
+   `cname_payload.py`, `client_runtime.py`) have
+   `# __EXTRACT: name__` / `# __END_EXTRACT__` markers around shared
+   functions and client-specific logic.
 2. `dnsdle/extract.py` parses markers and returns extracted source blocks.
    Canonical function names are used directly in the generated client
    (no rename step).
-3. The client source file contains only client-specific logic (CLI parsing,
-   download loop, reassembly, output) plus cross-platform resolver discovery.
+3. Client-specific logic (CLI parsing, download loop, reassembly, output,
+   resolver discovery) is authored as real Python in `client_runtime.py`
+   and assembled into the standalone client via marker extraction -- not
+   via string literal concatenation.
 4. `build_client_source()` assembles the full standalone script by combining
    extracted utilities and client-specific code.
 5. A thin `DnsParseError(ClientError)` subclass in the client preamble adapts
    the single-arg `DnsParseError` constructor used by extracted `_decode_name`
    to `ClientError`'s `(code, phase, message)` signature.
 
-Extracted functions (16 total):
-- **compat.py** (10): `encode_ascii`, `encode_utf8`, `decode_ascii`,
-  `base32_lower_no_pad`, `base32_decode_no_pad`, `byte_value`,
-  `iter_byte_values`, `constant_time_equals`, `encode_ascii_int`, `is_binary`
-- **helpers.py** (2): `hmac_sha256`, `dns_name_wire_length`
-- **dnswire.py** (1): `_decode_name`
-- **cname_payload.py** (3): `_derive_file_bound_key`, `_keystream_bytes`,
-  `_xor_bytes`
+Extracted blocks:
+- **compat.py** (10 functions): `encode_ascii`, `encode_utf8`,
+  `decode_ascii`, `base32_lower_no_pad`, `base32_decode_no_pad`,
+  `byte_value`, `iter_byte_values`, `constant_time_equals`,
+  `encode_ascii_int`, `is_binary`
+- **helpers.py** (2 functions): `hmac_sha256`, `dns_name_wire_length`
+- **dnswire.py** (1 function): `_decode_name`
+- **cname_payload.py** (3 functions): `_derive_file_bound_key`,
+  `_keystream_bytes`, `_xor_bytes`
+- **client_runtime.py** (1 block): all client-specific logic -- CLI
+  parsing, download loop, DNS query/response handling, crypto helpers,
+  reassembly, output, and resolver discovery
 
 ---
 
