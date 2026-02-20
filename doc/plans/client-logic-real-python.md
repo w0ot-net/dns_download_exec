@@ -113,6 +113,19 @@ The `_CLIENT_SUFFIX` string literal double-escapes backslashes (e.g.
 When the code moves to real Python in `client_runtime.py`, these become
 normal single-backslash escapes (`"\n"`, `b"\x00"`, `r"\d"`).
 
+There are roughly 8-10 escape sites in the suffix.  The `compile()` check
+in `build_client_source()` validates only syntax; a wrong un-escape (e.g.
+`\\.` left as `\\.` in `_IPV4_RE`, or a byte literal with a wrong escape)
+would produce an assembled client that compiles but has subtly broken
+behavior.
+
+**Validation**: before starting the change, capture the assembled standalone
+output with `python -c "import dnsdle.client_standalone as m; open('/tmp/before.py','wb').write(m.build_client_source())"`.
+After the change, capture the new output identically to `/tmp/after.py` and
+byte-compare: `cmp /tmp/before.py /tmp/after.py`.  A byte-identical result
+confirms all escape sites were converted correctly and no semantic regression
+was introduced.
+
 ## Affected Components
 
 - `dnsdle/client_runtime.py` (new): all client-specific functions as real
