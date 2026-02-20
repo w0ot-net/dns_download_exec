@@ -45,34 +45,18 @@ def main(argv=None):
         )
         return 1
 
-    for artifact in generation_result["artifacts"]:
-        _emit_record(
-            {
-                "classification": "generation_ok",
-                "phase": "publish",
-                "reason_code": "generation_ok",
-                "file_id": artifact["file_id"],
-                "publish_version": artifact["publish_version"],
-                "file_tag": artifact["file_tag"],
-                "target_os": artifact["target_os"],
-                "path": artifact["path"],
-            },
-            level="info",
-            category="publish",
-        )
-
     _emit_record(
         {
-            "classification": "generation_summary",
-            "phase": "startup",
-            "reason_code": "generation_summary",
+            "classification": "generation_ok",
+            "phase": "publish",
+            "reason_code": "generation_ok",
+            "filename": generation_result["filename"],
+            "path": generation_result["path"],
             "managed_dir": generation_result["managed_dir"],
             "artifact_count": generation_result["artifact_count"],
-            "target_os": ",".join(generation_result["target_os"]),
-            "file_ids": sorted(set(item["file_id"] for item in generation_result["artifacts"])),
         },
         level="info",
-        category="startup",
+        category="publish",
     )
 
     for stager in stagers:
@@ -82,7 +66,6 @@ def main(argv=None):
                 "phase": "startup",
                 "reason_code": "stager_ready",
                 "source_filename": stager["source_filename"],
-                "target_os": stager["target_os"],
                 "oneliner": stager["oneliner"],
                 "path": stager["path"],
             },
@@ -102,7 +85,7 @@ def main(argv=None):
             "dns_edns_size": config.dns_edns_size,
             "dns_max_label_len": config.dns_max_label_len,
             "compression_level": config.compression_level,
-            "target_os": config.target_os_csv,
+            "universal_client": generation_result["filename"],
         },
         level="info",
         category="startup",
