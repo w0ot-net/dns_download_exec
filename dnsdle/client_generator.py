@@ -225,6 +225,12 @@ def _build_artifacts(runtime_state):
             "generator_invalid_contract",
             "BASE_DOMAINS must be non-empty",
         )
+    if not config.mapping_seed:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "MAPPING_SEED must be non-empty",
+        )
     if not config.response_label:
         raise StartupError(
             "startup",

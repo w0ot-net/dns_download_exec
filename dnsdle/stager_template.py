@@ -48,8 +48,8 @@ def _ib(v):
 # Derive slice token at runtime
 def _derive_slice_token(index):
     msg = b"dnsdle:slice:v1|" + _ab(PUBLISH_VERSION) + b"|" + _ib(index)
-    d = hmac.new(_ab(MAPPING_SEED), msg, hashlib.sha256).digest()
-    t = base64.b32encode(d).decode("ascii").lower().rstrip("=")
+    dg = hmac.new(_ab(MAPPING_SEED), msg, hashlib.sha256).digest()
+    t = base64.b32encode(dg).decode("ascii").lower().rstrip("=")
     return t[:SLICE_TOKEN_LEN]
 
 

@@ -150,12 +150,12 @@ def _to_ascii_int_bytes(value, field_name):
 
 
 def _derive_slice_token(index):
-    d = hmac.new(
+    dg = hmac.new(
         _to_ascii_bytes(MAPPING_SEED),
         b"dnsdle:slice:v1|" + _to_ascii_bytes(PUBLISH_VERSION) + b"|" + _to_ascii_int_bytes(index, "index"),
         hashlib.sha256,
     ).digest()
-    t = base64.b32encode(d).decode("ascii").lower().rstrip("=")
+    t = base64.b32encode(dg).decode("ascii").lower().rstrip("=")
     return t[:SLICE_TOKEN_LEN]
 
 
