@@ -23,6 +23,7 @@ MAPPING_SEED = @@MAPPING_SEED@@
 SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
 DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
+PSK = @@PSK@@
 
 
 # Ensure ASCII bytes
@@ -274,8 +275,11 @@ while _i < len(_sa):
         _i += 2
     else:
         _i += 1
-if not psk or not resolver:
-    raise ValueError("--psk and --resolver required")
+if not psk:
+    psk = PSK
+    _sa = ["--psk", psk] + list(_sa)
+if not resolver:
+    raise ValueError("--resolver required")
 host = resolver
 port = 53
 if ":" in resolver:

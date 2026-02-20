@@ -94,6 +94,7 @@ _RENAME_TABLE = [
     ("slen", "be"),
     ("sock", "bf"),
     ("text", "bg"),
+    ("PSK", "ai"),
     ("_ab", "bh"),
     ("_ce", "bi"),
     ("_ib", "bj"),

