@@ -106,9 +106,13 @@ python -c "import dnsdle.client_standalone as m; open('/tmp/stage1.py','wb').wri
 ```
 
 Append all `_CLIENT_SUFFIX` content into the `client_runtime` extract block
-as real Python, converting double-escapes to single-escapes (`"\\n"` →
-`"\n"`, `b"\\x00"` → `b"\x00"`, `"\\d"` → `r"\d"`, etc.) at all ~8-10
-escape sites.  The full extract block now contains all client functions:
+as real Python, converting the 4 double-escaped sites to their real-Python
+forms:
+- `"\\n"` → `"\n"` in `_log` (line 136 of `_CLIENT_PREAMBLE`)
+- `b"\\x00"` → `b"\x00"` in `_encode_name` (line 182 of `_CLIENT_SUFFIX`)
+- `b"\\x00"` → `b"\x00"` in `_build_dns_query` (line 202 of `_CLIENT_SUFFIX`)
+- `r"(\\d{1,3}(?:\\.\\d{1,3}){3})"` → `r"(\d{1,3}(?:\.\d{1,3}){3})"` in
+  `_IPV4_RE` (line 504 of `_CLIENT_SUFFIX`)  The full extract block now contains all client functions:
 `_VERBOSE`, `_log`, `_TOKEN_RE`, `_LABEL_RE`, `_derive_file_id`,
 `_derive_file_tag`, `_derive_slice_token`, `_encode_name`,
 `_build_dns_query`, `_parse_response_for_cname`, `_extract_payload_text`,
