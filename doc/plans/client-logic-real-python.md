@@ -77,7 +77,6 @@ from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_
 
 # dnsdle constants -- DNS/payload/mapping values used by the extract block
 from dnsdle.constants import (
-    LABEL_MAX_BYTES, NAME_MAX_BYTES,
     MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL, FILE_ID_PREFIX,
 )
 
@@ -101,10 +100,10 @@ class ClientError(SystemExit): pass
 class RetryableTransport(Exception): pass
 ```
 
-The exact set of `dnsdle.constants` names imported (e.g. `LABEL_MAX_BYTES`,
-`MAPPING_FILE_LABEL`, etc.) should be verified against the extract block's
-actual usages during execution; the list above covers the known references
-but may need adjustment if additional constants are found.
+The exact set of `dnsdle.constants` names imported should be verified against
+the extract block's actual usages during execution; the list above covers
+the known references but may need adjustment if additional constants are
+found.
 
 The extract block boundaries are exact: the first non-marker line is
 `_VERBOSE = False` (no blank line between the opening marker and `_VERBOSE`),
