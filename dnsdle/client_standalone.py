@@ -4,12 +4,11 @@ import os
 import re
 
 from dnsdle.compat import encode_ascii
-from dnsdle.extract import apply_renames
 from dnsdle.extract import extract_functions
 from dnsdle.state import StartupError
 
 
-# Extraction specifications: (module_filename, [names], [(old, new), ...])
+# Extraction specifications: function names to extract from each module
 _COMPAT_EXTRACTIONS = [
     "encode_ascii",
     "encode_utf8",
@@ -23,47 +22,14 @@ _COMPAT_EXTRACTIONS = [
     "is_binary",
 ]
 
-_COMPAT_RENAMES = [
-    ("encode_ascii", "_to_ascii_bytes"),
-    ("encode_utf8", "_to_utf8_bytes"),
-    ("decode_ascii", "_to_ascii_text"),
-    ("base32_lower_no_pad", "_base32_lower_no_pad"),
-    ("base32_decode_no_pad", "_base32_decode_no_pad"),
-    ("byte_value", "_byte_value"),
-    ("iter_byte_values", "_iter_byte_values"),
-    ("constant_time_equals", "_secure_compare"),
-    ("encode_ascii_int", "_to_ascii_int_bytes"),
-    ("is_binary", "_is_binary"),
-]
-
 _HELPERS_EXTRACTIONS = ["hmac_sha256", "dns_name_wire_length"]
 
-_HELPERS_RENAMES = [
-    ("hmac_sha256", "_hmac_sha256"),
-    ("dns_name_wire_length", "_dns_name_wire_length"),
-]
-
 _DNSWIRE_EXTRACTIONS = ["_decode_name"]
-
-_DNSWIRE_RENAMES = [
-    ("DnsParseError", "ClientError"),
-    ("_message_length", "len"),
-    ("_ord_byte", "_byte_value"),
-    ("decode_ascii", "_to_ascii_text"),
-]
 
 _CNAME_PAYLOAD_EXTRACTIONS = [
     "_derive_file_bound_key",
     "_keystream_bytes",
     "_xor_bytes",
-]
-
-_CNAME_PAYLOAD_RENAMES = [
-    ("encode_ascii", "_to_ascii_bytes"),
-    ("encode_utf8", "_to_utf8_bytes"),
-    ("encode_ascii_int", "_to_ascii_int_bytes"),
-    ("iter_byte_values", "_iter_byte_values"),
-    ("hmac_sha256", "_hmac_sha256"),
 ]
 
 
@@ -157,6 +123,11 @@ class RetryableTransport(Exception):
     pass
 
 
+class DnsParseError(ClientError):
+    def __init__(self, message):
+        ClientError.__init__(self, EXIT_PARSE, "parse", message)
+
+
 _VERBOSE = False
 
 
@@ -173,35 +144,35 @@ _CLIENT_SUFFIX = '''\
 
 def _derive_file_id(publish_version):
     return hashlib.sha256(
-        FILE_ID_PREFIX + _to_ascii_bytes(publish_version)
+        FILE_ID_PREFIX + encode_ascii(publish_version)
     ).hexdigest()[:16]
 
 
 def _derive_file_tag(mapping_seed, publish_version, file_tag_len):
-    digest = _hmac_sha256(
-        _to_ascii_bytes(mapping_seed),
-        MAPPING_FILE_LABEL + _to_ascii_bytes(publish_version),
+    digest = hmac_sha256(
+        encode_ascii(mapping_seed),
+        MAPPING_FILE_LABEL + encode_ascii(publish_version),
     )
-    tag = _base32_lower_no_pad(digest)
+    tag = base32_lower_no_pad(digest)
     return tag[:file_tag_len]
 
 
 def _derive_slice_token(mapping_seed, publish_version, index, token_len):
     msg = (
         MAPPING_SLICE_LABEL
-        + _to_ascii_bytes(publish_version)
+        + encode_ascii(publish_version)
         + b"|"
-        + _to_ascii_int_bytes(index, "index")
+        + encode_ascii_int(index, "index")
     )
-    digest = _hmac_sha256(_to_ascii_bytes(mapping_seed), msg)
-    token = _base32_lower_no_pad(digest)
+    digest = hmac_sha256(encode_ascii(mapping_seed), msg)
+    token = base32_lower_no_pad(digest)
     return token[:token_len]
 
 
 def _encode_name(labels):
     parts = []
     for label in labels:
-        raw = _to_ascii_bytes(label)
+        raw = encode_ascii(label)
         if not raw:
             raise ClientError(EXIT_PARSE, "parse", "empty DNS label")
         if len(raw) > 63:
@@ -348,12 +319,12 @@ def _mac_key(psk, file_id, publish_version):
 
 
 def _parse_slice_record(payload_text):
-    record = _base32_decode_no_pad(payload_text)
+    record = base32_decode_no_pad(payload_text)
     if len(record) < 12:
         raise ClientError(EXIT_PARSE, "parse", "slice record is too short")
 
-    profile = _byte_value(record[0])
-    flags = _byte_value(record[1])
+    profile = byte_value(record[0])
+    flags = byte_value(record[1])
     if profile != PAYLOAD_PROFILE_V1_BYTE:
         raise ClientError(EXIT_PARSE, "parse", "unsupported payload profile")
     if flags != PAYLOAD_FLAGS_V1_BYTE:
@@ -375,24 +346,24 @@ def _parse_slice_record(payload_text):
 def _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext):
     message = (
         PAYLOAD_MAC_MESSAGE_LABEL
-        + _to_ascii_bytes(file_id)
+        + encode_ascii(file_id)
         + b"|"
-        + _to_ascii_bytes(publish_version)
+        + encode_ascii(publish_version)
         + b"|"
-        + _to_ascii_int_bytes(slice_index, "slice_index")
+        + encode_ascii_int(slice_index, "slice_index")
         + b"|"
-        + _to_ascii_int_bytes(total_slices, "total_slices")
+        + encode_ascii_int(total_slices, "total_slices")
         + b"|"
-        + _to_ascii_int_bytes(compressed_size, "compressed_size")
+        + encode_ascii_int(compressed_size, "compressed_size")
         + b"|"
         + ciphertext
     )
-    return _hmac_sha256(mac_key_bytes, message)[:PAYLOAD_MAC_TRUNC_LEN]
+    return hmac_sha256(mac_key_bytes, message)[:PAYLOAD_MAC_TRUNC_LEN]
 
 
 def _decrypt_and_verify_slice(enc_key_bytes, mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext, mac):
     expected = _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext)
-    if not _secure_compare(expected, mac):
+    if not constant_time_equals(expected, mac):
         raise ClientError(EXIT_CRYPTO, "crypto", "MAC verification failed")
 
     stream = _keystream_bytes(enc_key_bytes, file_id, publish_version, slice_index, len(ciphertext))
@@ -690,7 +661,7 @@ def _validate_cli_params(base_domains, file_tag, mapping_seed, token_len, total_
         raise ClientError(EXIT_USAGE, "usage", "response_label is invalid")
 
     for labels in domain_labels:
-        if _dns_name_wire_length((response_label,) + labels) > 255:
+        if dns_name_wire_length((response_label,) + labels) > 255:
             raise ClientError(EXIT_USAGE, "usage", "response suffix exceeds DNS limits")
 
     return tuple(domain_labels)
@@ -963,15 +934,7 @@ def build_client_source():
     dnswire_blocks = extract_functions("dnswire.py", _DNSWIRE_EXTRACTIONS)
     cname_blocks = extract_functions("cname_payload.py", _CNAME_PAYLOAD_EXTRACTIONS)
 
-    extracted_parts = []
-    for block in compat_blocks:
-        extracted_parts.append(apply_renames(block, _COMPAT_RENAMES))
-    for block in helpers_blocks:
-        extracted_parts.append(apply_renames(block, _HELPERS_RENAMES))
-    for block in dnswire_blocks:
-        extracted_parts.append(apply_renames(block, _DNSWIRE_RENAMES))
-    for block in cname_blocks:
-        extracted_parts.append(apply_renames(block, _CNAME_PAYLOAD_RENAMES))
+    extracted_parts = compat_blocks + helpers_blocks + dnswire_blocks + cname_blocks
 
     extracted_source = "\n\n".join(extracted_parts)
     source = _CLIENT_PREAMBLE + extracted_source + _CLIENT_SUFFIX

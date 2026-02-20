@@ -113,3 +113,21 @@ canonical names are already consistent across all extracted blocks.
 - `dnsdle/extract.py`: delete `apply_renames` function.
 - `doc/architecture/CLIENT_GENERATION.md`: update the "Extracted functions"
   section to note that canonical names are used directly (no rename step).
+
+## Execution Notes (2026-02-20)
+
+All plan items implemented as specified, no deviations.
+
+- Deleted 4 rename tables and `apply_renames` import from `client_standalone.py`.
+- Replaced 8 renamed function references across `_CLIENT_SUFFIX` with canonical
+  names (`encode_ascii`, `encode_ascii_int`, `hmac_sha256`,
+  `base32_lower_no_pad`, `base32_decode_no_pad`, `byte_value`,
+  `constant_time_equals`, `dns_name_wire_length`).
+- Added `DnsParseError(ClientError)` subclass to `_CLIENT_PREAMBLE` -- fixes
+  the runtime `TypeError` bug on DNS parse errors.
+- Simplified `build_client_source()` to concatenate block lists directly.
+- Inlined `_message_length` and `_ord_byte` calls inside extract markers in
+  `dnswire.py` (3 call sites).
+- Deleted `apply_renames` function from `extract.py`.
+- Updated stale extraction-spec comment in `client_standalone.py`.
+- Updated `CLIENT_GENERATION.md` architecture section.

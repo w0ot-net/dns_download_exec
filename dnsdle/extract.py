@@ -82,9 +82,3 @@ def extract_functions(module_filename, names):
         )
 
     return [blocks[name] for name in names]
-
-
-def apply_renames(source, rename_table):
-    for old_name, new_name in rename_table:
-        source = re.sub(r"\b" + re.escape(old_name) + r"\b", new_name, source)
-    return source

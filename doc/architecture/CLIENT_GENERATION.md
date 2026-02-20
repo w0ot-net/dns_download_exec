@@ -26,12 +26,16 @@ startup from canonical source modules using an extraction system:
 1. Canonical modules (`compat.py`, `helpers.py`, `dnswire.py`,
    `cname_payload.py`) have `# __EXTRACT: name__` / `# __END_EXTRACT__`
    markers around shared functions.
-2. `dnsdle/extract.py` parses markers and applies whole-word renames
-   (e.g. `encode_ascii` -> `_to_ascii_bytes`).
+2. `dnsdle/extract.py` parses markers and returns extracted source blocks.
+   Canonical function names are used directly in the generated client
+   (no rename step).
 3. The client source file contains only client-specific logic (CLI parsing,
    download loop, reassembly, output) plus cross-platform resolver discovery.
 4. `build_client_source()` assembles the full standalone script by combining
    extracted utilities and client-specific code.
+5. A thin `DnsParseError(ClientError)` subclass in the client preamble adapts
+   the single-arg `DnsParseError` constructor used by extracted `_decode_name`
+   to `ClientError`'s `(code, phase, message)` signature.
 
 Extracted functions (16 total):
 - **compat.py** (10): `encode_ascii`, `encode_utf8`, `decode_ascii`,

@@ -55,7 +55,7 @@ def encode_name(labels):
 
 # __EXTRACT: _decode_name__
 def _decode_name(message, start_offset):
-    message_len = _message_length(message)
+    message_len = len(message)
     labels = []
     offset = start_offset
     jumped = False
@@ -66,11 +66,11 @@ def _decode_name(message, start_offset):
         if offset >= message_len:
             raise DnsParseError("name extends past message")
 
-        first = _ord_byte(message[offset])
+        first = byte_value(message[offset])
         if (first & DNS_POINTER_TAG) == DNS_POINTER_TAG:
             if offset + 1 >= message_len:
                 raise DnsParseError("truncated name pointer")
-            pointer = ((first & 0x3F) << 8) | _ord_byte(message[offset + 1])
+            pointer = ((first & 0x3F) << 8) | byte_value(message[offset + 1])
             if pointer >= message_len:
                 raise DnsParseError("name pointer is out of bounds")
             if pointer in visited_offsets:
