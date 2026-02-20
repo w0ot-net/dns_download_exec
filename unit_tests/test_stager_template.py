@@ -40,17 +40,8 @@ def _build_ns():
     for key, value in replacements.items():
         source = source.replace("@@%s@@" % key, repr(value))
 
-    # Strip the top-level execution code (everything after the last def block).
-    # We only want function/constant definitions, not the runtime main body.
-    lines = source.split("\n")
-    cutoff = len(lines)
-    for i in range(len(lines) - 1, -1, -1):
-        line = lines[i]
-        if line.startswith("def ") or line.startswith("# "):
-            break
-        if line and not line.startswith(" ") and not line.startswith("#"):
-            cutoff = i
-    source_defs = "\n".join(lines[:cutoff])
+    # Strip the runtime main body (everything after the sentinel comment).
+    source_defs = source.split("# __RUNTIME__", 1)[0]
 
     ns = {}
     exec(compile(source_defs, "<stager-template-test>", "exec"), ns)

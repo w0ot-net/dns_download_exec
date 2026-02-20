@@ -264,7 +264,7 @@ def _send_query(addr, pkt):
             pass
     return resp
 
-
+# __RUNTIME__
 resolver = sys.argv[1]
 psk = sys.argv[2]
 extra = sys.argv[3:]

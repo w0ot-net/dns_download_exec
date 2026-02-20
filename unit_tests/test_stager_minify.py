@@ -2,7 +2,7 @@ from __future__ import absolute_import
 
 import unittest
 
-from dnsdle.stager_minify import minify
+from dnsdle.stager_minify import minify, _RENAME_TABLE
 from dnsdle.stager_template import build_stager_template
 
 
@@ -31,8 +31,9 @@ class StagerMinifyTests(unittest.TestCase):
     def test_pass2_renames_known_identifier(self):
         source = "DOMAIN_LABELS = 1"
         result = minify(source)
+        short = dict(_RENAME_TABLE)["DOMAIN_LABELS"]
         self.assertNotIn("DOMAIN_LABELS", result)
-        self.assertIn("k", result)
+        self.assertIn(short, result)
 
     def test_pass2_deterministic_rename(self):
         source = "DOMAIN_LABELS = 1\nDOMAIN_LABELS = 2"
