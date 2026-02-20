@@ -41,6 +41,7 @@ _RENAME_TABLE = [
     ("ciphertext", "A"),
     ("compressed", "B"),
     ("plaintext", "C"),
+    ("_deadline", "cl"),
     ("rdata_off", "D"),
     ("FILE_TAG", "E"),
     ("_enc_key", "F"),
