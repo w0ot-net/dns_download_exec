@@ -5,10 +5,14 @@
 Replace the hardcoded constant literals in `_CLIENT_PREAMBLE` with
 programmatic generation from `dnsdle.constants`, eliminating silent-drift
 risk between the assembled client and the canonical constant definitions.
-Add client exit codes to `constants.py` so they participate in the same
-mechanism.  `ClientError` / `RetryableTransport` class duplication between
-the preamble and the `client_runtime.py` development header is inherently
-necessary and left unchanged.
+Add client exit codes to `constants.py` and rename the
+`GENERATED_CLIENT_DEFAULT_*` runtime-tuning constants to the short names
+the client already uses, so every preamble constant can use its canonical
+name directly -- no rename mapping needed.
+
+`ClientError` / `RetryableTransport` class duplication between the preamble
+and the `client_runtime.py` development header is inherently necessary and
+left unchanged.
 
 ## Problem
 
@@ -20,105 +24,146 @@ assembled-client behaviors silently diverge.
 
 The runtime tuning constants are triplicated: canonical values in
 `constants.py` (`GENERATED_CLIENT_DEFAULT_*`), hardcoded literals in
-`_CLIENT_PREAMBLE`, and auto-synced aliases in the `client_runtime.py`
-development header.  Only the dev-header aliases stay in sync automatically.
+`_CLIENT_PREAMBLE`, and aliased copies in the `client_runtime.py`
+development header.  The long `GENERATED_CLIENT_DEFAULT_` prefix exists
+only for disambiguation in `constants.py`, but nothing else in the
+codebase needs that disambiguation -- only `constants.py` defines them and
+only `client_runtime.py` consumes them (via manual aliases to the short
+names).
 
-The `EXIT_*` constants and `ClientError`/`RetryableTransport` classes are
-duplicated between the preamble and the development header.  The class
-duplication is inherently necessary (the preamble needs the definitions for
-the assembled client; the dev header needs them for importability).  The
-`EXIT_*` integer constants, however, can be sourced from `constants.py`
-like all other constants.
+The `EXIT_*` constants are client-only values duplicated between the
+preamble and the development header with no canonical home in
+`constants.py`.
 
 ## Goal
 
 1. Every constant value in the assembled client preamble is read from
    `constants.py` at assembly time -- no hand-written literal copies.
-2. Client exit codes live in `constants.py` alongside all other constants.
-3. The `client_runtime.py` development header imports exit codes from
-   `constants.py` instead of hardcoding them.
-4. The assembled standalone client is functionally equivalent (same names,
+2. Every preamble constant uses its canonical `constants.py` name directly
+   -- no `(preamble_name, attr_name)` rename mapping.
+3. Client exit codes live in `constants.py` alongside all other constants.
+4. The `GENERATED_CLIENT_DEFAULT_*` prefix is eliminated; the short names
+   (`REQUEST_TIMEOUT_SECONDS`, etc.) become the canonical names.
+5. The `client_runtime.py` development header imports exit codes and
+   runtime-tuning constants from `constants.py` by their canonical (short)
+   names -- no aliasing.
+6. The assembled standalone client is functionally equivalent (same names,
    same values, compiles, passes smoke tests).
-5. `ClientError` / `RetryableTransport` class definitions remain in both
+7. `ClientError` / `RetryableTransport` class definitions remain in both
    the preamble and the development header (inherently necessary; accepted
    duplication).
 
 ## Design
 
-### 1. Add client exit codes to `constants.py`
+### 1. Rename runtime-tuning constants in `constants.py`
 
-Add six constants under a `CLIENT_EXIT_` prefix:
+Replace the `GENERATED_CLIENT_DEFAULT_` prefix with the short names that
+the client already uses.  Update the section comment accordingly.
 
+Before:
 ```python
-CLIENT_EXIT_USAGE = 2
-CLIENT_EXIT_TRANSPORT = 3
-CLIENT_EXIT_PARSE = 4
-CLIENT_EXIT_CRYPTO = 5
-CLIENT_EXIT_REASSEMBLY = 6
-CLIENT_EXIT_WRITE = 7
+# Generated client defaults and output policy
+GENERATED_CLIENT_MANAGED_SUBDIR = "dnsdle_v1"
+GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS = 3.0
+GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS = 60
+GENERATED_CLIENT_DEFAULT_MAX_ROUNDS = 64
+GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS = 128
+GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS = 100
+GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS = 150
+GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS = 50
 ```
 
-### 2. Split the preamble and generate constants programmatically
+After:
+```python
+# Generated client defaults and output policy
+GENERATED_CLIENT_MANAGED_SUBDIR = "dnsdle_v1"
+REQUEST_TIMEOUT_SECONDS = 3.0
+NO_PROGRESS_TIMEOUT_SECONDS = 60
+MAX_ROUNDS = 64
+MAX_CONSECUTIVE_TIMEOUTS = 128
+RETRY_SLEEP_BASE_MS = 100
+RETRY_SLEEP_JITTER_MS = 150
+QUERY_INTERVAL_MS = 50
+```
+
+`GENERATED_CLIENT_MANAGED_SUBDIR` keeps its name -- it is server-side only
+(used by `client_generator.py`) and never appears in the preamble.
+
+### 2. Add client exit codes to `constants.py`
+
+Add six constants under an `EXIT_` prefix (matching the names the client
+already uses), in a new section after the runtime-tuning constants:
+
+```python
+# Client exit codes
+EXIT_USAGE = 2
+EXIT_TRANSPORT = 3
+EXIT_PARSE = 4
+EXIT_CRYPTO = 5
+EXIT_REASSEMBLY = 6
+EXIT_WRITE = 7
+```
+
+### 3. Split the preamble and generate constants programmatically
 
 Replace the single `_CLIENT_PREAMBLE` string with three parts assembled
 in `build_client_source()`:
 
 - `_PREAMBLE_HEADER`: shebang, coding declaration, `from __future__`,
   stdlib imports (static string, ~17 lines).
-- Generated constants block: all 36 constant assignments formatted from
+- Generated constants block: all constant assignments formatted from
   `dnsdle.constants` using `repr()` for values.
 - `_PREAMBLE_FOOTER`: PY2/type detection `try`/`except`, `ClientError`,
   `RetryableTransport`, `DnsParseError` (static string, ~17 lines).
 
-The constants block is generated by a module-level tuple of
-`(preamble_name, constants_attribute_name)` pairs:
+Since every constant now has the same name in `constants.py` and the
+assembled client, the mapping is a flat tuple of names:
 
 ```python
 from dnsdle import constants as _c
 
-# (name in assembled client, attribute name in dnsdle.constants)
 _PREAMBLE_CONSTANTS = (
     # DNS wire
-    ("DNS_FLAG_QR", "DNS_FLAG_QR"),
-    ("DNS_FLAG_TC", "DNS_FLAG_TC"),
-    ("DNS_FLAG_RD", "DNS_FLAG_RD"),
-    ("DNS_OPCODE_QUERY", "DNS_OPCODE_QUERY"),
-    ("DNS_OPCODE_MASK", "DNS_OPCODE_MASK"),
-    ("DNS_QTYPE_A", "DNS_QTYPE_A"),
-    ("DNS_QTYPE_CNAME", "DNS_QTYPE_CNAME"),
-    ("DNS_QTYPE_OPT", "DNS_QTYPE_OPT"),
-    ("DNS_QCLASS_IN", "DNS_QCLASS_IN"),
-    ("DNS_HEADER_BYTES", "DNS_HEADER_BYTES"),
-    ("DNS_POINTER_TAG", "DNS_POINTER_TAG"),
-    ("DNS_POINTER_VALUE_MASK", "DNS_POINTER_VALUE_MASK"),
-    ("DNS_RCODE_NOERROR", "DNS_RCODE_NOERROR"),
+    "DNS_FLAG_QR",
+    "DNS_FLAG_TC",
+    "DNS_FLAG_RD",
+    "DNS_OPCODE_QUERY",
+    "DNS_OPCODE_MASK",
+    "DNS_QTYPE_A",
+    "DNS_QTYPE_CNAME",
+    "DNS_QTYPE_OPT",
+    "DNS_QCLASS_IN",
+    "DNS_HEADER_BYTES",
+    "DNS_POINTER_TAG",
+    "DNS_POINTER_VALUE_MASK",
+    "DNS_RCODE_NOERROR",
     # payload
-    ("PAYLOAD_PROFILE_V1_BYTE", "PAYLOAD_PROFILE_V1_BYTE"),
-    ("PAYLOAD_FLAGS_V1_BYTE", "PAYLOAD_FLAGS_V1_BYTE"),
-    ("PAYLOAD_MAC_TRUNC_LEN", "PAYLOAD_MAC_TRUNC_LEN"),
-    ("PAYLOAD_ENC_KEY_LABEL", "PAYLOAD_ENC_KEY_LABEL"),
-    ("PAYLOAD_ENC_STREAM_LABEL", "PAYLOAD_ENC_STREAM_LABEL"),
-    ("PAYLOAD_MAC_KEY_LABEL", "PAYLOAD_MAC_KEY_LABEL"),
-    ("PAYLOAD_MAC_MESSAGE_LABEL", "PAYLOAD_MAC_MESSAGE_LABEL"),
+    "PAYLOAD_PROFILE_V1_BYTE",
+    "PAYLOAD_FLAGS_V1_BYTE",
+    "PAYLOAD_MAC_TRUNC_LEN",
+    "PAYLOAD_ENC_KEY_LABEL",
+    "PAYLOAD_ENC_STREAM_LABEL",
+    "PAYLOAD_MAC_KEY_LABEL",
+    "PAYLOAD_MAC_MESSAGE_LABEL",
     # mapping
-    ("MAPPING_FILE_LABEL", "MAPPING_FILE_LABEL"),
-    ("MAPPING_SLICE_LABEL", "MAPPING_SLICE_LABEL"),
-    ("FILE_ID_PREFIX", "FILE_ID_PREFIX"),
+    "MAPPING_FILE_LABEL",
+    "MAPPING_SLICE_LABEL",
+    "FILE_ID_PREFIX",
     # exit codes
-    ("EXIT_USAGE", "CLIENT_EXIT_USAGE"),
-    ("EXIT_TRANSPORT", "CLIENT_EXIT_TRANSPORT"),
-    ("EXIT_PARSE", "CLIENT_EXIT_PARSE"),
-    ("EXIT_CRYPTO", "CLIENT_EXIT_CRYPTO"),
-    ("EXIT_REASSEMBLY", "CLIENT_EXIT_REASSEMBLY"),
-    ("EXIT_WRITE", "CLIENT_EXIT_WRITE"),
+    "EXIT_USAGE",
+    "EXIT_TRANSPORT",
+    "EXIT_PARSE",
+    "EXIT_CRYPTO",
+    "EXIT_REASSEMBLY",
+    "EXIT_WRITE",
     # runtime tuning
-    ("REQUEST_TIMEOUT_SECONDS", "GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS"),
-    ("NO_PROGRESS_TIMEOUT_SECONDS", "GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS"),
-    ("MAX_ROUNDS", "GENERATED_CLIENT_DEFAULT_MAX_ROUNDS"),
-    ("MAX_CONSECUTIVE_TIMEOUTS", "GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS"),
-    ("RETRY_SLEEP_BASE_MS", "GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS"),
-    ("RETRY_SLEEP_JITTER_MS", "GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS"),
-    ("QUERY_INTERVAL_MS", "GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS"),
+    "REQUEST_TIMEOUT_SECONDS",
+    "NO_PROGRESS_TIMEOUT_SECONDS",
+    "MAX_ROUNDS",
+    "MAX_CONSECUTIVE_TIMEOUTS",
+    "RETRY_SLEEP_BASE_MS",
+    "RETRY_SLEEP_JITTER_MS",
+    "QUERY_INTERVAL_MS",
 )
 ```
 
@@ -126,8 +171,8 @@ In `build_client_source()`:
 
 ```python
 constants_lines = "\n".join(
-    "%s = %s" % (name, repr(getattr(_c, attr)))
-    for name, attr in _PREAMBLE_CONSTANTS
+    "%s = %s" % (name, repr(getattr(_c, name)))
+    for name in _PREAMBLE_CONSTANTS
 )
 preamble = _PREAMBLE_HEADER + constants_lines + "\n" + _PREAMBLE_FOOTER
 ```
@@ -143,25 +188,38 @@ The assembled client output will use `repr()` formatting (e.g., `32768`
 instead of `0x8000`, `b'...'` instead of `b"..."`).  This is functionally
 identical; no byte-compare against the prior output is needed.
 
-### 3. Update client_runtime.py development header
+### 4. Update client_runtime.py development header
 
-Replace the hardcoded `EXIT_*` lines:
+Replace the aliasing block and hardcoded exit codes:
 
 ```python
+# client runtime-tuning constants: canonical home is constants.py under the
+# GENERATED_CLIENT_DEFAULT_ prefix; aliased here to match the plain names
+# used in _CLIENT_PREAMBLE and referenced directly by _build_parser et al.
+from dnsdle import constants as _c
+REQUEST_TIMEOUT_SECONDS     = _c.GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
+NO_PROGRESS_TIMEOUT_SECONDS = _c.GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
+MAX_ROUNDS                  = _c.GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
+MAX_CONSECUTIVE_TIMEOUTS    = _c.GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
+RETRY_SLEEP_BASE_MS         = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
+RETRY_SLEEP_JITTER_MS       = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
+QUERY_INTERVAL_MS           = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
+
+# client-only: no canonical module home; defined locally like EXIT_*
 EXIT_USAGE = 2; EXIT_TRANSPORT = 3; EXIT_PARSE = 4
 EXIT_CRYPTO = 5; EXIT_REASSEMBLY = 6; EXIT_WRITE = 7
 ```
 
-With imports from `constants.py`:
+With direct imports (no aliasing needed since the names now match):
 
 ```python
 from dnsdle.constants import (
-    CLIENT_EXIT_USAGE as EXIT_USAGE,
-    CLIENT_EXIT_TRANSPORT as EXIT_TRANSPORT,
-    CLIENT_EXIT_PARSE as EXIT_PARSE,
-    CLIENT_EXIT_CRYPTO as EXIT_CRYPTO,
-    CLIENT_EXIT_REASSEMBLY as EXIT_REASSEMBLY,
-    CLIENT_EXIT_WRITE as EXIT_WRITE,
+    EXIT_CRYPTO, EXIT_PARSE, EXIT_REASSEMBLY,
+    EXIT_TRANSPORT, EXIT_USAGE, EXIT_WRITE,
+    REQUEST_TIMEOUT_SECONDS, NO_PROGRESS_TIMEOUT_SECONDS,
+    MAX_ROUNDS, MAX_CONSECUTIVE_TIMEOUTS,
+    RETRY_SLEEP_BASE_MS, RETRY_SLEEP_JITTER_MS,
+    QUERY_INTERVAL_MS,
 )
 ```
 
@@ -182,13 +240,14 @@ python /tmp/preamble_test.py --psk x --domains "INVALID DOMAIN" --mapping-seed s
 
 ## Affected Components
 
-- `dnsdle/constants.py`: add 6 `CLIENT_EXIT_*` constants.
+- `dnsdle/constants.py`: rename 7 `GENERATED_CLIENT_DEFAULT_*` constants
+  to short names; add 6 `EXIT_*` constants.
 - `dnsdle/client_standalone.py`: replace `_CLIENT_PREAMBLE` with
   `_PREAMBLE_HEADER` + `_PREAMBLE_FOOTER` + `_PREAMBLE_CONSTANTS` tuple;
   update `build_client_source()` to generate constants block; add
   `from dnsdle import constants as _c`.
-- `dnsdle/client_runtime.py`: replace hardcoded `EXIT_*` lines with
-  imports from `constants.py`.
+- `dnsdle/client_runtime.py`: replace aliased runtime-tuning imports and
+  hardcoded `EXIT_*` lines with direct imports from `constants.py`.
 - `doc/architecture/CLIENT_GENERATION.md`: update Architecture bullet 4
   to note that `build_client_source()` generates the constants section
   programmatically from `constants.py` (no longer a static string literal).
