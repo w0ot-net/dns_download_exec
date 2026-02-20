@@ -75,4 +75,4 @@ Executed 2026-02-20.  Implemented as specified with no deviations.
   CLI flag names verified intact.  Minified output compiles cleanly
   (12374 -> 7508 bytes with dummy substitution values).
 
-Commit: PENDING
+Commit: 4e0b139
