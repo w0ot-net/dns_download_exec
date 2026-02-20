@@ -271,4 +271,4 @@ deviations.
 Validation: assembled client compiles (36058 bytes ASCII), `--help` works,
 invalid-domain smoke test exits with code 2 as expected.
 
-Commit: PENDING
+Commit: 2d5e075
