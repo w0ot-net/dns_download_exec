@@ -195,8 +195,17 @@ sites were converted correctly with no semantic regression.
   `_LABEL_RE`); add `_CLIENT_RUNTIME_EXTRACTIONS`; update
   `build_client_source()` to extract from `client_runtime.py`; remove dead
   `import os` and `import re`.
-- `doc/architecture/CLIENT_GENERATION.md`: update to note client logic lives
-  in `client_runtime.py` as real Python, extracted via markers.
+- `doc/architecture/CLIENT_GENERATION.md`: three sections require revision:
+  - Architecture bullet 1 (canonical modules list): add `client_runtime.py`
+    as the 5th canonical module alongside compat, helpers, dnswire, and
+    cname_payload.
+  - Architecture bullet 3 ("The client source file contains only
+    client-specific logic"): rewrite to name `client_runtime.py` as the
+    source of client logic, extracted via the marker mechanism.
+  - "Extracted functions (16 total)": the count and per-function listing
+    become incorrect; update to reflect that `client_runtime.py` contributes
+    1 extraction block (not individual named functions) in addition to the
+    existing 16 utility functions from the four canonical modules.
 - `doc/architecture/CLIENT_RUNTIME.md`: no change -- documents runtime
   behavior only; unaffected by where the source is authored.
 - `dnsdle/client_generator.py`: no change -- imports `build_client_source`
