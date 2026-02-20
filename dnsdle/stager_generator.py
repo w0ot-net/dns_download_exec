@@ -86,7 +86,6 @@ def generate_stager(config, template, client_publish_item, target_os):
         "python3 -c "
         '"import base64,zlib;'
         "exec(zlib.decompress(base64.b64decode('%s')))\""
-        " --resolver RESOLVER"
         % payload_str
     )
 
@@ -140,10 +139,14 @@ def generate_stagers(config, generation_result, client_publish_items):
     for item in client_publish_items:
         item_by_filename[item["source_filename"]] = item
 
-    template = build_stager_template()
+    template_by_os = {}
     managed_dir = generation_result["managed_dir"]
     stagers = []
     for artifact in generation_result["artifacts"]:
+        target_os = artifact["target_os"]
+        if target_os not in template_by_os:
+            template_by_os[target_os] = build_stager_template(target_os)
+        template = template_by_os[target_os]
         client_item = item_by_filename.get(artifact["filename"])
         if client_item is None:
             raise StartupError(
@@ -152,7 +155,7 @@ def generate_stagers(config, generation_result, client_publish_items):
                 "no client publish item found for artifact",
                 {"filename": artifact["filename"]},
             )
-        stager = generate_stager(config, template, client_item, artifact["target_os"])
+        stager = generate_stager(config, template, client_item, target_os)
         stager["path"] = _write_stager_file(managed_dir, stager)
         stagers.append(stager)
 

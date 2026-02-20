@@ -223,3 +223,19 @@ fail after the signature changes to `build_stager_template(target_os)`:
 - `unit_tests/test_stager_generator.py`: three tests on lines 44, 57, 76.
 
 Tests are not modified per repository policy.
+
+## Execution Notes (20250220)
+
+Implemented as planned with one deviation:
+
+- **Minifier semicolon-join fix**: The plan did not anticipate that the lifted
+  `resolver_windows.py` source contains multi-line function calls (e.g.
+  `subprocess.run(args, stdout=..., ...)` with arguments on separate lines).
+  The minifier's semicolon-join pass (Pass 5) incorrectly joined these
+  continuation lines, producing invalid syntax like `de,;stdout=...`. Fixed by
+  adding a guard: do not semicolon-join when the previous line ends with `,`,
+  which indicates a multi-line expression continuation. This is a one-line
+  change to the join condition in `stager_minify.py`.
+
+Validation: both `linux` and `windows` stager templates build, minify, and
+compile successfully with dummy placeholder values.

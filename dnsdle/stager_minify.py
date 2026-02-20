@@ -14,8 +14,12 @@ import re
 # NOT renamed (already single-char, no benefit):
 #   v, i, j, r
 _RENAME_TABLE = [
+    ("_load_windows_resolvers", "cm"),
+    ("_parse_nslookup_output", "cn"),
+    ("_load_unix_resolvers", "co"),
     ("_derive_slice_token", "cj"),
     ("PLAINTEXT_SHA256_HEX", "a"),
+    ("_discover_resolver", "cp"),
     ("_extract_payload", "b"),
     ("COMPRESSED_SIZE", "c"),
     ("PUBLISH_VERSION", "d"),
@@ -27,6 +31,7 @@ _RENAME_TABLE = [
     ("DOMAIN_LABELS", "k"),
     ("_expected_mac", "l"),
     ("client_source", "m"),
+    ("_run_nslookup", "cq"),
     ("MAPPING_SEED", "n"),
     ("TOTAL_SLICES", "o"),
     ("_build_query", "p"),
@@ -36,6 +41,7 @@ _RENAME_TABLE = [
     ("cname_labels", "u"),
     ("payload_text", "w"),
     ("qname_labels", "x"),
+    ("server_index", "cr"),
     ("_send_query", "y"),
     ("_keystream", "z"),
     ("ciphertext", "A"),
@@ -43,6 +49,7 @@ _RENAME_TABLE = [
     ("plaintext", "C"),
     ("_deadline", "cl"),
     ("rdata_off", "D"),
+    ("resolvers", "cs"),
     ("FILE_TAG", "E"),
     ("_enc_key", "F"),
     ("_mac_key", "G"),
@@ -52,6 +59,9 @@ _RENAME_TABLE = [
     ("question", "K"),
     ("rr_class", "L"),
     ("use_edns", "M"),
+    ("stripped", "ct"),
+    ("_IPV4_RE", "cu"),
+    ("raw_line", "cv"),
     ("FILE_ID", "N"),
     ("_port_s", "O"),
     ("ancount", "P"),
@@ -70,6 +80,10 @@ _RENAME_TABLE = [
     ("record", "ac"),
     ("slices", "ad"),
     ("suffix", "ae"),
+    ("handle", "cw"),
+    ("result", "cx"),
+    ("output", "cy"),
+    ("run_fn", "cz"),
     ("_b32d", "af"),
     ("block", "ag"),
     ("cname", "ah"),
@@ -80,6 +94,9 @@ _RENAME_TABLE = [
     ("qname", "an"),
     ("rdlen", "ao"),
     ("right", "ap"),
+    ("lines", "da"),
+    ("match", "db"),
+    ("index", "dc"),
     ("_src", "aq"),
     ("_ttl", "ar"),
     ("_xor", "at"),
@@ -95,6 +112,9 @@ _RENAME_TABLE = [
     ("slen", "be"),
     ("sock", "bf"),
     ("text", "bg"),
+    ("line", "dd"),
+    ("args", "de"),
+    ("proc", "df"),
     ("PSK", "ai"),
     ("_ab", "bh"),
     ("_ce", "bi"),
@@ -173,7 +193,8 @@ def minify(source):
             prev_stripped = prev.lstrip(" ")
             prev_indent = len(prev) - len(prev_stripped)
             if (indent == prev_indent
-                    and token not in _BLOCK_STARTERS):
+                    and token not in _BLOCK_STARTERS
+                    and not prev.rstrip().endswith(",")):
                 result[-1] = prev + ";" + stripped
                 continue
         result.append(ln)
