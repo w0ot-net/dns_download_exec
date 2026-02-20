@@ -62,16 +62,11 @@ utility blocks provide those names instead.
 `_parse_runtime_args`, `main`, and the `if __name__` block.
 
 The development header imports from `dnsdle.constants` for all DNS/payload/
-mapping constants and EXIT_* codes (added to `constants.py` in this change).
-`ClientError` and `RetryableTransport` are defined locally since they are
-client-only concepts with no canonical module home.
-
-### Add EXIT_* constants to `constants.py`
-
-Add the six client exit code constants (`EXIT_USAGE` through `EXIT_WRITE`)
-to `dnsdle/constants.py` under a new "Client exit codes" section.  This
-eliminates duplication: `client_runtime.py` imports them for development,
-and the preamble string inlines them for the standalone client.
+mapping constants.  `ClientError`, `RetryableTransport`, and the six EXIT_*
+codes (`EXIT_USAGE` through `EXIT_WRITE`) are defined locally in the
+development header -- they are client-only concepts with no canonical module
+home, and three lines of local definitions keeps `constants.py` free of
+client exit-code semantics.
 
 ### Shrink `_CLIENT_PREAMBLE`
 
@@ -120,8 +115,6 @@ normal single-backslash escapes (`"\n"`, `b"\x00"`, `r"\d"`).
 
 ## Affected Components
 
-- `dnsdle/constants.py`: add `EXIT_USAGE`, `EXIT_TRANSPORT`, `EXIT_PARSE`,
-  `EXIT_CRYPTO`, `EXIT_REASSEMBLY`, `EXIT_WRITE` constants.
 - `dnsdle/client_runtime.py` (new): all client-specific functions as real
   Python with development imports and a single `client_runtime` extract
   block.
