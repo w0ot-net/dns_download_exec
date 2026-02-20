@@ -84,6 +84,7 @@ def main(argv=None):
                 "source_filename": stager["source_filename"],
                 "target_os": stager["target_os"],
                 "oneliner": stager["oneliner"],
+                "path": stager["path"],
             },
             level="info",
             category="startup",

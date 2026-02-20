@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import base64
+import os
 import re
 import zlib
 
@@ -9,16 +10,16 @@ from dnsdle.stager_template import build_stager_template
 from dnsdle.state import StartupError
 
 
-def generate_stager(config, client_publish_item, target_os):
+def generate_stager(config, template, client_publish_item, target_os):
     """Generate a stager one-liner for a single client publish item.
 
+    template is the stager template source from build_stager_template().
     client_publish_item is the mapped publish item dict for the generated
     client script.  target_os is the target platform string.
 
     Returns a dict with keys: source_filename, target_os, oneliner,
     minified_source.
     """
-    template = build_stager_template()
 
     replacements = {
         "DOMAIN_LABELS": tuple(config.domain_labels_by_domain[0]),
@@ -63,7 +64,7 @@ def generate_stager(config, client_publish_item, target_os):
 
     try:
         payload.decode("ascii")
-    except Exception:
+    except (UnicodeDecodeError, ValueError):
         raise StartupError(
             "startup",
             "stager_generation_failed",
@@ -95,6 +96,36 @@ def generate_stager(config, client_publish_item, target_os):
     }
 
 
+def _stager_txt_filename(source_filename):
+    """Derive the stager .txt filename from the client script filename."""
+    base, _ext = os.path.splitext(source_filename)
+    return base + ".stager.txt"
+
+
+def _write_stager_file(managed_dir, stager):
+    """Write a stager one-liner to a .txt file in the managed directory."""
+    txt_name = _stager_txt_filename(stager["source_filename"])
+    path = os.path.join(managed_dir, txt_name)
+    temp_path = path + ".tmp"
+    try:
+        with open(temp_path, "wb") as handle:
+            handle.write(stager["oneliner"].encode("ascii"))
+            handle.write(b"\n")
+        os.rename(temp_path, path)
+    except Exception as exc:
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+        raise StartupError(
+            "startup",
+            "stager_generation_failed",
+            "failed to write stager file: %s" % exc,
+            {"path": path},
+        )
+    return path
+
+
 def generate_stagers(config, generation_result, client_publish_items):
     """Generate stagers for all (file, target_os) pairs.
 
@@ -107,6 +138,8 @@ def generate_stagers(config, generation_result, client_publish_items):
     for item in client_publish_items:
         item_by_filename[item["source_filename"]] = item
 
+    template = build_stager_template()
+    managed_dir = generation_result["managed_dir"]
     stagers = []
     for artifact in generation_result["artifacts"]:
         client_item = item_by_filename.get(artifact["filename"])
@@ -117,8 +150,8 @@ def generate_stagers(config, generation_result, client_publish_items):
                 "no client publish item found for artifact",
                 {"filename": artifact["filename"]},
             )
-        stagers.append(
-            generate_stager(config, client_item, artifact["target_os"])
-        )
+        stager = generate_stager(config, template, client_item, artifact["target_os"])
+        stager["path"] = _write_stager_file(managed_dir, stager)
+        stagers.append(stager)
 
     return stagers
