@@ -102,6 +102,14 @@ it calls the single available loader directly. OS-specific imports (for
 example, `import subprocess` for Windows) and helper definitions (for example,
 `_IPV4_RE`) are emitted only when needed.
 
+OS-specific resolver discovery source is maintained in standalone modules
+(`dnsdle/resolver_linux.py`, `dnsdle/resolver_windows.py`). These modules are
+independently importable and testable. At generation time, `client_template.py`
+reads each module file and lifts the function source below the
+`# __TEMPLATE_SOURCE__` sentinel into the generated client template. Everything
+above the sentinel is module boilerplate needed only for direct import; the
+sentinel itself and all content above it are excluded from generated output.
+
 When repository runtime helpers are used as references, generated logic must
 remain behavior-identical to:
 - `dnsdle/client_payload.py` for response-envelope validation, payload parse,

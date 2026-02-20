@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import os
+
 from dnsdle.state import StartupError
 
 
@@ -623,39 +625,13 @@ def _parse_resolver_arg(raw_value):
     except Exception as exc:
         raise ClientError(EXIT_USAGE, "usage", "--resolver lookup failed: %s" % exc)
 
-
 '''
 
 
-_RESOLVER_BLOCK_LINUX = '''def _load_unix_resolvers():
-    resolvers = []
-    try:
-        with open("/etc/resolv.conf", "r") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "#" in line:
-                    line = line.split("#", 1)[0].strip()
-                    if not line:
-                        continue
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                if parts[0].lower() != "nameserver":
-                    continue
-                host = parts[1].strip()
-                if not host:
-                    continue
-                if host not in resolvers:
-                    resolvers.append(host)
-    except Exception:
-        return []
-    return resolvers
-
+_DISCOVER_SYSTEM_RESOLVER = '''
 
 def _discover_system_resolver():
-    resolver_hosts = _load_unix_resolvers()
+    resolver_hosts = @@LOADER_FN@@()
 
     for host in resolver_hosts:
         try:
@@ -669,79 +645,29 @@ def _discover_system_resolver():
 '''
 
 
-_RESOLVER_BLOCK_WINDOWS = '''_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
-
-
-def _run_nslookup():
-    args = ["nslookup", "google.com"]
-    run_fn = getattr(subprocess, "run", None)
-    if run_fn is not None:
-        result = run_fn(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=5,
-            universal_newlines=True,
+def _lift_resolver_source(filename):
+    sentinel = "# __TEMPLATE_SOURCE__"
+    source_dir = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(source_dir, filename)
+    try:
+        with open(filepath, "r") as handle:
+            content = handle.read()
+    except Exception as exc:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "cannot read resolver source file: %s" % exc,
+            {"filename": filename},
         )
-        return result.stdout or ""
-
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    output, _ = proc.communicate()
-    return output or ""
-
-
-def _parse_nslookup_output(output):
-    lines = output.splitlines()
-    server_index = None
-    for index, line in enumerate(lines):
-        if line.strip().lower().startswith("server:"):
-            server_index = index
-            break
-    if server_index is None:
-        return None
-
-    for line in lines[server_index + 1:]:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.lower().startswith("non-authoritative answer"):
-            break
-        match = _IPV4_RE.search(stripped)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _load_windows_resolvers():
-    try:
-        output = _run_nslookup()
-    except Exception:
-        return []
-
-    ip = _parse_nslookup_output(output)
-    if not ip:
-        return []
-    return [ip]
-
-
-def _discover_system_resolver():
-    resolver_hosts = _load_windows_resolvers()
-
-    for host in resolver_hosts:
-        try:
-            return _resolve_udp_address(host, 53)
-        except Exception:
-            continue
-
-    raise ClientError(EXIT_TRANSPORT, "dns", "no system DNS resolver found")
-
-
-'''
+    idx = content.find(sentinel)
+    if idx < 0:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "sentinel not found in resolver source file",
+            {"filename": filename},
+        )
+    return content[idx + len(sentinel):]
 
 
 _TEMPLATE_SUFFIX = '''def _send_dns_query(resolver_addr, query_packet, timeout_seconds):
@@ -1005,10 +931,12 @@ if __name__ == "__main__":
 def build_client_template(target_os):
     if target_os == "linux":
         extra_imports = ""
-        resolver_block = _RESOLVER_BLOCK_LINUX
+        lifted = _lift_resolver_source("resolver_linux.py")
+        loader_fn = "_load_unix_resolvers"
     elif target_os == "windows":
         extra_imports = "import subprocess"
-        resolver_block = _RESOLVER_BLOCK_WINDOWS
+        lifted = _lift_resolver_source("resolver_windows.py")
+        loader_fn = "_load_windows_resolvers"
     else:
         raise StartupError(
             "startup",
@@ -1016,5 +944,6 @@ def build_client_template(target_os):
             "unsupported target_os for template",
             {"target_os": target_os},
         )
-    template = _TEMPLATE_PREFIX + resolver_block + _TEMPLATE_SUFFIX
+    discover = _DISCOVER_SYSTEM_RESOLVER.replace("@@LOADER_FN@@", loader_fn)
+    template = _TEMPLATE_PREFIX + lifted + discover + _TEMPLATE_SUFFIX
     return template.replace("@@EXTRA_IMPORTS@@", extra_imports)
