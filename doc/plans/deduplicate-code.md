@@ -24,8 +24,9 @@ the same code.
    optional-set initialisation, and loop scaffolding.
 
 3. **`_derive_file_id` is implemented twice.** `publish.py` has its own copy
-   (wrapped in an unnecessary `_sha256_hex` helper); `client_runtime.py` has an
-   identical implementation inside the extraction block.
+   (using `_sha256_hex`, which is also used elsewhere in the module);
+   `client_runtime.py` has an identical implementation inside the extraction
+   block.
 
 4. **`_derive_file_tag` and `_derive_slice_token` are implemented twice with an
    API mismatch.** `mapping.py` takes pre-encoded `seed_bytes` and uses private
@@ -64,10 +65,15 @@ be called.
 ### 2. Collapse `build_publish_items` into a delegating wrapper
 
 `build_publish_items` reads each path from `config.files`, raises
-`unreadable_file` on failure, then calls `build_publish_items_from_sources` with
-the resulting `(basename, bytes)` list and `config.compression_level`.  All
-shared preamble (budget guard, set init) lives only in
-`build_publish_items_from_sources`.
+`unreadable_file` on failure (preserving `file_index` in the error context),
+then calls `build_publish_items_from_sources` with the resulting
+`(basename, bytes)` list and `config.compression_level`.  All shared preamble
+(budget guard, set init) lives only in `build_publish_items_from_sources`.
+
+Note: downstream errors and diagnostic logs will use `source_index` /
+`source_filename` context (from `build_publish_items_from_sources`) instead of
+the previous `file_index`.  This is intentional — filenames are more
+informative than opaque indices.
 
 ### 3. Move `_derive_file_id` to `helpers.py`
 
@@ -82,8 +88,8 @@ def _derive_file_id(publish_version):
 Add required imports to `helpers.py`: `encode_ascii` from `dnsdle.compat`,
 `FILE_ID_PREFIX` from `dnsdle.constants`.
 
-- `publish.py`: remove `_sha256_hex` and local `_derive_file_id`; import from
-  `dnsdle.helpers`.
+- `publish.py`: remove local `_derive_file_id`; import from `dnsdle.helpers`.
+  Keep `_sha256_hex` (still used by `_build_single_publish_item` lines 41, 72).
 - `client_runtime.py`: remove `_derive_file_id` from the extraction block;
   import from `dnsdle.helpers` at the top of the file (already present for other
   helpers).
@@ -112,9 +118,11 @@ Add `encode_ascii_int`, `base32_lower_no_pad`, `MAPPING_FILE_LABEL`,
 `MAPPING_SLICE_LABEL` to `helpers.py` imports.
 
 - `mapping.py`: remove `_derive_file_digest`, `_derive_slice_digest`,
-  `_derive_file_tag`, `_derive_slice_token`; import the four names from
-  `dnsdle.helpers`. Update `_compute_tokens` and `apply_mapping` call sites —
-  signatures are compatible (both already use `seed_bytes`).
+  `_derive_file_tag`, `_derive_slice_token`; import `_derive_file_tag` and
+  `_derive_slice_token` from `dnsdle.helpers` (the digest helpers are inlined
+  into the new implementations and eliminated). `_compute_tokens` and
+  `apply_mapping` call sites need no change — signatures are compatible (both
+  already use `seed_bytes`).
 - `client_runtime.py`: remove `_derive_file_tag` and `_derive_slice_token` from
   the extraction block; update the two call sites to pass
   `encode_ascii(mapping_seed)` instead of `mapping_seed` (i.e. in
@@ -130,12 +138,13 @@ Add `encode_ascii_int`, `base32_lower_no_pad`, `MAPPING_FILE_LABEL`,
   functions, wire `_read_resolver_source` into `build_stager_template()`
 - `dnsdle/resolver_windows.py`: unchanged (already canonical)
 - `dnsdle/resolver_linux.py`: unchanged (already canonical)
-- `dnsdle/publish.py`: remove `_sha256_hex`, remove local `_derive_file_id`,
-  import from `dnsdle.helpers`, collapse `build_publish_items` into delegation
+- `dnsdle/publish.py`: remove local `_derive_file_id`, import from
+  `dnsdle.helpers`, collapse `build_publish_items` into delegation
 - `dnsdle/helpers.py`: add imports; add `_derive_file_id`, `_derive_file_tag`,
   `_derive_slice_token` with extraction markers
 - `dnsdle/mapping.py`: remove `_derive_file_digest`, `_derive_slice_digest`,
-  `_derive_file_tag`, `_derive_slice_token`; import from `dnsdle.helpers`
+  `_derive_file_tag`, `_derive_slice_token`; import `_derive_file_tag` and
+  `_derive_slice_token` from `dnsdle.helpers`
 - `dnsdle/client_runtime.py`: remove `_derive_file_id`, `_derive_file_tag`,
   `_derive_slice_token` from extraction block; import from `dnsdle.helpers`;
   update two call sites to pass `encode_ascii(mapping_seed)` as `seed_bytes`
