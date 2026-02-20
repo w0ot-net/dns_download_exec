@@ -139,24 +139,45 @@ Add rename entries to `_RENAME_TABLE` in `stager_minify.py` for all new
 identifiers introduced by the lifted resolver code. Entries must be inserted
 at length-sorted positions to maintain the longest-first ordering invariant.
 
-New function/constant names requiring entries (both platforms, since the rename
-table is shared and unmatched entries are harmless no-ops):
+All new identifiers >3 characters from both platform resolver modules, the
+discovery wrapper, and any existing stager locals that now appear in more
+scopes. Both platforms' entries are included since the rename table is shared
+and unmatched entries are harmless no-ops. All candidates verified safe from
+`\b` word-boundary collisions with string literals in both resolver modules,
+the stager template, and the discovery wrapper (`"nameserver"`, `"run"`,
+`"server:"`, `"no resolver"` -- none contain a candidate as a delimited word).
 
-- `_discover_resolver`
-- `_load_unix_resolvers`
-- `_parse_nslookup_output`
-- `_load_windows_resolvers`
-- `_run_nslookup`
-- `server_index`
-- `_IPV4_RE`
-- `resolvers`
-- `raw_line`
-- `run_fn`
+Function names and module-level constants:
 
-Local variables like `handle`, `stripped`, `result`, `proc`, `lines`, `output`,
-`match`, `ip` should be evaluated for addition based on whether they provide
-worthwhile compression without introducing word-boundary collisions in string
-literals (e.g., `"nameserver"`, `"Server:"`, `"non-authoritative answer"`).
+- `_load_windows_resolvers` (23 chars)
+- `_parse_nslookup_output` (22 chars)
+- `_load_unix_resolvers` (20 chars)
+- `_discover_resolver` (18 chars)
+- `_run_nslookup` (13 chars)
+- `server_index` (12 chars)
+- `resolvers` (9 chars)
+- `stripped` (8 chars)
+- `_IPV4_RE` (8 chars)
+- `raw_line` (8 chars)
+
+Local variables (all verified safe, worthwhile compression):
+
+- `handle` (6 chars) -- Linux resolver, local in `_load_unix_resolvers`
+- `result` (6 chars) -- Windows resolver, local in `_run_nslookup`
+- `output` (6 chars) -- Windows resolver, local in `_parse_nslookup_output`
+  and `_load_windows_resolvers`
+- `run_fn` (6 chars) -- Windows resolver, local in `_run_nslookup`
+- `lines` (5 chars) -- Windows resolver, local in `_parse_nslookup_output`
+- `match` (5 chars) -- Windows resolver, local in `_parse_nslookup_output`
+- `index` (5 chars) -- Windows resolver, local in `_parse_nslookup_output`
+- `line` (4 chars) -- both resolvers, local in loader functions
+- `args` (4 chars) -- Windows resolver, local in `_run_nslookup`
+- `proc` (4 chars) -- Windows resolver, local in `_run_nslookup`
+
+Skipped (already <=3 characters, negligible gain):
+
+- `_h` (2 chars), `_ai` (3 chars) -- discovery wrapper
+- `ip` (2 chars) -- Windows resolver
 
 ### Generator changes
 
