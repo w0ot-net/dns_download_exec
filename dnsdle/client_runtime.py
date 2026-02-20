@@ -14,34 +14,26 @@ from dnsdle.helpers import hmac_sha256, dns_name_wire_length
 from dnsdle.dnswire import _decode_name
 from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_bytes
 
-# dnsdle constants -- DNS/payload/mapping values used by the extract block
+# dnsdle constants -- DNS/payload/mapping/exit/tuning values used by the
+# extract block; canonical home is constants.py
 from dnsdle.constants import (
     DNS_FLAG_QR, DNS_FLAG_TC, DNS_FLAG_RD,
     DNS_HEADER_BYTES, DNS_OPCODE_MASK, DNS_OPCODE_QUERY,
     DNS_QCLASS_IN, DNS_QTYPE_A, DNS_QTYPE_CNAME, DNS_QTYPE_OPT,
     DNS_RCODE_NOERROR,
+    EXIT_CRYPTO, EXIT_PARSE, EXIT_REASSEMBLY,
+    EXIT_TRANSPORT, EXIT_USAGE, EXIT_WRITE,
     FILE_ID_PREFIX, MAPPING_FILE_LABEL, MAPPING_SLICE_LABEL,
+    MAX_CONSECUTIVE_TIMEOUTS, MAX_ROUNDS,
+    NO_PROGRESS_TIMEOUT_SECONDS,
     PAYLOAD_ENC_KEY_LABEL,
     PAYLOAD_FLAGS_V1_BYTE, PAYLOAD_MAC_KEY_LABEL,
     PAYLOAD_MAC_MESSAGE_LABEL, PAYLOAD_MAC_TRUNC_LEN,
     PAYLOAD_PROFILE_V1_BYTE,
+    QUERY_INTERVAL_MS,
+    REQUEST_TIMEOUT_SECONDS,
+    RETRY_SLEEP_BASE_MS, RETRY_SLEEP_JITTER_MS,
 )
-
-# client runtime-tuning constants: canonical home is constants.py under the
-# GENERATED_CLIENT_DEFAULT_ prefix; aliased here to match the plain names
-# used in _CLIENT_PREAMBLE and referenced directly by _build_parser et al.
-from dnsdle import constants as _c
-REQUEST_TIMEOUT_SECONDS     = _c.GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
-NO_PROGRESS_TIMEOUT_SECONDS = _c.GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
-MAX_ROUNDS                  = _c.GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
-MAX_CONSECUTIVE_TIMEOUTS    = _c.GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
-RETRY_SLEEP_BASE_MS         = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
-RETRY_SLEEP_JITTER_MS       = _c.GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
-QUERY_INTERVAL_MS           = _c.GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
-
-# client-only: no canonical module home; defined locally like EXIT_*
-EXIT_USAGE = 2; EXIT_TRANSPORT = 3; EXIT_PARSE = 4
-EXIT_CRYPTO = 5; EXIT_REASSEMBLY = 6; EXIT_WRITE = 7
 
 class ClientError(Exception):
     def __init__(self, code, phase, message):

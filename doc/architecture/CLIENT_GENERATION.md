@@ -35,7 +35,9 @@ startup from canonical source modules using an extraction system:
    and assembled into the standalone client via marker extraction -- not
    via string literal concatenation.
 4. `build_client_source()` assembles the full standalone script by combining
-   extracted utilities and client-specific code.
+   a static preamble header, a constants section generated programmatically
+   from `dnsdle.constants` (via `_PREAMBLE_CONSTANTS`), a static preamble
+   footer, and extracted utilities and client-specific code.
 5. A thin `DnsParseError(ClientError)` subclass in the client preamble adapts
    the single-arg `DnsParseError` constructor used by extracted `_decode_name`
    to `ClientError`'s `(code, phase, message)` signature.

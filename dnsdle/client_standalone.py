@@ -1,6 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 
 from dnsdle.compat import encode_ascii
+from dnsdle import constants as _c
 from dnsdle.extract import extract_functions
 from dnsdle.state import StartupError
 
@@ -32,7 +33,52 @@ _CNAME_PAYLOAD_EXTRACTIONS = [
 _CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]
 
 
-_CLIENT_PREAMBLE = '''\
+_PREAMBLE_CONSTANTS = (
+    # DNS wire
+    "DNS_FLAG_QR",
+    "DNS_FLAG_TC",
+    "DNS_FLAG_RD",
+    "DNS_OPCODE_QUERY",
+    "DNS_OPCODE_MASK",
+    "DNS_QTYPE_A",
+    "DNS_QTYPE_CNAME",
+    "DNS_QTYPE_OPT",
+    "DNS_QCLASS_IN",
+    "DNS_HEADER_BYTES",
+    "DNS_POINTER_TAG",
+    "DNS_POINTER_VALUE_MASK",
+    "DNS_RCODE_NOERROR",
+    # payload
+    "PAYLOAD_PROFILE_V1_BYTE",
+    "PAYLOAD_FLAGS_V1_BYTE",
+    "PAYLOAD_MAC_TRUNC_LEN",
+    "PAYLOAD_ENC_KEY_LABEL",
+    "PAYLOAD_ENC_STREAM_LABEL",
+    "PAYLOAD_MAC_KEY_LABEL",
+    "PAYLOAD_MAC_MESSAGE_LABEL",
+    # mapping
+    "MAPPING_FILE_LABEL",
+    "MAPPING_SLICE_LABEL",
+    "FILE_ID_PREFIX",
+    # exit codes
+    "EXIT_USAGE",
+    "EXIT_TRANSPORT",
+    "EXIT_PARSE",
+    "EXIT_CRYPTO",
+    "EXIT_REASSEMBLY",
+    "EXIT_WRITE",
+    # runtime tuning
+    "REQUEST_TIMEOUT_SECONDS",
+    "NO_PROGRESS_TIMEOUT_SECONDS",
+    "MAX_ROUNDS",
+    "MAX_CONSECUTIVE_TIMEOUTS",
+    "RETRY_SLEEP_BASE_MS",
+    "RETRY_SLEEP_JITTER_MS",
+    "QUERY_INTERVAL_MS",
+)
+
+
+_PREAMBLE_HEADER = '''\
 #!/usr/bin/env python
 # -*- coding: ascii -*-
 from __future__ import print_function
@@ -52,48 +98,9 @@ import tempfile
 import time
 import zlib
 
+'''
 
-DNS_FLAG_QR = 0x8000
-DNS_FLAG_TC = 0x0200
-DNS_FLAG_RD = 0x0100
-DNS_OPCODE_QUERY = 0x0000
-DNS_OPCODE_MASK = 0x7800
-DNS_QTYPE_A = 1
-DNS_QTYPE_CNAME = 5
-DNS_QTYPE_OPT = 41
-DNS_QCLASS_IN = 1
-DNS_HEADER_BYTES = 12
-DNS_POINTER_TAG = 0xC0
-DNS_POINTER_VALUE_MASK = 0x3FFF
-DNS_RCODE_NOERROR = 0
-
-PAYLOAD_PROFILE_V1_BYTE = 0x01
-PAYLOAD_FLAGS_V1_BYTE = 0x00
-PAYLOAD_MAC_TRUNC_LEN = 8
-PAYLOAD_ENC_KEY_LABEL = b"dnsdle-enc-v1|"
-PAYLOAD_ENC_STREAM_LABEL = b"dnsdle-enc-stream-v1|"
-PAYLOAD_MAC_KEY_LABEL = b"dnsdle-mac-v1|"
-PAYLOAD_MAC_MESSAGE_LABEL = b"dnsdle-mac-msg-v1|"
-
-MAPPING_FILE_LABEL = b"dnsdle:file:v1|"
-MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
-FILE_ID_PREFIX = b"dnsdle:file-id:v1|"
-
-EXIT_USAGE = 2
-EXIT_TRANSPORT = 3
-EXIT_PARSE = 4
-EXIT_CRYPTO = 5
-EXIT_REASSEMBLY = 6
-EXIT_WRITE = 7
-
-REQUEST_TIMEOUT_SECONDS = 3.0
-NO_PROGRESS_TIMEOUT_SECONDS = 60
-MAX_ROUNDS = 64
-MAX_CONSECUTIVE_TIMEOUTS = 128
-RETRY_SLEEP_BASE_MS = 100
-RETRY_SLEEP_JITTER_MS = 150
-QUERY_INTERVAL_MS = 50
-
+_PREAMBLE_FOOTER = '''
 try:
     text_type = unicode
     binary_type = str
@@ -129,6 +136,12 @@ _UNIVERSAL_CLIENT_FILENAME = "dnsdle_universal_client.py"
 
 
 def build_client_source():
+    constants_lines = "\n".join(
+        "%s = %s" % (name, repr(getattr(_c, name)))
+        for name in _PREAMBLE_CONSTANTS
+    )
+    preamble = _PREAMBLE_HEADER + constants_lines + "\n" + _PREAMBLE_FOOTER
+
     compat_blocks = extract_functions("compat.py", _COMPAT_EXTRACTIONS)
     helpers_blocks = extract_functions("helpers.py", _HELPERS_EXTRACTIONS)
     dnswire_blocks = extract_functions("dnswire.py", _DNSWIRE_EXTRACTIONS)
@@ -141,7 +154,7 @@ def build_client_source():
     )
 
     extracted_source = "\n\n".join(extracted_parts)
-    source = _CLIENT_PREAMBLE + extracted_source + "\n"
+    source = preamble + extracted_source + "\n"
 
     try:
         compile(source, "<universal_client>", "exec")

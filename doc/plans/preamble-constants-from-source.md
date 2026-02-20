@@ -251,3 +251,24 @@ python /tmp/preamble_test.py --psk x --domains "INVALID DOMAIN" --mapping-seed s
 - `doc/architecture/CLIENT_GENERATION.md`: update Architecture bullet 4
   to note that `build_client_source()` generates the constants section
   programmatically from `constants.py` (no longer a static string literal).
+
+## Execution Notes
+
+Executed 2026-02-20.  All plan items implemented as specified with no
+deviations.
+
+- `constants.py`: renamed 7 `GENERATED_CLIENT_DEFAULT_*` to short names;
+  added 6 `EXIT_*` constants.
+- `client_standalone.py`: replaced `_CLIENT_PREAMBLE` monolithic string
+  with `_PREAMBLE_HEADER` + `_PREAMBLE_CONSTANTS` flat tuple +
+  `_PREAMBLE_FOOTER`; updated `build_client_source()` to generate the
+  constants block via `repr(getattr(_c, name))`.
+- `client_runtime.py`: collapsed aliased `_c.GENERATED_CLIENT_DEFAULT_*`
+  imports and hardcoded `EXIT_*` lines into a single direct import from
+  `dnsdle.constants`.
+- `CLIENT_GENERATION.md`: updated Architecture bullet 4.
+
+Validation: assembled client compiles (36058 bytes ASCII), `--help` works,
+invalid-domain smoke test exits with code 2 as expected.
+
+Commit: PENDING
