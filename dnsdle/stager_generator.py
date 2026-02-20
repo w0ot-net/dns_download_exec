@@ -59,7 +59,7 @@ def generate_stager(config, template, client_publish_item, target_os):
         )
 
     minified_bytes = minified.encode("ascii")
-    compressed = zlib.compress(minified_bytes)
+    compressed = zlib.compress(minified_bytes, 9)
     payload = base64.b64encode(compressed)
 
     try:
