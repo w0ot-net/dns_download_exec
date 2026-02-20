@@ -99,7 +99,7 @@ def generate_stager(config, template, client_publish_item, target_os):
 def _stager_txt_filename(source_filename):
     """Derive the stager .txt filename from the client script filename."""
     base, _ext = os.path.splitext(source_filename)
-    return base + ".stager.txt"
+    return base + ".1-liner.txt"
 
 
 def _write_stager_file(managed_dir, stager):
