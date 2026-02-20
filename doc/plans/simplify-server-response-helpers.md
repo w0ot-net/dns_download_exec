@@ -2,11 +2,10 @@
 
 ## Summary
 
-Three independent simplifications to `dnsdle/server.py` reduce code without
-changing observable behavior: merging three near-identical response builder
-functions into one, replacing a manual dict-merge loop with `dict.update`, and
-removing the complex re-parse-and-SERVFAIL fallback for unhandled exceptions in
-the serve loop.
+Three independent simplifications to `dnsdle/server.py` reduce code and fix a
+counter bug: merging three near-identical response builder functions into one,
+replacing a manual dict-merge loop with `dict.update`, and removing the complex
+re-parse-and-SERVFAIL fallback for unhandled exceptions in the serve loop.
 
 ## Problem
 
@@ -20,32 +19,36 @@ the serve loop.
    Lines 37–38 iterate over `context.items()` and assign each key to `record`
    one by one.  This is equivalent to `record.update(context)` but more verbose.
 
-4. **Unnecessary re-parse in unhandled-exception handler.**
+3. **Unnecessary re-parse in unhandled-exception handler.**
    Lines 432–453 in the serve loop catch any unexpected exception from
    `handle_request_message`, then re-parse the raw datagram and, if that
    succeeds, build and send a SERVFAIL response.  `handle_request_message`
    already handles every expected error path internally (returning
    `(None, None)` for unparseable input and structured `(response, log)` pairs
    for all classified errors).  The only way this outer except fires is a
-   genuine code bug.  In that case the re-parse is superfluous complexity; the
-   correct behavior is to log the fault and drop the datagram (no response),
-   consistent with the "ignore/skip malformed datagrams" and fail-fast invariant
-   principles in `doc/architecture/SERVER_RUNTIME.md`.
+   genuine code bug.  Sending SERVFAIL in that case is actively harmful: the
+   generated client treats any non-NOERROR rcode as a non-retryable contract
+   violation and aborts immediately
+   (`doc/architecture/ERRORS_AND_INVARIANTS.md`, Non-Retryable Contract
+   Violations).  Dropping the datagram instead causes a DNS timeout, which the
+   client handles as a retryable transport event.  The fallback also
+   double-counts `runtime_fault` (once at the catch site, once when the
+   fallback log record's classification is counted at line 474).
 
 ## Goal
 
 - `_runtime_fault_response`, `_miss_response`, and `_nodata_response` are
-  replaced by a single `_error_response` function; all call sites updated.
+  replaced by a single `_classified_response` function; all call sites updated.
 - `_build_log` uses `record.update(context)` instead of an explicit loop.
 - The unhandled-exception handler in `serve_runtime` logs the fault and
   continues without re-parsing or sending a SERVFAIL.
 
 ## Design
 
-### 1. Merge three response builders into `_error_response`
+### 1. Merge three response builders into `_classified_response`
 
 ```python
-def _error_response(request, config, rcode, classification, reason_code, context):
+def _classified_response(request, config, rcode, classification, reason_code, context):
     response = dnswire.build_response(
         request,
         rcode,
@@ -58,14 +61,14 @@ def _error_response(request, config, rcode, classification, reason_code, context
 
 Call-site replacements (all in `handle_request_message`):
 - `_miss_response(request, config, ...)` →
-  `_error_response(request, config, DNS_RCODE_NXDOMAIN, "miss", ...)`
+  `_classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", ...)`
 - `_nodata_response(request, config, ...)` →
-  `_error_response(request, config, DNS_RCODE_NOERROR, "miss", ...)`
+  `_classified_response(request, config, DNS_RCODE_NOERROR, "miss", ...)`
 - `_runtime_fault_response(request, config, ...)` →
-  `_error_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", ...)`
+  `_classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", ...)`
 
 The hardcoded SERVFAIL in `serve_runtime` (line 446–452) is removed as part of
-item 4, so no further call-site change is needed there.
+item 3, so no further call-site change is needed there.
 
 ### 2. Simplify `_build_log` dict merge
 
@@ -108,9 +111,12 @@ except Exception as exc:
 ```
 
 The datagram is dropped (no response sent).  The fault is still logged and
-counted.  This aligns with the architecture rule that unparseable/unhandled
-datagrams are silently dropped, and with the fail-fast invariant that internal
-inconsistencies are surfaced (logged) and never silently remapped.
+counted.  Dropping is preferable to SERVFAIL because the generated client
+treats non-NOERROR responses as non-retryable contract violations that cause
+immediate abort; a dropped datagram instead produces a retryable DNS timeout.
+This also fixes a counter bug: the current code increments `runtime_fault`
+once at the catch site (line 433) and again when the fallback log record's
+classification is counted (line 474).
 
 The `response_bytes` / `log_record` variables are only assigned in two paths
 after the except block: the normal return from `handle_request_message` (which
@@ -119,8 +125,15 @@ the fallback gone, `continue` is the only control flow out of the except block,
 so no subsequent code referencing those variables is reachable from the except
 path.
 
+Update `doc/architecture/ERRORS_AND_INVARIANTS.md` response matrix item 5 to
+distinguish classified runtime faults (SERVFAIL, handled within
+`handle_request_message`) from unhandled exceptions in the serve loop (drop,
+no response).
+
 ## Affected Components
 
-- `dnsdle/server.py`: replace three response builders with `_error_response`,
-  simplify `_build_log` loop, simplify unhandled-exception handler in
-  `serve_runtime`
+- `dnsdle/server.py`: replace three response builders with
+  `_classified_response`, simplify `_build_log` loop, simplify
+  unhandled-exception handler in `serve_runtime`
+- `doc/architecture/ERRORS_AND_INVARIANTS.md`: update response matrix item 5
+  to distinguish classified runtime faults from unhandled serve-loop exceptions
