@@ -272,3 +272,25 @@ Output goes through the existing logging system at `info` level, category
   properties, and limitations.
 - `doc/architecture/CLIENT_GENERATION.md`: document auto-publishing of
   generated clients and stager generation as part of the generation pipeline.
+
+## Execution Notes (2026-02-19)
+
+Realized in full through five sub-phase plans, each with their own execution
+notes in doc/completed_plans/:
+
+- `20260219_dns-stager-phase1-publish-sources.md`: auto-publish generated
+  client scripts; `build_publish_items_from_sources()` in `dnsdle/publish.py`;
+  `"source"` field added to artifact dicts in `client_generator.py`.
+- `20260219_dns-stager-phase2-two-phase-startup.md`: two-phase
+  `build_startup_state()` in `dnsdle/__init__.py`; Phase 1 publishes user
+  files and generates clients; Phase 2 auto-publishes client scripts,
+  combines mappings, checks invariants, builds final `RuntimeState`.
+- `20260219_dns-stager-phase3-stager-template.md`: `dnsdle/stager_template.py`
+  created with readable stager Python and all placeholder constants.
+- `20260219_dns-stager-phase4-stager-minify.md`: `dnsdle/stager_minify.py`
+  created; five-pass deterministic minifier (strip comments, strip blanks,
+  rename variables, reduce indentation, semicolon-join).
+- `20260219_dns-stager-phase5-stager-generation.md`: `dnsdle/stager_generator.py`
+  created; full generation pipeline (substitute, minify, compile-check,
+  compress, base64, wrap); stager output logged at startup via `stager_ready`
+  log records.
