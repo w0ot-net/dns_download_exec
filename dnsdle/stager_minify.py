@@ -78,6 +78,7 @@ _RENAME_TABLE = [
     ("qdcount", "T"),
     ("rr_name", "U"),
     ("rr_type", "V"),
+    ("verbose", "dj"),
     ("visited", "W"),
     ("blocks", "X"),
     ("header", "Y"),

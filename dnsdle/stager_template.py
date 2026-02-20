@@ -408,6 +408,7 @@ def _discover_resolver():
 
 _STAGER_SUFFIX = '''# __RUNTIME__
 _sa = sys.argv[1:]
+verbose = "--verbose" in _sa
 psk = None
 resolver = None
 _i = 0
@@ -432,6 +433,8 @@ else:
         host, _port_s = resolver.rsplit(":", 1)
         port = int(_port_s)
     addr = (host, port)
+if verbose:
+    sys.stderr.write("resolver %s\\n" % repr(addr))
 pk = _ub(psk)
 ek = _enc_key(pk)
 mk = _mac_key(pk)
@@ -449,9 +452,13 @@ for si in range(TOTAL_SLICES):
             cname = _parse_cname(resp, qid, qname)
             payload = _extract_payload(cname)
             slices[si] = _process_slice(ek, mk, si, payload)
+            if verbose:
+                sys.stderr.write("[%d/%d]\\n" % (si + 1, TOTAL_SLICES))
             _deadline = time.time() + 60
             break
         except Exception:
+            if verbose:
+                sys.stderr.write("retry %d\\n" % si)
             time.sleep(1)
 compressed = b"".join(slices[i] for i in range(TOTAL_SLICES))
 if len(compressed) != COMPRESSED_SIZE:

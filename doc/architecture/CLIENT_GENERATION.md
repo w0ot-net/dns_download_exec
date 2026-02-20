@@ -170,7 +170,7 @@ sys.argv = [
     "--response-label", RESPONSE_LABEL,
     "--dns-edns-size", str(DNS_EDNS_SIZE),
     "--resolver", resolver,
-]
+] + _sa
 exec(client_source)
 ```
 
@@ -178,6 +178,19 @@ Each stager embeds:
 - **Client download params**: universal client publish metadata (same for
   all stagers)
 - **Payload params**: 5 per-file values passed to the client via `sys.argv`
+
+### Stager `--verbose` flag
+
+The stager detects `--verbose` in `sys.argv` without consuming it, so the
+flag is forwarded to the exec'd universal client unchanged. When active, the
+stager emits minimal diagnostics to stderr:
+
+- `resolver <addr>` -- resolved DNS address after discovery or explicit
+  `--resolver` parsing
+- `[N/T]` -- per-slice progress after each successful fetch
+- `retry N` -- slice index being retried on exception
+
+No output is produced when `--verbose` is absent.
 
 ---
 

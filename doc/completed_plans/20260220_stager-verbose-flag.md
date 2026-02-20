@@ -78,8 +78,9 @@ imported at the top of `_STAGER_PREFIX`.
 ### Minifier rename table (`stager_minify.py`)
 
 `verbose` must be added to `_RENAME_TABLE` so the minifier shrinks it to a
-two-character name. Insert it in the 7-char name group alongside `slices`,
-`handle`, `result`, `output`, `run_fn`:
+two-character name. Insert it in the 7-char name group alongside `FILE_ID`,
+`_port_s`, `ancount`, `arcount`, `counter`, `payload`, `qdcount`, `rr_name`,
+`rr_type`, `visited`:
 
 ```python
 ("verbose", "dj"),
@@ -87,7 +88,7 @@ two-character name. Insert it in the 7-char name group alongside `slices`,
 
 `dj` is the only gap in the `d*` namespace (`dk` = `PAYLOAD_TOTAL_SLICES`,
 `di` = `PAYLOAD_TOKEN_LEN` — `dj` is unassigned). Longest-first ordering is
-maintained since all surrounding names are also 6–7 characters.
+maintained since all surrounding names are also 7 characters.
 
 ### Output format
 
@@ -118,3 +119,20 @@ retry 0
 - `doc/architecture/CLIENT_GENERATION.md`: update the Stager Integration
   section to document `--verbose` flag, forwarding behavior, and stderr
   output format.
+
+## Execution Notes
+
+Executed 2026-02-20.
+
+- Added `verbose = "--verbose" in _sa` detection and three `sys.stderr.write`
+  instrumentation points to `_STAGER_SUFFIX` in `stager_template.py`.
+  Used `\\n` escaping (not `\n`) inside the triple-quoted template string so
+  the generated source contains literal `\n` escape sequences.
+- Added `("verbose", "dj")` to `_RENAME_TABLE` in `stager_minify.py`, inserted
+  in the 7-char name group between `visited` and `blocks`.
+- Updated `doc/architecture/CLIENT_GENERATION.md` Stager Integration section
+  with `--verbose` flag documentation and also fixed the `sys.argv` snippet
+  to include `+ _sa` (matching the actual template code).
+- Verified: template compiles after placeholder substitution, minified output
+  compiles, `verbose` identifier renamed to `dj`, `"--verbose"` string literal
+  preserved by minifier string extraction.
