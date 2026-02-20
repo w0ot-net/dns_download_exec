@@ -10,7 +10,7 @@ retains one isinstance check because `str.decode()` does not exist on Py3. Remov
 ~5 passthrough calls on known-bytes values. Make `FILE_ID_PREFIX` a bytes literal.
 
 Branch count before: 9 (3 per encode/decode/encode_utf8).
-Branch count after: 1 (decode_ascii only).
+Branch count after: 2 (decode_ascii + config PSK normalization).
 
 ## Problem
 
@@ -162,6 +162,29 @@ file_id_input = FILE_ID_PREFIX + encode_ascii(publish_version)
 
 Import changes from `to_ascii_bytes` to `encode_ascii`.
 
+### `dnsdle/config.py` — normalize PSK to `text_type`
+
+The PSK arrives from `sys.argv` as Py2 `str` (bytes). Without normalization,
+`encode_utf8(psk)` would call `str.encode("utf-8")` on Py2, which performs an
+implicit ASCII decode first — crashing on any PSK containing bytes > 127. Fix
+by decoding the PSK to `text_type` at the config boundary so `encode_utf8`
+always receives text:
+
+```python
+from dnsdle.compat import binary_type
+
+# after the existing non-empty check
+if isinstance(psk, binary_type):
+    try:
+        psk = psk.decode("utf-8")
+    except UnicodeDecodeError:
+        raise StartupError("config", "invalid_config", "psk must be valid UTF-8")
+```
+
+This is 1 isinstance check at the system boundary where type coercion belongs.
+`encode_utf8` stays a zero-branch one-liner because `config.psk` is guaranteed
+`text_type` by the time it reaches any compat helper.
+
 ### `dnsdle/client_payload.py` — remove passthrough, drop import
 
 `parse_payload_record` receives `record_bytes` from `base32_decode_no_pad()`, which
@@ -269,13 +292,15 @@ expected_hash = decode_ascii(plaintext_sha256).lower()
   `str()` → `text_type()` in `encode_ascii_int` and `key_text`.
 - `dnsdle/constants.py`: change `FILE_ID_PREFIX` from text to bytes literal.
 - `dnsdle/client_payload.py`: remove `to_ascii_bytes` passthrough call and import.
+- `dnsdle/config.py`: normalize PSK to `text_type` at the system boundary (1
+  isinstance check); import `binary_type` from compat.
 - `dnsdle/cname_payload.py`: remove 3 passthrough calls on known-bytes values;
-  rename remaining 5 conversion imports/calls.
+  rename 3 imports and 12 call sites.
 - `dnsdle/client_generator.py`: replace `to_ascii_text` import with `encode_ascii`
   (drop `to_ascii_text`); validation guard changes from `to_ascii_text(source)` to
   `encode_ascii(source)`; binary-write call renamed.
 - `dnsdle/__init__.py`: rename 1 import and 1 call site.
-- `dnsdle/dnswire.py`: rename 3 imports and 2 call sites.
+- `dnsdle/dnswire.py`: rename 2 imports and 2 call sites.
 - `dnsdle/mapping.py`: rename 3 imports and 4 call sites.
 - `dnsdle/publish.py`: rename 1 import, remove 1 conversion call
   (`FILE_ID_PREFIX`).
