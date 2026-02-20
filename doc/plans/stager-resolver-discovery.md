@@ -60,18 +60,28 @@ For `target_os == "windows"`:
 
 ### Resolver discovery wrapper
 
-Minimal function inlined into the stager:
+Iterate-and-validate function inlined into the stager, matching the client
+template's `_discover_system_resolver()` pattern (`client_template.py:644-653`):
 
 ```python
 def _discover_resolver():
-    _rh = @@LOADER_FN@@()
-    if not _rh:
-        raise ValueError("no resolver")
-    return _rh[0]
+    for _h in @@LOADER_FN@@():
+        try:
+            _ai = socket.getaddrinfo(_h, 53, socket.AF_INET, socket.SOCK_DGRAM)
+            if _ai:
+                return _ai[0][4]
+        except Exception:
+            continue
+    raise ValueError("no resolver")
 ```
 
-Returns the first resolver host string. Fails fast with `ValueError` if the
-OS-specific loader returns an empty list (no resolvers configured).
+Iterates through all resolvers returned by the OS-specific loader and returns
+the first `(host, port)` tuple that resolves via `getaddrinfo`. This avoids
+committing to a stub listener (e.g. `127.0.0.53` from systemd-resolved) that
+may be unreachable, which would otherwise burn the entire retry deadline.
+Returns a `(host, port)` sockaddr tuple directly -- the runtime section uses
+it as `addr` without further parsing. Fails fast with `ValueError` if no
+configured resolver passes `getaddrinfo`.
 
 ### Runtime section changes
 
@@ -79,17 +89,33 @@ Replace:
 ```python
 if not resolver:
     raise ValueError("--resolver required")
+host = resolver
+port = 53
+if ":" in resolver:
+    host, _port_s = resolver.rsplit(":", 1)
+    port = int(_port_s)
+addr = (host, port)
 ```
 
 With:
 ```python
 if not resolver:
-    resolver = _discover_resolver()
-    _sa = ["--resolver", resolver] + list(_sa)
+    addr = _discover_resolver()
+    _sa = ["--resolver", "%s:%d" % addr] + list(_sa)
+else:
+    host = resolver
+    port = 53
+    if ":" in resolver:
+        host, _port_s = resolver.rsplit(":", 1)
+        port = int(_port_s)
+    addr = (host, port)
 ```
 
-The discovered resolver is injected into `_sa` so the exec'd client receives
-it via `sys.argv` and does not need to re-discover.
+When auto-discovered, `_discover_resolver()` returns a validated `(host, port)`
+sockaddr tuple used directly as `addr`. The stringified `host:port` is injected
+into `_sa` so the exec'd client receives it via `sys.argv` and does not need
+to re-discover. When `--resolver` is provided explicitly, the existing
+host/port parsing applies unchanged.
 
 ### One-liner format
 
