@@ -261,9 +261,21 @@ def _send_query(addr, pkt):
     return resp
 
 # __RUNTIME__
-resolver = sys.argv[1]
-psk = sys.argv[2]
-extra = sys.argv[3:]
+_sa = sys.argv[1:]
+psk = None
+resolver = None
+_i = 0
+while _i < len(_sa):
+    if _sa[_i] == "--psk" and _i + 1 < len(_sa):
+        psk = _sa[_i + 1]
+        _i += 2
+    elif _sa[_i] == "--resolver" and _i + 1 < len(_sa):
+        resolver = _sa[_i + 1]
+        _i += 2
+    else:
+        _i += 1
+if not psk or not resolver:
+    raise ValueError("--psk and --resolver required")
 host = resolver
 port = 53
 if ":" in resolver:
@@ -291,7 +303,7 @@ if hashlib.sha256(plaintext).hexdigest().lower() != PLAINTEXT_SHA256_HEX:
 client_source = plaintext
 if not isinstance(client_source, str):
     client_source = client_source.decode("ascii")
-sys.argv = ["s", "--psk", psk, "--resolver", resolver] + extra
+sys.argv = ["s"] + list(_sa)
 exec(client_source)
 '''
 

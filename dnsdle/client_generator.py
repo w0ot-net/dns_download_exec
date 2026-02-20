@@ -22,7 +22,7 @@ from dnsdle.state import StartupError
 
 
 _MANAGED_FILE_RE = re.compile(
-    r"^dnsdl_[0-9a-f]{16}_[a-z0-9]{4,16}_(?:windows|linux)\.py$"
+    r"^dnsdl_[a-z0-9][a-z0-9_]*_[a-z0-9]{4,16}_(?:windows|linux)\.py$"
 )
 
 
@@ -93,8 +93,19 @@ def _cleanup_tree(path_value):
             pass
 
 
-def _filename_for(file_id, file_tag, target_os):
-    return GENERATED_CLIENT_FILENAME_TEMPLATE % (file_id, file_tag, target_os)
+def _sanitize_filename_label(source_filename):
+    label = source_filename.lower()
+    label = re.sub(r"[^a-z0-9]", "_", label)
+    label = re.sub(r"_+", "_", label)
+    label = label.strip("_")
+    if not label:
+        label = "file"
+    return label[:48]
+
+
+def _filename_for(source_filename, file_tag, target_os):
+    label = _sanitize_filename_label(source_filename)
+    return GENERATED_CLIENT_FILENAME_TEMPLATE % (label, file_tag, target_os)
 
 
 def _validate_publish_item(publish_item):
@@ -236,7 +247,7 @@ def _build_artifacts(runtime_state):
         _validate_publish_item(publish_item)
         for target_os in config.target_os:
             filename = _filename_for(
-                publish_item.file_id,
+                publish_item.source_filename,
                 publish_item.file_tag,
                 target_os,
             )

