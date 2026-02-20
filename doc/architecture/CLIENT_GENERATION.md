@@ -29,7 +29,7 @@ For each published file, generator input is:
 - `total_slices`
 - `compressed_size`
 - `plaintext_sha256`
-- ordered `slice_tokens` array (`slice_index -> token`)
+- `slice_token_len` (runtime derivation length)
 - crypto profile metadata required by `doc/architecture/CRYPTO.md`
 - wire/profile metadata required by `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - runtime knobs (timeouts, retry pacing, max attempts policy)
@@ -130,7 +130,8 @@ The following constants are required in generated code:
 - `TOTAL_SLICES`
 - `COMPRESSED_SIZE`
 - `PLAINTEXT_SHA256_HEX`
-- `SLICE_TOKENS` (ordered by index)
+- `MAPPING_SEED`
+- `SLICE_TOKEN_LEN`
 - `CRYPTO_PROFILE`
 - `WIRE_PROFILE`
 - `RESPONSE_LABEL`
@@ -140,7 +141,8 @@ The following constants are required in generated code:
 - retry/timeouts constants
 
 Invariant:
-- `len(SLICE_TOKENS) == TOTAL_SLICES`
+- `MAPPING_SEED` is non-empty
+- `SLICE_TOKEN_LEN > 0` and `SLICE_TOKEN_LEN <= DNS_MAX_LABEL_LEN`
 - PSK must not be embedded as a generated constant in v1
 
 Any mismatch in generated constants is a generation-time failure.
@@ -173,7 +175,7 @@ No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
 2. Initialize missing set: all slice indices.
 3. While missing set not empty:
    - choose next index from missing set (strategy is implementation detail)
-   - map `index -> slice_token`
+   - derive `slice_token` from `(MAPPING_SEED, PUBLISH_VERSION, index)`
    - select domain suffix from `BASE_DOMAINS` by fixed deterministic policy
    - query `<slice_token>.<file_tag>.<selected_base_domain>`
    - parse and validate response format
@@ -278,9 +280,8 @@ Exit code classes:
 Generation must fail before emitting client artifact when:
 - any required metadata field is missing
 - `TOTAL_SLICES <= 0`
-- token array length mismatch
-- duplicate token in `SLICE_TOKENS`
-- any token exceeds `DNS_MAX_LABEL_LEN`
+- `slice_token_len <= 0`
+- `MAPPING_SEED` is empty
 - unsupported crypto/wire profile selected
 - unsupported `TARGET_OS`
 - generation path would require more than one output file for the client

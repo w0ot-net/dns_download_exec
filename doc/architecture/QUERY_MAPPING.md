@@ -193,17 +193,27 @@ Grouping invariant:
 Each generated client is file-specific and embeds:
 - `file_tag`
 - `file_id` and `publish_version`
+- `mapping_seed` and `slice_token_len`
 - `total_slices`
-- ordered token list indexed by expected `slice_index`
+
+At runtime the client derives each slice token on the fly using the same
+algorithm the server uses:
+```
+slice_token[i] = trunc_token(
+    HMAC_SHA256(seed_bytes,
+        b"dnsdle:slice:v1|" + publish_version_bytes + b"|" + index_bytes)
+)[:slice_token_len]
+```
 
 Download loop behavior:
 - pick missing `slice_index`
-- map to `slice_token`
+- derive `slice_token` from `(mapping_seed, publish_version, slice_index)`
 - query `<slice_token>.<file_tag>.<selected_base_domain>`
 - verify returned slice against embedded metadata and crypto rules
 
 This supports out-of-order fetch and repeat retries without exposing index
-values in QNAMEs.
+values in QNAMEs. Client file size is bounded by code size alone, independent
+of slice count.
 
 ---
 

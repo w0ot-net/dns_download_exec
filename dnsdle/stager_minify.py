@@ -14,10 +14,12 @@ import re
 # NOT renamed (already single-char, no benefit):
 #   v, i, j, r
 _RENAME_TABLE = [
+    ("_derive_slice_token", "cj"),
     ("PLAINTEXT_SHA256_HEX", "a"),
     ("_extract_payload", "b"),
     ("COMPRESSED_SIZE", "c"),
     ("PUBLISH_VERSION", "d"),
+    ("SLICE_TOKEN_LEN", "ck"),
     ("_secure_compare", "e"),
     ("RESPONSE_LABEL", "f"),
     ("_process_slice", "g"),
@@ -25,7 +27,7 @@ _RENAME_TABLE = [
     ("DOMAIN_LABELS", "k"),
     ("_expected_mac", "l"),
     ("client_source", "m"),
-    ("SLICE_TOKENS", "n"),
+    ("MAPPING_SEED", "n"),
     ("TOTAL_SLICES", "o"),
     ("_build_query", "p"),
     ("_decode_name", "q"),

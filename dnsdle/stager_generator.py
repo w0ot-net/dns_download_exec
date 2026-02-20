@@ -29,7 +29,8 @@ def generate_stager(config, template, client_publish_item, target_os):
         "TOTAL_SLICES": int(client_publish_item["total_slices"]),
         "COMPRESSED_SIZE": int(client_publish_item["compressed_size"]),
         "PLAINTEXT_SHA256_HEX": client_publish_item["plaintext_sha256"],
-        "SLICE_TOKENS": tuple(client_publish_item["slice_tokens"]),
+        "MAPPING_SEED": config.mapping_seed,
+        "SLICE_TOKEN_LEN": int(client_publish_item["slice_token_len"]),
         "RESPONSE_LABEL": config.response_label,
         "DNS_EDNS_SIZE": int(config.dns_edns_size),
     }

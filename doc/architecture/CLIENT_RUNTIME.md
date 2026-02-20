@@ -57,8 +57,8 @@ CLI validation failures exit with code `2`.
 ## Runtime Initialization
 
 Before issuing DNS requests, client must:
-1. Load embedded constants (`FILE_TAG`, `SLICE_TOKENS`, etc.).
-2. Validate constant invariants (`len(SLICE_TOKENS) == TOTAL_SLICES`).
+1. Load embedded constants (`FILE_TAG`, `MAPPING_SEED`, `SLICE_TOKEN_LEN`, etc.).
+2. Validate constant invariants (`MAPPING_SEED` non-empty, `SLICE_TOKEN_LEN > 0`).
 3. Resolve effective runtime knobs from defaults plus CLI overrides.
 4. Derive per-file crypto context from runtime `--psk`.
 5. Initialize missing-index set `[0 .. TOTAL_SLICES-1]`.
@@ -242,8 +242,10 @@ Logs must not include:
 
 ## Runtime Invariants
 
-1. `SLICE_TOKENS` cardinality matches `TOTAL_SLICES`.
-2. Each index maps to exactly one query token.
+1. `MAPPING_SEED` is non-empty and `SLICE_TOKEN_LEN` is positive within
+   `DNS_MAX_LABEL_LEN`. Each slice token is derived at runtime from
+   `(MAPPING_SEED, PUBLISH_VERSION, index)`.
+2. Each index derives exactly one query token via deterministic HMAC.
 3. Duplicate index data must be byte-identical.
 4. Progress timer resets only on new-index acquisition.
 5. Final file is written only after successful full verification.

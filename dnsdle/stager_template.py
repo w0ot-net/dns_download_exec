@@ -19,7 +19,8 @@ PUBLISH_VERSION = @@PUBLISH_VERSION@@
 TOTAL_SLICES = @@TOTAL_SLICES@@
 COMPRESSED_SIZE = @@COMPRESSED_SIZE@@
 PLAINTEXT_SHA256_HEX = @@PLAINTEXT_SHA256_HEX@@
-SLICE_TOKENS = @@SLICE_TOKENS@@
+MAPPING_SEED = @@MAPPING_SEED@@
+SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
 DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
 
@@ -41,6 +42,14 @@ def _ub(v):
 # Integer to ASCII bytes
 def _ib(v):
     return _ab(str(int(v)))
+
+
+# Derive slice token at runtime
+def _derive_slice_token(index):
+    msg = b"dnsdle:slice:v1|" + _ab(PUBLISH_VERSION) + b"|" + _ib(index)
+    d = hmac.new(_ab(MAPPING_SEED), msg, hashlib.sha256).digest()
+    t = base64.b32encode(d).decode("ascii").lower().rstrip("=")
+    return t[:SLICE_TOKEN_LEN]
 
 
 # Encode DNS name to wire format
@@ -266,7 +275,7 @@ ek = _enc_key(pk)
 mk = _mac_key(pk)
 slices = {}
 for si in range(TOTAL_SLICES):
-    qname = (SLICE_TOKENS[si], FILE_TAG) + tuple(DOMAIN_LABELS)
+    qname = (_derive_slice_token(si), FILE_TAG) + tuple(DOMAIN_LABELS)
     qid = random.randint(0, 0xFFFF)
     pkt = _build_query(qid, qname)
     resp = _send_query(addr, pkt)

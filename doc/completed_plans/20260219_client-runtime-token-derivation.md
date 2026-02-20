@@ -83,6 +83,8 @@ Download loops call `_derive_slice_token(i)` instead of `SLICE_TOKENS[i]`.
 `SLICE_TOKEN_LEN` (from `publish_item.slice_token_len`) instead of
 `SLICE_TOKENS`. Remove `SLICE_TOKENS`-specific validation (length, uniqueness)
 from the generator; those checks remain in `mapping.py` where they belong.
+Add `publish_item.slice_token_len > 0` invariant to `_validate_publish_item`
+so the generator continues to validate every value it embeds.
 
 ### Security note
 
@@ -108,7 +110,8 @@ not reveal any new derivation inputs.
 - `dnsdle/client_generator.py`: replace `SLICE_TOKENS` replacement with
   `MAPPING_SEED` (from `config.mapping_seed`) + `SLICE_TOKEN_LEN` (from
   `publish_item.slice_token_len`); remove `SLICE_TOKENS` length/uniqueness
-  validation from `_validate_publish_item`.
+  validation from `_validate_publish_item`; add
+  `publish_item.slice_token_len > 0` invariant check.
 - `dnsdle/stager_generator.py`: replace `SLICE_TOKENS` replacement with
   `MAPPING_SEED` (from `config.mapping_seed`) + `SLICE_TOKEN_LEN` (from
   `client_publish_item["slice_token_len"]`).
@@ -128,3 +131,61 @@ not reveal any new derivation inputs.
   steps 1-2 to reference `MAPPING_SEED`/`SLICE_TOKEN_LEN` instead of
   `SLICE_TOKENS`; update "Runtime Invariants" item 1 to describe derivation
   inputs rather than `SLICE_TOKENS` cardinality.
+
+## Test Breakage
+
+The following tests reference `SLICE_TOKENS` constants or validation being
+removed and will need updates after execution:
+
+- `unit_tests/test_client_generator.py`:
+  `test_rejects_slice_token_count_mismatch` and
+  `test_rejects_duplicate_slice_tokens` test `_validate_publish_item` checks
+  that are being removed. Replace with a test for the new
+  `slice_token_len > 0` invariant.
+- `unit_tests/test_stager_template.py`: `_build_ns()` substitutes
+  `SLICE_TOKENS` into the stager template. Update to substitute
+  `MAPPING_SEED` + `SLICE_TOKEN_LEN` instead and add a test for the new
+  `_derive_slice_token` helper.
+- `unit_tests/test_stager_minify.py`: `test_full_template_compiles_after_minify`
+  uses stale `SLICE_TOKENS` substitution. Update to use `MAPPING_SEED` +
+  `SLICE_TOKEN_LEN`.
+
+## Execution Notes
+
+Executed 2026-02-19.
+
+All planned items implemented:
+
+- `dnsdle/client_template.py`: replaced `SLICE_TOKENS` constant with
+  `MAPPING_SEED` + `SLICE_TOKEN_LEN`; added `_derive_slice_token()` helper
+  using `_to_ascii_bytes`/`_to_ascii_int_bytes`; updated
+  `_validate_embedded_constants()` to validate new constants; updated download
+  loop to call `_derive_slice_token(slice_index)`.
+- `dnsdle/stager_template.py`: same constant/function/loop changes using
+  `_ab`/`_ib` helpers. Stager derivation function uses intermediate `msg`
+  variable to avoid multi-line function arguments that break the minifier's
+  semicolon-join pass.
+- `dnsdle/client_generator.py`: replaced `SLICE_TOKENS` substitution with
+  `MAPPING_SEED` (from `config.mapping_seed`) + `SLICE_TOKEN_LEN` (from
+  `publish_item.slice_token_len`); removed `SLICE_TOKENS` length/uniqueness
+  checks from `_validate_publish_item`; added `slice_token_len > 0` invariant.
+- `dnsdle/stager_generator.py`: replaced `SLICE_TOKENS` substitution with
+  `MAPPING_SEED` + `SLICE_TOKEN_LEN`.
+- `dnsdle/stager_minify.py`: replaced `SLICE_TOKENS` rename entry with
+  `MAPPING_SEED`; added `_derive_slice_token` and `SLICE_TOKEN_LEN` entries
+  at proper length-ordered positions (short names `cj`, `ck`).
+- `doc/architecture/QUERY_MAPPING.md`: updated "Generated Client Mapping" to
+  describe runtime derivation.
+- `doc/architecture/CLIENT_GENERATION.md`: updated "Inputs",
+  "Embedded Constants Contract", "Download Algorithm", and
+  "Generator Failure Conditions".
+- `doc/architecture/CLIENT_RUNTIME.md`: updated "Runtime Initialization" and
+  "Runtime Invariants".
+
+Deviations:
+- Stager `_derive_slice_token` uses a local `msg` variable instead of inline
+  multi-line `hmac.new(...)` args, because the minifier's semicolon-join pass
+  incorrectly merges continuation lines inside multi-line function calls.
+
+Test breakage items listed above are not addressed in this execution (tests
+not modified per repository policy).

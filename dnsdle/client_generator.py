@@ -111,18 +111,11 @@ def _validate_publish_item(publish_item):
             "TOTAL_SLICES must be positive",
             {"file_id": publish_item.file_id},
         )
-    if len(publish_item.slice_tokens) != publish_item.total_slices:
+    if publish_item.slice_token_len <= 0:
         raise StartupError(
             "startup",
             "generator_invalid_contract",
-            "SLICE_TOKENS length must equal TOTAL_SLICES",
-            {"file_id": publish_item.file_id},
-        )
-    if len(set(publish_item.slice_tokens)) != len(publish_item.slice_tokens):
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "SLICE_TOKENS contains duplicate entries",
+            "slice_token_len must be positive",
             {"file_id": publish_item.file_id},
         )
     if not publish_item.crypto_profile or not publish_item.wire_profile:
@@ -144,7 +137,8 @@ def _render_client_source(config, publish_item, target_os):
         "TOTAL_SLICES": int(publish_item.total_slices),
         "COMPRESSED_SIZE": int(publish_item.compressed_size),
         "PLAINTEXT_SHA256_HEX": publish_item.plaintext_sha256,
-        "SLICE_TOKENS": tuple(publish_item.slice_tokens),
+        "MAPPING_SEED": config.mapping_seed,
+        "SLICE_TOKEN_LEN": int(publish_item.slice_token_len),
         "CRYPTO_PROFILE": publish_item.crypto_profile,
         "WIRE_PROFILE": publish_item.wire_profile,
         "RESPONSE_LABEL": config.response_label,

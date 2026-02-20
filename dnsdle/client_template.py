@@ -32,7 +32,8 @@ TARGET_OS = @@TARGET_OS@@
 TOTAL_SLICES = @@TOTAL_SLICES@@
 COMPRESSED_SIZE = @@COMPRESSED_SIZE@@
 PLAINTEXT_SHA256_HEX = @@PLAINTEXT_SHA256_HEX@@
-SLICE_TOKENS = @@SLICE_TOKENS@@
+MAPPING_SEED = @@MAPPING_SEED@@
+SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
 CRYPTO_PROFILE = @@CRYPTO_PROFILE@@
 WIRE_PROFILE = @@WIRE_PROFILE@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
@@ -146,6 +147,16 @@ def _to_ascii_int_bytes(value, field_name):
     if number < 0:
         raise ValueError("%s must be non-negative" % field_name)
     return _to_ascii_bytes(str(number))
+
+
+def _derive_slice_token(index):
+    d = hmac.new(
+        _to_ascii_bytes(MAPPING_SEED),
+        b"dnsdle:slice:v1|" + _to_ascii_bytes(PUBLISH_VERSION) + b"|" + _to_ascii_int_bytes(index, "index"),
+        hashlib.sha256,
+    ).digest()
+    t = base64.b32encode(d).decode("ascii").lower().rstrip("=")
+    return t[:SLICE_TOKEN_LEN]
 
 
 def _byte_value(value):
@@ -723,18 +734,13 @@ def _validate_embedded_constants():
 
     if TOTAL_SLICES <= 0:
         raise ClientError(EXIT_USAGE, "usage", "TOTAL_SLICES must be > 0")
-    if len(SLICE_TOKENS) != TOTAL_SLICES:
-        raise ClientError(EXIT_USAGE, "usage", "SLICE_TOKENS length mismatch")
 
-    seen_tokens = set()
-    for token in SLICE_TOKENS:
-        if not token or not _TOKEN_RE.match(token):
-            raise ClientError(EXIT_USAGE, "usage", "invalid slice token")
-        if len(token) > DNS_MAX_LABEL_LEN:
-            raise ClientError(EXIT_USAGE, "usage", "slice token too long")
-        if token in seen_tokens:
-            raise ClientError(EXIT_USAGE, "usage", "duplicate slice token")
-        seen_tokens.add(token)
+    if not MAPPING_SEED:
+        raise ClientError(EXIT_USAGE, "usage", "MAPPING_SEED is empty")
+    if SLICE_TOKEN_LEN <= 0:
+        raise ClientError(EXIT_USAGE, "usage", "SLICE_TOKEN_LEN must be > 0")
+    if SLICE_TOKEN_LEN > DNS_MAX_LABEL_LEN:
+        raise ClientError(EXIT_USAGE, "usage", "SLICE_TOKEN_LEN exceeds DNS_MAX_LABEL_LEN")
 
     if COMPRESSED_SIZE <= 0:
         raise ClientError(EXIT_USAGE, "usage", "COMPRESSED_SIZE must be > 0")
@@ -776,7 +782,7 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
                 raise ClientError(EXIT_TRANSPORT, "dns", "no-progress timeout")
 
             domain_labels = domain_labels_by_domain[domain_index]
-            qname_labels = (SLICE_TOKENS[slice_index], FILE_TAG) + domain_labels
+            qname_labels = (_derive_slice_token(slice_index), FILE_TAG) + domain_labels
             query_id = random.randint(0, 0xFFFF)
             query_packet = _build_dns_query(query_id, qname_labels)
 
