@@ -19,7 +19,6 @@ _LONG_OPTIONS = (
     "--response-label",
     "--mapping-seed",
     "--file-tag-len",
-    "--target-os",
     "--client-out-dir",
     "--compression-level",
     "--log-level",
@@ -115,8 +114,6 @@ def _build_parser():
                          help="file-tag length, 4..16 (default: %(default)s)")
 
     generation = parser.add_argument_group("generation")
-    generation.add_argument("--target-os", default="windows,linux",
-                            help="windows,linux or subset (default: %(default)s)")
     generation.add_argument("--client-out-dir", default="./generated_clients",
                             help="output dir for generated clients (default: %(default)s)")
     generation.add_argument("--compression-level", default="9",

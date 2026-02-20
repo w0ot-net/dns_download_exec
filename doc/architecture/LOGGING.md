@@ -23,11 +23,9 @@ Additional event-specific keys may be included as context.
 
 ### Generation Events
 
-`generation_ok` required fields: `file_id`, `publish_version`, `file_tag`,
-`target_os`, `path`.
+`generation_ok` required fields: `filename`, `path`.
 
-`generation_summary` required fields: `managed_dir`, `artifact_count`,
-`target_os`, `file_ids`.
+`generation_summary` required fields: `managed_dir`, `artifact_count`.
 
 ---
 

@@ -10,18 +10,19 @@ from dnsdle.stager_template import build_stager_template
 from dnsdle.state import StartupError
 
 
-def generate_stager(config, template, client_publish_item, target_os):
-    """Generate a stager one-liner for a single client publish item.
+def generate_stager(config, template, client_publish_item, payload_publish_item):
+    """Generate a stager one-liner for a single payload file.
 
     template is the stager template source from build_stager_template().
-    client_publish_item is the mapped publish item dict for the generated
-    client script.  target_os is the target platform string.
+    client_publish_item is the mapped publish item dict for the universal
+    client script.  payload_publish_item is the mapped publish item dict
+    for the user payload file.
 
-    Returns a dict with keys: source_filename, target_os, oneliner,
-    minified_source.
+    Returns a dict with keys: source_filename, oneliner, minified_source.
     """
 
     replacements = {
+        # Client download params (universal client's own publish metadata)
         "DOMAIN_LABELS": tuple(config.domain_labels_by_domain[0]),
         "FILE_TAG": client_publish_item["file_tag"],
         "FILE_ID": client_publish_item["file_id"],
@@ -34,6 +35,14 @@ def generate_stager(config, template, client_publish_item, target_os):
         "RESPONSE_LABEL": config.response_label,
         "DNS_EDNS_SIZE": int(config.dns_edns_size),
         "PSK": config.psk,
+        "DOMAINS_STR": ",".join(config.domains),
+        "FILE_TAG_LEN": int(config.file_tag_len),
+        # Payload params (per-file, passed to universal client via sys.argv)
+        "PAYLOAD_PUBLISH_VERSION": payload_publish_item["publish_version"],
+        "PAYLOAD_TOTAL_SLICES": int(payload_publish_item["total_slices"]),
+        "PAYLOAD_COMPRESSED_SIZE": int(payload_publish_item["compressed_size"]),
+        "PAYLOAD_SHA256": payload_publish_item["plaintext_sha256"],
+        "PAYLOAD_TOKEN_LEN": int(payload_publish_item["slice_token_len"]),
     }
 
     source = template
@@ -90,17 +99,17 @@ def generate_stager(config, template, client_publish_item, target_os):
     )
 
     return {
-        "source_filename": client_publish_item["source_filename"],
-        "target_os": target_os,
+        "source_filename": payload_publish_item["source_filename"],
         "oneliner": oneliner,
         "minified_source": minified,
     }
 
 
 def _stager_txt_filename(source_filename):
-    """Derive the stager .txt filename from the client script filename."""
-    base, _ext = os.path.splitext(source_filename)
-    return base + ".1-liner.txt"
+    """Derive the stager .txt filename from the payload source filename."""
+    base = os.path.basename(source_filename)
+    name, _ext = os.path.splitext(base)
+    return name + ".1-liner.txt"
 
 
 def _write_stager_file(managed_dir, stager):
@@ -127,35 +136,20 @@ def _write_stager_file(managed_dir, stager):
     return path
 
 
-def generate_stagers(config, generation_result, client_publish_items):
-    """Generate stagers for all (file, target_os) pairs.
+def generate_stagers(config, generation_result, client_publish_item, payload_publish_items):
+    """Generate stagers for all payload files.
 
-    client_publish_items is the list of mapped publish item dicts for the
-    generated client scripts.
+    client_publish_item is the single mapped publish item dict for the
+    universal client.  payload_publish_items is the list of mapped
+    publish item dicts for user payload files.
 
-    Returns a list of stager dicts (one per artifact).
+    Returns a list of stager dicts (one per payload file).
     """
-    item_by_filename = {}
-    for item in client_publish_items:
-        item_by_filename[item["source_filename"]] = item
-
-    template_by_os = {}
+    template = build_stager_template()
     managed_dir = generation_result["managed_dir"]
     stagers = []
-    for artifact in generation_result["artifacts"]:
-        target_os = artifact["target_os"]
-        if target_os not in template_by_os:
-            template_by_os[target_os] = build_stager_template(target_os)
-        template = template_by_os[target_os]
-        client_item = item_by_filename.get(artifact["filename"])
-        if client_item is None:
-            raise StartupError(
-                "startup",
-                "stager_generation_failed",
-                "no client publish item found for artifact",
-                {"filename": artifact["filename"]},
-            )
-        stager = generate_stager(config, template, client_item, target_os)
+    for payload_item in payload_publish_items:
+        stager = generate_stager(config, template, client_publish_item, payload_item)
         stager["path"] = _write_stager_file(managed_dir, stager)
         stagers.append(stager)
 

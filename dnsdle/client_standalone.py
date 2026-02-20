@@ -1,11 +1,74 @@
 from __future__ import absolute_import, unicode_literals
 
 import os
+import re
 
+from dnsdle.compat import encode_ascii
+from dnsdle.extract import apply_renames
+from dnsdle.extract import extract_functions
 from dnsdle.state import StartupError
 
 
-_TEMPLATE_PREFIX = '''#!/usr/bin/env python
+# Extraction specifications: (module_filename, [names], [(old, new), ...])
+_COMPAT_EXTRACTIONS = [
+    "encode_ascii",
+    "encode_utf8",
+    "decode_ascii",
+    "base32_lower_no_pad",
+    "base32_decode_no_pad",
+    "byte_value",
+    "iter_byte_values",
+    "constant_time_equals",
+    "encode_ascii_int",
+    "is_binary",
+]
+
+_COMPAT_RENAMES = [
+    ("encode_ascii", "_to_ascii_bytes"),
+    ("encode_utf8", "_to_utf8_bytes"),
+    ("decode_ascii", "_to_ascii_text"),
+    ("base32_lower_no_pad", "_base32_lower_no_pad"),
+    ("base32_decode_no_pad", "_base32_decode_no_pad"),
+    ("byte_value", "_byte_value"),
+    ("iter_byte_values", "_iter_byte_values"),
+    ("constant_time_equals", "_secure_compare"),
+    ("encode_ascii_int", "_to_ascii_int_bytes"),
+    ("is_binary", "_is_binary"),
+]
+
+_HELPERS_EXTRACTIONS = ["hmac_sha256", "dns_name_wire_length"]
+
+_HELPERS_RENAMES = [
+    ("hmac_sha256", "_hmac_sha256"),
+    ("dns_name_wire_length", "_dns_name_wire_length"),
+]
+
+_DNSWIRE_EXTRACTIONS = ["_decode_name"]
+
+_DNSWIRE_RENAMES = [
+    ("DnsParseError", "ClientError"),
+    ("_message_length", "len"),
+    ("_ord_byte", "_byte_value"),
+    ("decode_ascii", "_to_ascii_text"),
+]
+
+_CNAME_PAYLOAD_EXTRACTIONS = [
+    "_derive_file_bound_key",
+    "_keystream_bytes",
+    "_xor_bytes",
+]
+
+_CNAME_PAYLOAD_RENAMES = [
+    ("encode_ascii", "_to_ascii_bytes"),
+    ("encode_utf8", "_to_utf8_bytes"),
+    ("encode_ascii_int", "_to_ascii_int_bytes"),
+    ("iter_byte_values", "_iter_byte_values"),
+    ("hmac_sha256", "_hmac_sha256"),
+]
+
+
+_CLIENT_PREAMBLE = '''\
+#!/usr/bin/env python
 # -*- coding: ascii -*-
 from __future__ import print_function
 
@@ -18,36 +81,12 @@ import random
 import re
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import time
 import zlib
-@@EXTRA_IMPORTS@@
 
-BASE_DOMAINS = @@BASE_DOMAINS@@
-FILE_TAG = @@FILE_TAG@@
-FILE_ID = @@FILE_ID@@
-PUBLISH_VERSION = @@PUBLISH_VERSION@@
-TARGET_OS = @@TARGET_OS@@
-TOTAL_SLICES = @@TOTAL_SLICES@@
-COMPRESSED_SIZE = @@COMPRESSED_SIZE@@
-PLAINTEXT_SHA256_HEX = @@PLAINTEXT_SHA256_HEX@@
-MAPPING_SEED = @@MAPPING_SEED@@
-SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
-CRYPTO_PROFILE = @@CRYPTO_PROFILE@@
-WIRE_PROFILE = @@WIRE_PROFILE@@
-RESPONSE_LABEL = @@RESPONSE_LABEL@@
-DNS_MAX_LABEL_LEN = @@DNS_MAX_LABEL_LEN@@
-DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
-SOURCE_FILENAME = @@SOURCE_FILENAME@@
-
-REQUEST_TIMEOUT_SECONDS = @@REQUEST_TIMEOUT_SECONDS@@
-NO_PROGRESS_TIMEOUT_SECONDS = @@NO_PROGRESS_TIMEOUT_SECONDS@@
-MAX_ROUNDS = @@MAX_ROUNDS@@
-MAX_CONSECUTIVE_TIMEOUTS = @@MAX_CONSECUTIVE_TIMEOUTS@@
-RETRY_SLEEP_BASE_MS = @@RETRY_SLEEP_BASE_MS@@
-RETRY_SLEEP_JITTER_MS = @@RETRY_SLEEP_JITTER_MS@@
-QUERY_INTERVAL_MS = @@QUERY_INTERVAL_MS@@
 
 DNS_FLAG_QR = 0x8000
 DNS_FLAG_TC = 0x0200
@@ -71,12 +110,24 @@ PAYLOAD_ENC_STREAM_LABEL = b"dnsdle-enc-stream-v1|"
 PAYLOAD_MAC_KEY_LABEL = b"dnsdle-mac-v1|"
 PAYLOAD_MAC_MESSAGE_LABEL = b"dnsdle-mac-msg-v1|"
 
+MAPPING_FILE_LABEL = b"dnsdle:file:v1|"
+MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
+FILE_ID_PREFIX = b"dnsdle:file-id:v1|"
+
 EXIT_USAGE = 2
 EXIT_TRANSPORT = 3
 EXIT_PARSE = 4
 EXIT_CRYPTO = 5
 EXIT_REASSEMBLY = 6
 EXIT_WRITE = 7
+
+REQUEST_TIMEOUT_SECONDS = 3.0
+NO_PROGRESS_TIMEOUT_SECONDS = 60
+MAX_ROUNDS = 64
+MAX_CONSECUTIVE_TIMEOUTS = 128
+RETRY_SLEEP_BASE_MS = 100
+RETRY_SLEEP_JITTER_MS = 150
+QUERY_INTERVAL_MS = 50
 
 _TOKEN_RE = re.compile(r"^[a-z0-9]+$")
 _LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -114,94 +165,37 @@ def _log(message):
         sys.stderr.write(str(message) + "\\n")
         sys.stderr.flush()
 
-
-def _to_ascii_bytes(value):
-    if isinstance(value, binary_type):
-        return value
-    if isinstance(value, text_type):
-        return value.encode("ascii")
-    raise TypeError("value must be text or bytes")
+'''
 
 
-def _to_utf8_bytes(value):
-    if isinstance(value, binary_type):
-        return value
-    if isinstance(value, text_type):
-        return value.encode("utf-8")
-    raise TypeError("value must be text or bytes")
+_CLIENT_SUFFIX = '''\
 
 
-def _to_ascii_text(value):
-    if isinstance(value, text_type):
-        return value
-    if isinstance(value, binary_type):
-        return value.decode("ascii")
-    raise TypeError("value must be text or bytes")
+def _derive_file_id(publish_version):
+    return hashlib.sha256(
+        FILE_ID_PREFIX + _to_ascii_bytes(publish_version)
+    ).hexdigest()[:16]
 
 
-def _to_ascii_int_bytes(value, field_name):
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise ValueError("%s must be an integer" % field_name)
-    if number < 0:
-        raise ValueError("%s must be non-negative" % field_name)
-    return _to_ascii_bytes(str(number))
+def _derive_file_tag(mapping_seed, publish_version, file_tag_len):
+    digest = _hmac_sha256(
+        _to_ascii_bytes(mapping_seed),
+        MAPPING_FILE_LABEL + _to_ascii_bytes(publish_version),
+    )
+    tag = _base32_lower_no_pad(digest)
+    return tag[:file_tag_len]
 
 
-def _derive_slice_token(index):
-    dg = hmac.new(
-        _to_ascii_bytes(MAPPING_SEED),
-        b"dnsdle:slice:v1|" + _to_ascii_bytes(PUBLISH_VERSION) + b"|" + _to_ascii_int_bytes(index, "index"),
-        hashlib.sha256,
-    ).digest()
-    t = base64.b32encode(dg).decode("ascii").lower().rstrip("=")
-    return t[:SLICE_TOKEN_LEN]
-
-
-def _byte_value(value):
-    if isinstance(value, integer_types):
-        return int(value)
-    if isinstance(value, binary_type):
-        if len(value) != 1:
-            raise ValueError("byte value must be length 1")
-        if PY2:
-            return ord(value)
-        return value[0]
-    raise TypeError("invalid byte value type")
-
-
-def _byte_at(raw, index):
-    return _byte_value(raw[index])
-
-
-def _bytes_from_bytearray(values):
-    if PY2:
-        return "".join(chr(v) for v in values)
-    return bytes(values)
-
-
-def _hmac_sha256(key_bytes, message_bytes):
-    return hmac.new(key_bytes, message_bytes, hashlib.sha256).digest()
-
-
-def _secure_compare(left, right):
-    compare = getattr(hmac, "compare_digest", None)
-    if compare is not None:
-        try:
-            return bool(compare(left, right))
-        except Exception:
-            pass
-    if len(left) != len(right):
-        return False
-    result = 0
-    for index in range(len(left)):
-        result |= _byte_at(left, index) ^ _byte_at(right, index)
-    return result == 0
-
-
-def _dns_name_wire_length(labels):
-    return 1 + sum(1 + len(label) for label in labels)
+def _derive_slice_token(mapping_seed, publish_version, index, token_len):
+    msg = (
+        MAPPING_SLICE_LABEL
+        + _to_ascii_bytes(publish_version)
+        + b"|"
+        + _to_ascii_int_bytes(index, "index")
+    )
+    digest = _hmac_sha256(_to_ascii_bytes(mapping_seed), msg)
+    token = _base32_lower_no_pad(digest)
+    return token[:token_len]
 
 
 def _encode_name(labels):
@@ -218,62 +212,10 @@ def _encode_name(labels):
     return b"".join(parts)
 
 
-def _decode_name(message, start_offset):
-    labels = []
-    message_len = len(message)
-    offset = start_offset
-    jumped = False
-    read_end_offset = None
-    visited_offsets = set()
-
-    while True:
-        if offset >= message_len:
-            raise ClientError(EXIT_PARSE, "parse", "name extends past message")
-
-        first = _byte_at(message, offset)
-        if (first & DNS_POINTER_TAG) == DNS_POINTER_TAG:
-            if offset + 1 >= message_len:
-                raise ClientError(EXIT_PARSE, "parse", "truncated name pointer")
-            pointer = ((first << 8) | _byte_at(message, offset + 1)) & DNS_POINTER_VALUE_MASK
-            if pointer >= message_len:
-                raise ClientError(EXIT_PARSE, "parse", "name pointer out of bounds")
-            if pointer in visited_offsets:
-                raise ClientError(EXIT_PARSE, "parse", "name pointer loop detected")
-            visited_offsets.add(pointer)
-            if not jumped:
-                read_end_offset = offset + 2
-                jumped = True
-            offset = pointer
-            continue
-
-        if first & DNS_POINTER_TAG:
-            raise ClientError(EXIT_PARSE, "parse", "invalid name label type")
-
-        offset += 1
-        if first == 0:
-            break
-
-        end_offset = offset + first
-        if end_offset > message_len:
-            raise ClientError(EXIT_PARSE, "parse", "label extends past message")
-        raw = message[offset:end_offset]
-        try:
-            label = _to_ascii_text(raw).lower()
-        except Exception:
-            raise ClientError(EXIT_PARSE, "parse", "label is not ASCII")
-        labels.append(label)
-        offset = end_offset
-
-        if len(labels) > 127:
-            raise ClientError(EXIT_PARSE, "parse", "too many labels")
-
-    return tuple(labels), (read_end_offset if jumped else offset)
-
-
-def _build_dns_query(query_id, qname_labels):
+def _build_dns_query(query_id, qname_labels, dns_edns_size):
     qname = _encode_name(qname_labels)
     question = qname + struct.pack("!HH", DNS_QTYPE_A, DNS_QCLASS_IN)
-    include_opt = DNS_EDNS_SIZE > 512
+    include_opt = dns_edns_size > 512
     arcount = 1 if include_opt else 0
     header = struct.pack(
         "!HHHHHH",
@@ -286,7 +228,7 @@ def _build_dns_query(query_id, qname_labels):
     )
     message = header + question
     if include_opt:
-        message += b"\\x00" + struct.pack("!HHIH", DNS_QTYPE_OPT, DNS_EDNS_SIZE, 0, 0)
+        message += b"\\x00" + struct.pack("!HHIH", DNS_QTYPE_OPT, dns_edns_size, 0, 0)
     return message
 
 
@@ -368,21 +310,8 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
     return cname_labels
 
 
-def _base32_decode_no_pad(text_value):
-    text = _to_ascii_text(text_value)
-    if not text:
-        raise ClientError(EXIT_PARSE, "parse", "empty base32 payload")
-    padded = text.upper()
-    pad_len = (8 - (len(padded) % 8)) % 8
-    padded = padded + ("=" * pad_len)
-    try:
-        return base64.b32decode(_to_ascii_bytes(padded))
-    except Exception:
-        raise ClientError(EXIT_PARSE, "parse", "invalid base32 payload")
-
-
-def _extract_payload_text(cname_labels, selected_domain_labels):
-    suffix = (RESPONSE_LABEL,) + tuple(selected_domain_labels)
+def _extract_payload_text(cname_labels, selected_domain_labels, response_label, dns_max_label_len):
+    suffix = (response_label,) + tuple(selected_domain_labels)
     if len(cname_labels) <= len(suffix):
         raise ClientError(EXIT_PARSE, "parse", "CNAME target too short")
     if tuple(cname_labels[-len(suffix):]) != suffix:
@@ -394,65 +323,28 @@ def _extract_payload_text(cname_labels, selected_domain_labels):
     for label in payload_labels:
         if not label:
             raise ClientError(EXIT_PARSE, "parse", "empty payload label")
-        if len(label) > DNS_MAX_LABEL_LEN:
-            raise ClientError(EXIT_PARSE, "parse", "payload label exceeds DNS_MAX_LABEL_LEN")
+        if len(label) > dns_max_label_len:
+            raise ClientError(EXIT_PARSE, "parse", "payload label exceeds dns_max_label_len")
 
     return "".join(payload_labels)
 
 
-def _enc_key(psk):
-    return _hmac_sha256(
-        _to_utf8_bytes(psk),
-        PAYLOAD_ENC_KEY_LABEL
-        + _to_ascii_bytes(FILE_ID)
-        + b"|"
-        + _to_ascii_bytes(PUBLISH_VERSION),
+def _enc_key(psk, file_id, publish_version):
+    return _derive_file_bound_key(
+        psk,
+        file_id,
+        publish_version,
+        PAYLOAD_ENC_KEY_LABEL,
     )
 
 
-def _mac_key(psk):
-    return _hmac_sha256(
-        _to_utf8_bytes(psk),
-        PAYLOAD_MAC_KEY_LABEL
-        + _to_ascii_bytes(FILE_ID)
-        + b"|"
-        + _to_ascii_bytes(PUBLISH_VERSION),
+def _mac_key(psk, file_id, publish_version):
+    return _derive_file_bound_key(
+        psk,
+        file_id,
+        publish_version,
+        PAYLOAD_MAC_KEY_LABEL,
     )
-
-
-def _keystream_bytes(enc_key_bytes, slice_index, output_len):
-    if output_len <= 0:
-        raise ClientError(EXIT_CRYPTO, "crypto", "output_len must be positive")
-    blocks = []
-    produced = 0
-    counter = 0
-    slice_index_bytes = _to_ascii_int_bytes(slice_index, "slice_index")
-    while produced < output_len:
-        counter_bytes = _to_ascii_int_bytes(counter, "counter")
-        block_input = (
-            PAYLOAD_ENC_STREAM_LABEL
-            + _to_ascii_bytes(FILE_ID)
-            + b"|"
-            + _to_ascii_bytes(PUBLISH_VERSION)
-            + b"|"
-            + slice_index_bytes
-            + b"|"
-            + counter_bytes
-        )
-        block = _hmac_sha256(enc_key_bytes, block_input)
-        blocks.append(block)
-        produced += len(block)
-        counter += 1
-    return b"".join(blocks)[:output_len]
-
-
-def _xor_bytes(left_bytes, right_bytes):
-    if len(left_bytes) != len(right_bytes):
-        raise ClientError(EXIT_CRYPTO, "crypto", "xor input length mismatch")
-    out = bytearray(len(left_bytes))
-    for index in range(len(left_bytes)):
-        out[index] = _byte_at(left_bytes, index) ^ _byte_at(right_bytes, index)
-    return _bytes_from_bytearray(out)
 
 
 def _parse_slice_record(payload_text):
@@ -460,8 +352,8 @@ def _parse_slice_record(payload_text):
     if len(record) < 12:
         raise ClientError(EXIT_PARSE, "parse", "slice record is too short")
 
-    profile = _byte_at(record, 0)
-    flags = _byte_at(record, 1)
+    profile = _byte_value(record[0])
+    flags = _byte_value(record[1])
     if profile != PAYLOAD_PROFILE_V1_BYTE:
         raise ClientError(EXIT_PARSE, "parse", "unsupported payload profile")
     if flags != PAYLOAD_FLAGS_V1_BYTE:
@@ -480,49 +372,49 @@ def _parse_slice_record(payload_text):
     return ciphertext, mac
 
 
-def _expected_mac(mac_key_bytes, slice_index, ciphertext):
+def _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext):
     message = (
         PAYLOAD_MAC_MESSAGE_LABEL
-        + _to_ascii_bytes(FILE_ID)
+        + _to_ascii_bytes(file_id)
         + b"|"
-        + _to_ascii_bytes(PUBLISH_VERSION)
+        + _to_ascii_bytes(publish_version)
         + b"|"
         + _to_ascii_int_bytes(slice_index, "slice_index")
         + b"|"
-        + _to_ascii_int_bytes(TOTAL_SLICES, "total_slices")
+        + _to_ascii_int_bytes(total_slices, "total_slices")
         + b"|"
-        + _to_ascii_int_bytes(COMPRESSED_SIZE, "compressed_size")
+        + _to_ascii_int_bytes(compressed_size, "compressed_size")
         + b"|"
         + ciphertext
     )
     return _hmac_sha256(mac_key_bytes, message)[:PAYLOAD_MAC_TRUNC_LEN]
 
 
-def _decrypt_and_verify_slice(enc_key_bytes, mac_key_bytes, slice_index, ciphertext, mac):
-    expected_mac = _expected_mac(mac_key_bytes, slice_index, ciphertext)
-    if not _secure_compare(expected_mac, mac):
+def _decrypt_and_verify_slice(enc_key_bytes, mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext, mac):
+    expected = _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext)
+    if not _secure_compare(expected, mac):
         raise ClientError(EXIT_CRYPTO, "crypto", "MAC verification failed")
 
-    stream = _keystream_bytes(enc_key_bytes, slice_index, len(ciphertext))
+    stream = _keystream_bytes(enc_key_bytes, file_id, publish_version, slice_index, len(ciphertext))
     plaintext = _xor_bytes(ciphertext, stream)
     if not plaintext:
         raise ClientError(EXIT_CRYPTO, "crypto", "decrypted slice is empty")
     return plaintext
 
 
-def _reassemble_plaintext(slice_bytes_by_index):
+def _reassemble_plaintext(slice_bytes_by_index, total_slices, compressed_size, plaintext_sha256_hex):
     ordered = []
-    for index in range(TOTAL_SLICES):
+    for index in range(total_slices):
         if index not in slice_bytes_by_index:
             raise ClientError(EXIT_REASSEMBLY, "reassembly", "missing slice index %d" % index)
         ordered.append(slice_bytes_by_index[index])
 
     compressed = b"".join(ordered)
-    if len(compressed) != COMPRESSED_SIZE:
+    if len(compressed) != compressed_size:
         raise ClientError(
             EXIT_REASSEMBLY,
             "reassembly",
-            "compressed size mismatch expected=%d got=%d" % (COMPRESSED_SIZE, len(compressed)),
+            "compressed size mismatch expected=%d got=%d" % (compressed_size, len(compressed)),
         )
 
     try:
@@ -531,13 +423,14 @@ def _reassemble_plaintext(slice_bytes_by_index):
         raise ClientError(EXIT_REASSEMBLY, "reassembly", "decompress failed: %s" % exc)
 
     digest = hashlib.sha256(plaintext).hexdigest().lower()
-    if digest != PLAINTEXT_SHA256_HEX:
+    if digest != plaintext_sha256_hex:
         raise ClientError(EXIT_REASSEMBLY, "reassembly", "plaintext sha256 mismatch")
     return plaintext
 
 
-def _deterministic_output_path():
-    return os.path.join(tempfile.gettempdir(), SOURCE_FILENAME)
+def _deterministic_output_path(file_id):
+    source_filename = "dnsdle_" + file_id
+    return os.path.join(tempfile.gettempdir(), source_filename)
 
 
 def _write_output_atomic(output_path, payload):
@@ -636,13 +529,92 @@ def _parse_resolver_arg(raw_value):
     except Exception as exc:
         raise ClientError(EXIT_USAGE, "usage", "--resolver lookup failed: %s" % exc)
 
-'''
+
+_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
 
 
-_DISCOVER_SYSTEM_RESOLVER = '''
+def _run_nslookup():
+    args = ["nslookup", "google.com"]
+    run_fn = getattr(subprocess, "run", None)
+    if run_fn is not None:
+        result = run_fn(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            universal_newlines=True,
+        )
+        return result.stdout or ""
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    output, _ = proc.communicate()
+    return output or ""
+
+
+def _parse_nslookup_output(output):
+    lines = output.splitlines()
+    server_index = None
+    for index, line in enumerate(lines):
+        if line.strip().lower().startswith("server:"):
+            server_index = index
+            break
+    if server_index is None:
+        return None
+    for line in lines[server_index + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("non-authoritative answer"):
+            break
+        match = _IPV4_RE.search(stripped)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _load_system_resolvers():
+    if sys.platform == "win32":
+        try:
+            output = _run_nslookup()
+        except Exception:
+            return []
+        ip = _parse_nslookup_output(output)
+        if not ip:
+            return []
+        return [ip]
+    else:
+        resolvers = []
+        try:
+            with open("/etc/resolv.conf", "r") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "#" in line:
+                        line = line.split("#", 1)[0].strip()
+                        if not line:
+                            continue
+                    parts = line.split()
+                    if len(parts) < 2:
+                        continue
+                    if parts[0].lower() != "nameserver":
+                        continue
+                    host = parts[1].strip()
+                    if not host:
+                        continue
+                    if host not in resolvers:
+                        resolvers.append(host)
+        except Exception:
+            return []
+        return resolvers
+
 
 def _discover_system_resolver():
-    resolver_hosts = @@LOADER_FN@@()
+    resolver_hosts = _load_system_resolvers()
 
     for host in resolver_hosts:
         try:
@@ -653,40 +625,12 @@ def _discover_system_resolver():
     raise ClientError(EXIT_TRANSPORT, "dns", "no system DNS resolver found")
 
 
-'''
-
-
-def _lift_resolver_source(filename):
-    sentinel = "# __TEMPLATE_SOURCE__"
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(source_dir, filename)
-    try:
-        with open(filepath, "r") as handle:
-            content = handle.read()
-    except Exception as exc:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "cannot read resolver source file: %s" % exc,
-            {"filename": filename},
-        )
-    idx = content.find(sentinel)
-    if idx < 0:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "sentinel not found in resolver source file",
-            {"filename": filename},
-        )
-    return content[idx + len(sentinel):]
-
-
-_TEMPLATE_SUFFIX = '''def _send_dns_query(resolver_addr, query_packet, timeout_seconds):
+def _send_dns_query(resolver_addr, query_packet, timeout_seconds, dns_edns_size):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.settimeout(timeout_seconds)
         sock.sendto(query_packet, resolver_addr)
-        response, source = sock.recvfrom(max(2048, DNS_EDNS_SIZE + 2048))
+        response, source = sock.recvfrom(max(2048, dns_edns_size + 2048))
     except socket.timeout:
         raise RetryableTransport("dns timeout")
     except socket.error as exc:
@@ -709,17 +653,12 @@ def _retry_sleep():
     time.sleep(float(delay_ms) / 1000.0)
 
 
-def _validate_embedded_constants():
-    if CRYPTO_PROFILE != "v1":
-        raise ClientError(EXIT_USAGE, "usage", "unsupported CRYPTO_PROFILE")
-    if WIRE_PROFILE != "v1":
-        raise ClientError(EXIT_USAGE, "usage", "unsupported WIRE_PROFILE")
-
-    if not BASE_DOMAINS:
+def _validate_cli_params(base_domains, file_tag, mapping_seed, token_len, total_slices, compressed_size, plaintext_sha256_hex, response_label, dns_max_label_len):
+    if not base_domains:
         raise ClientError(EXIT_USAGE, "usage", "BASE_DOMAINS is empty")
 
     domain_labels = []
-    for domain in BASE_DOMAINS:
+    for domain in base_domains:
         normalized = (domain or "").strip().lower().rstrip(".")
         if not normalized:
             raise ClientError(EXIT_USAGE, "usage", "invalid base domain")
@@ -729,39 +668,39 @@ def _validate_embedded_constants():
                 raise ClientError(EXIT_USAGE, "usage", "invalid base-domain label")
         domain_labels.append(labels)
 
-    if not FILE_TAG or not _TOKEN_RE.match(FILE_TAG):
-        raise ClientError(EXIT_USAGE, "usage", "invalid FILE_TAG")
+    if not file_tag or not _TOKEN_RE.match(file_tag):
+        raise ClientError(EXIT_USAGE, "usage", "invalid file_tag")
 
-    if TOTAL_SLICES <= 0:
-        raise ClientError(EXIT_USAGE, "usage", "TOTAL_SLICES must be > 0")
+    if total_slices <= 0:
+        raise ClientError(EXIT_USAGE, "usage", "total_slices must be > 0")
 
-    if not MAPPING_SEED:
-        raise ClientError(EXIT_USAGE, "usage", "MAPPING_SEED is empty")
-    if SLICE_TOKEN_LEN <= 0:
-        raise ClientError(EXIT_USAGE, "usage", "SLICE_TOKEN_LEN must be > 0")
-    if SLICE_TOKEN_LEN > DNS_MAX_LABEL_LEN:
-        raise ClientError(EXIT_USAGE, "usage", "SLICE_TOKEN_LEN exceeds DNS_MAX_LABEL_LEN")
+    if not mapping_seed:
+        raise ClientError(EXIT_USAGE, "usage", "mapping_seed is empty")
+    if token_len <= 0:
+        raise ClientError(EXIT_USAGE, "usage", "token_len must be > 0")
+    if token_len > dns_max_label_len:
+        raise ClientError(EXIT_USAGE, "usage", "token_len exceeds dns_max_label_len")
 
-    if COMPRESSED_SIZE <= 0:
-        raise ClientError(EXIT_USAGE, "usage", "COMPRESSED_SIZE must be > 0")
-    if not PLAINTEXT_SHA256_HEX or len(PLAINTEXT_SHA256_HEX) != 64:
-        raise ClientError(EXIT_USAGE, "usage", "PLAINTEXT_SHA256_HEX is invalid")
+    if compressed_size <= 0:
+        raise ClientError(EXIT_USAGE, "usage", "compressed_size must be > 0")
+    if not plaintext_sha256_hex or len(plaintext_sha256_hex) != 64:
+        raise ClientError(EXIT_USAGE, "usage", "sha256 is invalid")
 
-    if not RESPONSE_LABEL or not _LABEL_RE.match(RESPONSE_LABEL):
-        raise ClientError(EXIT_USAGE, "usage", "RESPONSE_LABEL is invalid")
+    if not response_label or not _LABEL_RE.match(response_label):
+        raise ClientError(EXIT_USAGE, "usage", "response_label is invalid")
 
     for labels in domain_labels:
-        if _dns_name_wire_length((RESPONSE_LABEL,) + labels) > 255:
+        if _dns_name_wire_length((response_label,) + labels) > 255:
             raise ClientError(EXIT_USAGE, "usage", "response suffix exceeds DNS limits")
 
     return tuple(domain_labels)
 
 
-def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_timeout, max_rounds, query_interval_ms, domain_labels_by_domain):
-    missing = set(range(TOTAL_SLICES))
+def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices, compressed_size, mapping_seed, token_len, resolver_addr, request_timeout, no_progress_timeout, max_rounds, query_interval_ms, domain_labels_by_domain, base_domains, response_label, dns_max_label_len, dns_edns_size):
+    missing = set(range(total_slices))
     stored = {}
-    enc_key_bytes = _enc_key(psk_value)
-    mac_key_bytes = _mac_key(psk_value)
+    enc_key_bytes = _enc_key(psk_value, file_id, publish_version)
+    mac_key_bytes = _mac_key(psk_value, file_id, publish_version)
 
     query_interval_sec = float(query_interval_ms) / 1000.0
 
@@ -782,12 +721,13 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
                 raise ClientError(EXIT_TRANSPORT, "dns", "no-progress timeout")
 
             domain_labels = domain_labels_by_domain[domain_index]
-            qname_labels = (_derive_slice_token(slice_index), FILE_TAG) + domain_labels
+            slice_token = _derive_slice_token(mapping_seed, publish_version, slice_index, token_len)
+            qname_labels = (slice_token, file_tag) + domain_labels
             query_id = random.randint(0, 0xFFFF)
-            query_packet = _build_dns_query(query_id, qname_labels)
+            query_packet = _build_dns_query(query_id, qname_labels, dns_edns_size)
 
             try:
-                response = _send_dns_query(resolver_addr, query_packet, request_timeout)
+                response = _send_dns_query(resolver_addr, query_packet, request_timeout, dns_edns_size)
                 cname_labels = _parse_response_for_cname(response, query_id, qname_labels)
             except (RetryableTransport, ClientError):
                 consecutive_timeouts += 1
@@ -797,17 +737,21 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
                         "dns",
                         "transport retries exhausted",
                     )
-                domain_index = (domain_index + 1) % len(BASE_DOMAINS)
+                domain_index = (domain_index + 1) % len(base_domains)
                 _retry_sleep()
                 continue
 
             consecutive_timeouts = 0
-            payload_text = _extract_payload_text(cname_labels, domain_labels)
+            payload_text = _extract_payload_text(cname_labels, domain_labels, response_label, dns_max_label_len)
             ciphertext, mac = _parse_slice_record(payload_text)
             slice_plain = _decrypt_and_verify_slice(
                 enc_key_bytes,
                 mac_key_bytes,
+                file_id,
+                publish_version,
                 slice_index,
+                total_slices,
+                compressed_size,
                 ciphertext,
                 mac,
             )
@@ -837,10 +781,21 @@ def _download_slices(psk_value, resolver_addr, request_timeout, no_progress_time
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(description="dnsdle generated file downloader")
+    parser = argparse.ArgumentParser(description="dnsdle universal file downloader")
     parser.add_argument("--psk", required=True)
+    parser.add_argument("--domains", required=True)
+    parser.add_argument("--mapping-seed", required=True)
+    parser.add_argument("--publish-version", required=True)
+    parser.add_argument("--total-slices", required=True)
+    parser.add_argument("--compressed-size", required=True)
+    parser.add_argument("--sha256", required=True)
+    parser.add_argument("--token-len", required=True)
     parser.add_argument("--resolver", default="")
     parser.add_argument("--out", default="")
+    parser.add_argument("--file-tag-len", default="4")
+    parser.add_argument("--response-label", default="r-x")
+    parser.add_argument("--dns-max-label-len", default="63")
+    parser.add_argument("--dns-edns-size", default="512")
     parser.add_argument("--timeout", default=str(REQUEST_TIMEOUT_SECONDS))
     parser.add_argument(
         "--no-progress-timeout",
@@ -862,6 +817,21 @@ def _parse_runtime_args(argv):
     if not psk_value:
         raise ClientError(EXIT_USAGE, "usage", "--psk must be non-empty")
 
+    base_domains = tuple(d.strip() for d in args.domains.split(",") if d.strip())
+    mapping_seed = args.mapping_seed
+    publish_version = args.publish_version
+    total_slices = _parse_positive_int(args.total_slices, "--total-slices")
+    compressed_size = _parse_positive_int(args.compressed_size, "--compressed-size")
+    plaintext_sha256_hex = args.sha256.strip().lower()
+    token_len = _parse_positive_int(args.token_len, "--token-len")
+    file_tag_len = _parse_positive_int(args.file_tag_len, "--file-tag-len")
+    response_label = (args.response_label or "").strip().lower()
+    dns_max_label_len = _parse_positive_int(args.dns_max_label_len, "--dns-max-label-len")
+    dns_edns_size = _parse_positive_int(args.dns_edns_size, "--dns-edns-size")
+
+    file_id = _derive_file_id(publish_version)
+    file_tag = _derive_file_tag(mapping_seed, publish_version, file_tag_len)
+
     timeout_seconds = _parse_positive_float(args.timeout, "--timeout")
     no_progress_timeout = _parse_positive_float(
         args.no_progress_timeout,
@@ -878,9 +848,30 @@ def _parse_runtime_args(argv):
 
     out_path = (args.out or "").strip()
     if not out_path:
-        out_path = _deterministic_output_path()
+        out_path = _deterministic_output_path(file_id)
 
-    return psk_value, resolver_addr, out_path, timeout_seconds, no_progress_timeout, max_rounds, query_interval_ms
+    return (
+        psk_value,
+        base_domains,
+        mapping_seed,
+        publish_version,
+        total_slices,
+        compressed_size,
+        plaintext_sha256_hex,
+        token_len,
+        file_tag_len,
+        file_id,
+        file_tag,
+        response_label,
+        dns_max_label_len,
+        dns_edns_size,
+        resolver_addr,
+        out_path,
+        timeout_seconds,
+        no_progress_timeout,
+        max_rounds,
+        query_interval_ms,
+    )
 
 
 def main(argv=None):
@@ -888,9 +879,21 @@ def main(argv=None):
         argv = sys.argv[1:]
 
     try:
-        domain_labels_by_domain = _validate_embedded_constants()
         (
             psk_value,
+            base_domains,
+            mapping_seed,
+            publish_version,
+            total_slices,
+            compressed_size,
+            plaintext_sha256_hex,
+            token_len,
+            file_tag_len,
+            file_id,
+            file_tag,
+            response_label,
+            dns_max_label_len,
+            dns_edns_size,
             resolver_addr,
             out_path,
             timeout_seconds,
@@ -898,26 +901,43 @@ def main(argv=None):
             max_rounds,
             query_interval_ms,
         ) = _parse_runtime_args(argv)
+
+        domain_labels_by_domain = _validate_cli_params(
+            base_domains, file_tag, mapping_seed, token_len,
+            total_slices, compressed_size, plaintext_sha256_hex,
+            response_label, dns_max_label_len,
+        )
+
         _log(
-            "start file_id=%s target_os=%s resolver=%s:%d slices=%d" % (
-                FILE_ID,
-                TARGET_OS,
+            "start file_id=%s resolver=%s:%d slices=%d" % (
+                file_id,
                 resolver_addr[0],
                 resolver_addr[1],
-                TOTAL_SLICES,
+                total_slices,
             )
         )
 
         slices = _download_slices(
             psk_value,
+            file_id,
+            file_tag,
+            publish_version,
+            total_slices,
+            compressed_size,
+            mapping_seed,
+            token_len,
             resolver_addr,
             timeout_seconds,
             no_progress_timeout,
             max_rounds,
             query_interval_ms,
             domain_labels_by_domain,
+            base_domains,
+            response_label,
+            dns_max_label_len,
+            dns_edns_size,
         )
-        plaintext = _reassemble_plaintext(slices)
+        plaintext = _reassemble_plaintext(slices, total_slices, compressed_size, plaintext_sha256_hex)
         _write_output_atomic(out_path, plaintext)
         _log("success wrote=%s bytes=%d" % (out_path, len(plaintext)))
         return 0
@@ -934,22 +954,44 @@ if __name__ == "__main__":
 '''
 
 
-def build_client_template(target_os):
-    if target_os == "linux":
-        extra_imports = ""
-        lifted = _lift_resolver_source("resolver_linux.py")
-        loader_fn = "_load_unix_resolvers"
-    elif target_os == "windows":
-        extra_imports = "import subprocess"
-        lifted = _lift_resolver_source("resolver_windows.py")
-        loader_fn = "_load_windows_resolvers"
-    else:
+_UNIVERSAL_CLIENT_FILENAME = "dnsdle_universal_client.py"
+
+
+def build_client_source():
+    compat_blocks = extract_functions("compat.py", _COMPAT_EXTRACTIONS)
+    helpers_blocks = extract_functions("helpers.py", _HELPERS_EXTRACTIONS)
+    dnswire_blocks = extract_functions("dnswire.py", _DNSWIRE_EXTRACTIONS)
+    cname_blocks = extract_functions("cname_payload.py", _CNAME_PAYLOAD_EXTRACTIONS)
+
+    extracted_parts = []
+    for block in compat_blocks:
+        extracted_parts.append(apply_renames(block, _COMPAT_RENAMES))
+    for block in helpers_blocks:
+        extracted_parts.append(apply_renames(block, _HELPERS_RENAMES))
+    for block in dnswire_blocks:
+        extracted_parts.append(apply_renames(block, _DNSWIRE_RENAMES))
+    for block in cname_blocks:
+        extracted_parts.append(apply_renames(block, _CNAME_PAYLOAD_RENAMES))
+
+    extracted_source = "\n\n".join(extracted_parts)
+    source = _CLIENT_PREAMBLE + extracted_source + _CLIENT_SUFFIX
+
+    try:
+        compile(source, "<universal_client>", "exec")
+    except SyntaxError as exc:
         raise StartupError(
             "startup",
             "generator_invalid_contract",
-            "unsupported target_os for template",
-            {"target_os": target_os},
+            "universal client source fails compilation: %s" % exc,
         )
-    discover = _DISCOVER_SYSTEM_RESOLVER.replace("@@LOADER_FN@@", loader_fn)
-    template = _TEMPLATE_PREFIX + lifted + discover + _TEMPLATE_SUFFIX
-    return template.replace("@@EXTRA_IMPORTS@@", extra_imports)
+
+    try:
+        encode_ascii(source)
+    except Exception:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "universal client source is not ASCII",
+        )
+
+    return source

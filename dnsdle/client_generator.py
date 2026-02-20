@@ -6,23 +6,15 @@ import re
 import shutil
 import time
 
-from dnsdle.client_template import build_client_template
+from dnsdle.client_standalone import build_client_source
+from dnsdle.client_standalone import _UNIVERSAL_CLIENT_FILENAME
 from dnsdle.compat import encode_ascii
-from dnsdle.constants import ALLOWED_TARGET_OS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_MAX_ROUNDS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS
-from dnsdle.constants import GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
-from dnsdle.constants import GENERATED_CLIENT_FILENAME_TEMPLATE
 from dnsdle.constants import GENERATED_CLIENT_MANAGED_SUBDIR
 from dnsdle.state import StartupError
 
 
 _MANAGED_FILE_RE = re.compile(
-    r"^dnsdl_[a-z0-9][a-z0-9_]*_[a-z0-9]{4,16}_(?:windows|linux)\.py$"
+    r"^dnsdl(?:e)?_[a-z0-9][a-z0-9_]*\.py$"
 )
 
 
@@ -93,113 +85,6 @@ def _cleanup_tree(path_value):
             pass
 
 
-def _sanitize_filename_label(source_filename):
-    label = source_filename.lower()
-    label = re.sub(r"[^a-z0-9]", "_", label)
-    label = re.sub(r"_+", "_", label)
-    label = label.strip("_")
-    if not label:
-        label = "file"
-    return label[:48]
-
-
-def _filename_for(source_filename, file_tag, target_os):
-    label = _sanitize_filename_label(source_filename)
-    return GENERATED_CLIENT_FILENAME_TEMPLATE % (label, file_tag, target_os)
-
-
-def _validate_publish_item(publish_item):
-    if not publish_item.file_id or not publish_item.file_tag:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "missing required publish identity fields",
-        )
-    if publish_item.total_slices <= 0:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "TOTAL_SLICES must be positive",
-            {"file_id": publish_item.file_id},
-        )
-    if publish_item.slice_token_len <= 0:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "slice_token_len must be positive",
-            {"file_id": publish_item.file_id},
-        )
-    if not publish_item.crypto_profile or not publish_item.wire_profile:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "missing required profile fields",
-            {"file_id": publish_item.file_id},
-        )
-
-
-def _render_client_source(config, publish_item, target_os):
-    replacements = {
-        "BASE_DOMAINS": tuple(config.domains),
-        "FILE_TAG": publish_item.file_tag,
-        "FILE_ID": publish_item.file_id,
-        "PUBLISH_VERSION": publish_item.publish_version,
-        "TARGET_OS": target_os,
-        "TOTAL_SLICES": int(publish_item.total_slices),
-        "COMPRESSED_SIZE": int(publish_item.compressed_size),
-        "PLAINTEXT_SHA256_HEX": publish_item.plaintext_sha256,
-        "MAPPING_SEED": config.mapping_seed,
-        "SLICE_TOKEN_LEN": int(publish_item.slice_token_len),
-        "CRYPTO_PROFILE": publish_item.crypto_profile,
-        "WIRE_PROFILE": publish_item.wire_profile,
-        "RESPONSE_LABEL": config.response_label,
-        "DNS_MAX_LABEL_LEN": int(config.dns_max_label_len),
-        "DNS_EDNS_SIZE": int(config.dns_edns_size),
-        "SOURCE_FILENAME": publish_item.source_filename,
-        "REQUEST_TIMEOUT_SECONDS": float(GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS),
-        "NO_PROGRESS_TIMEOUT_SECONDS": int(
-            GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
-        ),
-        "MAX_ROUNDS": int(GENERATED_CLIENT_DEFAULT_MAX_ROUNDS),
-        "MAX_CONSECUTIVE_TIMEOUTS": int(
-            GENERATED_CLIENT_DEFAULT_MAX_CONSECUTIVE_TIMEOUTS
-        ),
-        "RETRY_SLEEP_BASE_MS": int(GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_BASE_MS),
-        "RETRY_SLEEP_JITTER_MS": int(
-            GENERATED_CLIENT_DEFAULT_RETRY_SLEEP_JITTER_MS
-        ),
-        "QUERY_INTERVAL_MS": int(GENERATED_CLIENT_DEFAULT_QUERY_INTERVAL_MS),
-    }
-
-    source = build_client_template(target_os)
-    for key, value in replacements.items():
-        source = source.replace("@@%s@@" % key, repr(value))
-
-    unreplaced = re.search(r"@@[A-Z0-9_]+@@", source)
-    if unreplaced:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "unreplaced template placeholder after substitution",
-            {
-                "file_id": publish_item.file_id,
-                "target_os": target_os,
-                "placeholder": unreplaced.group(0),
-            },
-        )
-
-    try:
-        encode_ascii(source)
-    except Exception:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "generated client source is not ASCII",
-            {"file_id": publish_item.file_id, "target_os": target_os},
-        )
-    return source
-
-
 def _write_staged_file(stage_dir, filename, source_text):
     final_path = os.path.join(stage_dir, filename)
     temp_path = final_path + ".tmp"
@@ -215,86 +100,6 @@ def _write_staged_file(stage_dir, filename, source_text):
             "failed to write generated client artifact: %s" % exc,
             {"filename": filename},
         )
-
-
-def _build_artifacts(runtime_state):
-    config = runtime_state.config
-    if not config.domains:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "BASE_DOMAINS must be non-empty",
-        )
-    if not config.mapping_seed:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "MAPPING_SEED must be non-empty",
-        )
-    if not config.response_label:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "RESPONSE_LABEL must be non-empty",
-        )
-    for os_value in config.target_os:
-        if os_value not in ALLOWED_TARGET_OS:
-            raise StartupError(
-                "startup",
-                "generator_invalid_contract",
-                "unsupported target_os for generator",
-                {"target_os": os_value},
-            )
-
-    artifacts = []
-    seen_names = set()
-
-    for publish_item in runtime_state.publish_items:
-        _validate_publish_item(publish_item)
-        for target_os in config.target_os:
-            filename = _filename_for(
-                publish_item.source_filename,
-                publish_item.file_tag,
-                target_os,
-            )
-            if filename in seen_names:
-                raise StartupError(
-                    "startup",
-                    "generator_invalid_contract",
-                    "deterministic generated filename collision",
-                    {
-                        "file_id": publish_item.file_id,
-                        "file_tag": publish_item.file_tag,
-                        "target_os": target_os,
-                        "filename": filename,
-                    },
-                )
-            seen_names.add(filename)
-            source_text = _render_client_source(config, publish_item, target_os)
-            artifacts.append(
-                {
-                    "file_id": publish_item.file_id,
-                    "file_tag": publish_item.file_tag,
-                    "target_os": target_os,
-                    "filename": filename,
-                    "source": source_text,
-                    "publish_version": publish_item.publish_version,
-                }
-            )
-
-    expected_count = len(runtime_state.publish_items) * len(config.target_os)
-    if len(artifacts) != expected_count:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "artifact count mismatch",
-            {
-                "expected": expected_count,
-                "realized": len(artifacts),
-            },
-        )
-
-    return tuple(artifacts)
 
 
 def _collect_backup_targets(managed_dir, expected_names):
@@ -429,8 +234,7 @@ def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
     raise failure
 
 
-def generate_client_artifacts(runtime_state):
-    config = runtime_state.config
+def generate_client_artifacts(config):
     if not config.client_out_dir:
         raise StartupError(
             "startup",
@@ -451,7 +255,9 @@ def generate_client_artifacts(runtime_state):
         )
     _safe_mkdir(managed_dir, "generator_write_failed")
 
-    artifacts = _build_artifacts(runtime_state)
+    source_text = build_client_source()
+    filename = _UNIVERSAL_CLIENT_FILENAME
+    artifacts = ({"filename": filename, "source": source_text},)
 
     stage_dir = _build_run_dir(managed_dir, ".stage")
     backup_dir = _build_run_dir(managed_dir, ".backup")
@@ -459,9 +265,7 @@ def generate_client_artifacts(runtime_state):
     _safe_mkdir(backup_dir, "generator_write_failed")
 
     try:
-        for artifact in artifacts:
-            _write_staged_file(stage_dir, artifact["filename"], artifact["source"])
-
+        _write_staged_file(stage_dir, filename, source_text)
         _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts)
     except StartupError as exc:
         _cleanup_tree(stage_dir)
@@ -481,23 +285,10 @@ def generate_client_artifacts(runtime_state):
     _cleanup_tree(stage_dir)
     _cleanup_tree(backup_dir)
 
-    generated = []
-    for artifact in artifacts:
-        generated.append(
-            {
-                "file_id": artifact["file_id"],
-                "file_tag": artifact["file_tag"],
-                "target_os": artifact["target_os"],
-                "publish_version": artifact["publish_version"],
-                "path": os.path.join(managed_dir, artifact["filename"]),
-                "source": artifact["source"],
-                "filename": artifact["filename"],
-            }
-        )
-
     return {
         "managed_dir": managed_dir,
-        "artifact_count": len(generated),
-        "target_os": tuple(config.target_os),
-        "artifacts": tuple(generated),
+        "artifact_count": 1,
+        "filename": filename,
+        "source": source_text,
+        "path": os.path.join(managed_dir, filename),
     }

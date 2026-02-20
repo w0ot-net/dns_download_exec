@@ -8,7 +8,6 @@ QTYPE_RESPONSE_CNAME = "CNAME"
 
 # Mapping/token constants
 TOKEN_ALPHABET_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
-ALLOWED_TARGET_OS = ("windows", "linux")
 DIGEST_TEXT_CAPACITY = 52  # base32(lower, no-pad) chars from SHA-256 digest
 FILE_ID_PREFIX = b"dnsdle:file-id:v1|"
 MAPPING_FILE_LABEL = b"dnsdle:file:v1|"
@@ -72,7 +71,6 @@ MAX_DNS_EDNS_SIZE = 4096
 
 # Generated client defaults and output policy
 GENERATED_CLIENT_MANAGED_SUBDIR = "dnsdle_v1"
-GENERATED_CLIENT_FILENAME_TEMPLATE = "dnsdl_%s_%s_%s.py"
 GENERATED_CLIENT_DEFAULT_REQUEST_TIMEOUT_SECONDS = 3.0
 GENERATED_CLIENT_DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS = 60
 GENERATED_CLIENT_DEFAULT_MAX_ROUNDS = 64

@@ -41,8 +41,6 @@ Processing flow is two-step:
 - `mapping_seed` (`--mapping-seed`): deterministic mapping seed, default `0`.
 - `file_tag_len` (`--file-tag-len`): deterministic file-tag length, default `6`,
   valid `4..16`.
-- `target_os` (`--target-os`): generated client OS profiles, allowed values
-  `windows`, `linux`, `windows,linux`, default `windows,linux`.
 - `client_out_dir` (`--client-out-dir`): output directory for generated client
   files, default `./generated_clients` (normalized to absolute path at startup).
 - `compression_level` (`--compression-level`): compressed payload level,
@@ -171,8 +169,7 @@ Startup fails if any derived value cannot be computed within constraints.
 
 ### Generation
 
-- every selected `target_os` value must be supported (`windows` or `linux`).
-- generator must produce exactly one `.py` file per `(file, target_os)` pair.
+- generator must produce exactly one universal client `.py` file.
 - no sidecar files may be emitted.
 - generated files are written only under
   `<normalized client_out_dir>/dnsdle_v1/`.

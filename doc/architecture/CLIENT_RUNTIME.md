@@ -1,6 +1,6 @@
 # Client Runtime
 
-This document defines v1 runtime behavior for generated download clients.
+This document defines v1 runtime behavior for the universal download client.
 
 It covers process lifecycle, DNS query loop behavior, progress tracking,
 validation, reconstruction, and exit semantics.
@@ -20,7 +20,7 @@ validation, reconstruction, and exit semantics.
 
 Client runtime has five phases:
 1. CLI parse and validation
-2. runtime initialization
+2. runtime initialization (parameter derivation)
 3. download loop
 4. reconstruction and verification
 5. output write and exit
@@ -29,26 +29,38 @@ Any fatal error in a phase exits immediately with the defined exit code.
 
 ---
 
-## CLI Validation
+## CLI Contract
 
-Required runtime input:
+The universal client accepts all parameters via CLI arguments.
+
+Required arguments:
 - `--psk secret`
+- `--domains base1,base2,...`
+- `--mapping-seed seed`
+- `--publish-version version`
+- `--total-slices n`
+- `--compressed-size n`
+- `--sha256 hex`
+- `--token-len n`
 
-Optional runtime inputs:
+Optional arguments:
 - `--resolver host:port`
 - `--out path`
-- `--timeout seconds`
-- `--no-progress-timeout seconds`
-- `--max-rounds n`
-- `--query-interval ms` (milliseconds between queries; default `50`; `0` disables)
+- `--file-tag-len n` (default: `4`)
+- `--response-label label` (default: `r-x`)
+- `--dns-max-label-len n` (default: `63`)
+- `--dns-edns-size n` (default: `512`)
+- `--timeout seconds` (default: `3.0`)
+- `--no-progress-timeout seconds` (default: `60`)
+- `--max-rounds n` (default: `64`)
+- `--query-interval ms` (default: `50`; `0` disables)
 - `--verbose` (enable progress and diagnostic logging to stderr)
 
 Validation rules:
 - `--psk` must be present and non-empty.
-- if `--out` is provided, it must be a valid non-empty path argument.
-- numeric overrides must parse and be positive (except `--query-interval` which
-  allows `0`).
-- unsupported flags are usage errors.
+- `--domains` must contain at least one valid domain.
+- numeric arguments must parse and be positive (except `--query-interval`
+  which allows `0`).
 
 CLI validation failures exit with code `2`.
 
@@ -57,13 +69,15 @@ CLI validation failures exit with code `2`.
 ## Runtime Initialization
 
 Before issuing DNS requests, client must:
-1. Load embedded constants (`FILE_TAG`, `MAPPING_SEED`, `SLICE_TOKEN_LEN`, etc.).
-2. Validate constant invariants (`MAPPING_SEED` non-empty, `SLICE_TOKEN_LEN > 0`).
-3. Resolve effective runtime knobs from defaults plus CLI overrides.
-4. Derive per-file crypto context from runtime `--psk`.
-5. Initialize missing-index set `[0 .. TOTAL_SLICES-1]`.
-6. Initialize slice storage map keyed by index.
-7. Initialize progress timer and retry counters.
+1. Parse CLI arguments.
+2. Derive `file_id` from `--publish-version`:
+   `sha256("dnsdle:file-id:v1|" + publish_version).hexdigest()[:16]`
+3. Derive `file_tag` from `--mapping-seed`, `--publish-version`, and
+   `--file-tag-len`.
+4. Validate derived identifiers and domain labels.
+5. Derive per-file crypto context from `--psk`.
+6. Initialize missing-index set `[0 .. total_slices-1]`.
+7. Initialize slice storage, progress timer, and retry counters.
 
 Any invariant or crypto context setup failure is fatal.
 
@@ -73,8 +87,9 @@ Any invariant or crypto context setup failure is fatal.
 
 Resolver selection order:
 1. use `--resolver` if provided
-2. otherwise discover system resolver using the OS-specific path emitted at
-   generation time (Unix: `/etc/resolv.conf`; Windows: `nslookup`)
+2. otherwise discover system resolver at runtime:
+   - Windows (`sys.platform == "win32"`): `nslookup`-based discovery
+   - Unix/Linux: `/etc/resolv.conf` parsing
 
 Runtime resolver handling rules:
 - resolver endpoint must parse to valid host/port
@@ -94,21 +109,18 @@ Loop condition:
 
 Per-iteration steps:
 1. choose next missing index
-2. map index to `slice_token`
-3. select domain suffix from `BASE_DOMAINS` using deterministic index policy
+2. derive `slice_token` from `(mapping_seed, publish_version, index, token_len)`
+3. select domain suffix from `domains` using deterministic index policy
 4. build query name `<slice_token>.<file_tag>.<selected_base_domain>`
-5. send DNS query (include OPT when `DNS_EDNS_SIZE > 512`, default `1232`)
+5. send DNS query (include OPT when `dns_edns_size > 512`)
 6. wait for response subject to request timeout
 7. on timeout/no-response/TC, update retry state and continue
 8. on response, validate expected CNAME answer contract
-9. explicit DNS miss responses (for example, `NXDOMAIN` or no required CNAME
-   answer) are contract violations
-10. decode CNAME payload record
-11. verify crypto and decrypt slice
-12. store slice if new index; verify equality if duplicate index
-13. when a new index is stored, reset no-progress timer
-14. sleep `query_interval_ms` before the next iteration (skipped after retryable
-    errors, which have their own sleep)
+9. decode CNAME payload record
+10. verify crypto and decrypt slice
+11. store slice if new index; verify equality if duplicate index
+12. when a new index is stored, reset no-progress timer
+13. sleep `query_interval` ms before next iteration
 
 Loop termination failures:
 - max-rounds exhausted
@@ -119,21 +131,16 @@ These failures exit with code `3`.
 
 Domain-selection policy:
 - initialize `domain_index = 0` at process start
-- each request uses `BASE_DOMAINS[domain_index]`
+- each request uses `domains[domain_index]`
 - on retryable transport events only, advance:
-  `domain_index = (domain_index + 1) % len(BASE_DOMAINS)`
-- on valid DNS responses (new slice or valid duplicate), keep `domain_index`
-  unchanged
-- on restart, reset `domain_index` to `0`
+  `domain_index = (domain_index + 1) % len(domains)`
+- on valid DNS responses, keep `domain_index` unchanged
 
 Query pacing:
-- after each successful query-response cycle (new slice or valid duplicate),
-  sleep `query_interval_ms` milliseconds before the next query
-- default interval is `50` ms (~20 queries/sec), overridable via
-  `--query-interval`
-- set to `0` to disable pacing (no inter-query delay)
-- retryable errors use their own sleep (`_retry_sleep`) and do not add the
-  pacing delay
+- after each successful query-response cycle, sleep `query_interval` ms
+- default interval is `50` ms (~20 queries/sec)
+- set to `0` to disable pacing
+- retryable errors use their own sleep and do not add the pacing delay
 
 ---
 
@@ -162,24 +169,11 @@ For each received response:
 5. decrypt ciphertext payload
 6. validate duplicate-slice consistency if index already stored
 
-Parity helper ownership:
-- `dnsdle/client_payload.py` enforces response-envelope rules (`ID`, `QR`,
-  opcode, `RCODE`, question echo), selects exactly one matching IN CNAME
-  answer, validates payload record invariants, verifies MAC, and decrypts
-  ciphertext. Envelope validation is recursive-DNS-compatible: `AA`, `RA`,
-  and exact section counts are not checked.
-- `dnsdle/client_reassembly.py` enforces duplicate-index equality, complete
-  index coverage, ordered reassembly, compressed-size checks, decompression, and
-  final plaintext hash verification.
-
 Classification:
 - transport timeout/no-response: retryable
-- TC (truncated) response: retryable (triggers retry sleep and domain rotation,
-  same as timeout; recursive resolvers may set TC under load)
+- TC (truncated) response: retryable
 - DNS miss response or parse/format mismatch: fatal (exit `4`)
 - crypto mismatch: fatal (exit `5`)
-
-No alternate wire parsing mode is allowed in v1.
 
 ---
 
@@ -187,10 +181,10 @@ No alternate wire parsing mode is allowed in v1.
 
 When no indices remain missing:
 1. reassemble compressed bytes in ascending index order
-2. verify compressed length equals embedded `COMPRESSED_SIZE`
+2. verify compressed length equals `compressed_size`
 3. decompress bytes
 4. compute plaintext SHA-256
-5. compare against embedded `PLAINTEXT_SHA256_HEX`
+5. compare against `sha256`
 
 Failures in this phase exit with code `6`.
 
@@ -201,10 +195,8 @@ Failures in this phase exit with code `6`.
 Write policy:
 - write final plaintext only after all verification steps pass
 - if `--out` provided, write exactly to that path
-- if `--out` omitted, write to `<tempdir>/<source_filename>` where
-  `source_filename` is the original basename of the published file
+- if `--out` omitted, write to `<tempdir>/dnsdle_<file_id>`
 
-Invalid `--out` argument is a CLI validation failure (exit `2`).
 Output failures exit with code `7`.
 
 Client must not execute downloaded bytes in v1.
@@ -217,8 +209,8 @@ Client is silent by default. Pass `--verbose` to enable diagnostic output on
 stderr.
 
 When verbose, minimum runtime logs:
-- startup metadata summary (redacted where needed)
-- per-round progress (`received`, `missing`, retries)
+- startup metadata summary
+- per-round progress (`received`, `missing`)
 - fatal failure reason and exit code
 - success message with output location
 
@@ -242,9 +234,8 @@ Logs must not include:
 
 ## Runtime Invariants
 
-1. `MAPPING_SEED` is non-empty and `SLICE_TOKEN_LEN` is positive within
-   `DNS_MAX_LABEL_LEN`. Each slice token is derived at runtime from
-   `(MAPPING_SEED, PUBLISH_VERSION, index)`.
+1. `mapping_seed` is non-empty and `token_len` is positive within
+   `dns_max_label_len`. Each slice token is derived at runtime.
 2. Each index derives exactly one query token via deterministic HMAC.
 3. Duplicate index data must be byte-identical.
 4. Progress timer resets only on new-index acquisition.

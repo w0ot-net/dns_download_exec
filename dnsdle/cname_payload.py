@@ -32,6 +32,7 @@ def _split_payload_labels(payload_text, label_cap):
     return tuple(labels)
 
 
+# __EXTRACT: _derive_file_bound_key__
 def _derive_file_bound_key(psk, file_id, publish_version, key_label):
     psk_bytes = encode_utf8(psk)
     if not psk_bytes:
@@ -39,6 +40,7 @@ def _derive_file_bound_key(psk, file_id, publish_version, key_label):
     file_id_bytes = encode_ascii(file_id)
     publish_version_bytes = encode_ascii(publish_version)
     return hmac_sha256(psk_bytes, key_label + file_id_bytes + b"|" + publish_version_bytes)
+# __END_EXTRACT__
 
 
 def _enc_key(psk, file_id, publish_version):
@@ -50,6 +52,7 @@ def _enc_key(psk, file_id, publish_version):
     )
 
 
+# __EXTRACT: _keystream_bytes__
 def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len):
     if output_len <= 0:
         raise ValueError("output_len must be positive")
@@ -76,8 +79,10 @@ def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len)
         produced += len(block)
         counter += 1
     return b"".join(blocks)[:output_len]
+# __END_EXTRACT__
 
 
+# __EXTRACT: _xor_bytes__
 def _xor_bytes(left_bytes, right_bytes):
     if len(left_bytes) != len(right_bytes):
         raise ValueError("xor inputs must have equal length")
@@ -86,6 +91,7 @@ def _xor_bytes(left_bytes, right_bytes):
     for index, values in enumerate(zip(iter_byte_values(left_bytes), iter_byte_values(right_bytes))):
         out[index] = values[0] ^ values[1]
     return bytes(out)
+# __END_EXTRACT__
 
 
 def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes):

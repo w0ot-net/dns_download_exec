@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.cli import parse_cli_args
+from dnsdle.client_standalone import _UNIVERSAL_CLIENT_FILENAME
 from dnsdle.compat import encode_ascii
 from dnsdle.config import build_config
 from dnsdle.client_generator import generate_client_artifacts
@@ -15,23 +16,6 @@ from dnsdle.server import serve_runtime
 from dnsdle.stager_generator import generate_stagers
 from dnsdle.state import build_runtime_state
 from dnsdle.state import StartupError
-from dnsdle.state import to_publish_item
-
-
-class _GeneratorInput(object):
-
-    def __init__(self, config, mapped_items):
-        self.config = config
-        self._mapped_items = mapped_items
-        self._publish_items = None
-
-    @property
-    def publish_items(self):
-        if self._publish_items is None:
-            self._publish_items = tuple(
-                to_publish_item(item) for item in self._mapped_items
-            )
-        return self._publish_items
 
 
 def _max_slice_token_len(mapped_publish_items):
@@ -48,9 +32,9 @@ def build_startup_state(argv=None):
     config = build_config(parsed_args)
     configure_active_logger(config)
 
-    # Convergence loop: Phase 1 converges user files, Phase 2 adds client
-    # scripts.  If client scripts push the combined token length past the
-    # Phase 1 budget we restart with the higher requirement.
+    # Convergence loop: Phase 1 converges user files, Phase 2 adds the
+    # universal client.  If the client pushes the combined token length
+    # past the Phase 1 budget we restart with the higher requirement.
     query_token_len = 4
     for _outer in range(10):
         # Phase 1: user files -- inner convergence loop
@@ -81,9 +65,8 @@ def build_startup_state(argv=None):
                 break
             query_token_len = realized_max_token_len
 
-        # Phase 2: generate client scripts and combine
-        generator_input = _GeneratorInput(config=config, mapped_items=mapped_items)
-        generation_result = generate_client_artifacts(generator_input)
+        # Phase 2: build one universal client and publish as single file
+        generation_result = generate_client_artifacts(config)
 
         # Snapshot user file mappings for stability invariant
         user_file_snapshot = {}
@@ -97,10 +80,9 @@ def build_startup_state(argv=None):
         seen_plaintext_sha256 = set(item["plaintext_sha256"] for item in publish_items)
         seen_file_ids = set(item["file_id"] for item in publish_items)
 
-        sources = [
-            (artifact["filename"], encode_ascii(artifact["source"]))
-            for artifact in generation_result["artifacts"]
-        ]
+        client_source = generation_result["source"]
+        client_filename = generation_result["filename"]
+        sources = [(client_filename, encode_ascii(client_source))]
 
         client_publish_items = build_publish_items_from_sources(
             sources,
@@ -151,15 +133,22 @@ def build_startup_state(argv=None):
         budget_info=budget_info,
     )
 
-    # Partition client mapped items for stager generation
-    artifact_filenames = set(
-        a["filename"] for a in generation_result["artifacts"]
-    )
-    client_mapped_items = [
-        item for item in combined_mapped
-        if item["source_filename"] in artifact_filenames
-    ]
+    # Find the single universal client mapped item for stager generation
+    client_mapped_item = None
+    payload_mapped_items = []
+    for item in combined_mapped:
+        if item["source_filename"] == client_filename:
+            client_mapped_item = item
+        else:
+            payload_mapped_items.append(item)
 
-    stagers = generate_stagers(config, generation_result, client_mapped_items)
+    if client_mapped_item is None:
+        raise StartupError(
+            "startup",
+            "mapping_stability_violation",
+            "universal client publish item not found in combined mapping",
+        )
+
+    stagers = generate_stagers(config, generation_result, client_mapped_item, payload_mapped_items)
 
     return runtime_state, generation_result, stagers

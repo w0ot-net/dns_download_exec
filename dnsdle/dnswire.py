@@ -53,6 +53,7 @@ def encode_name(labels):
     return b"".join(parts)
 
 
+# __EXTRACT: _decode_name__
 def _decode_name(message, start_offset):
     message_len = _message_length(message)
     labels = []
@@ -103,6 +104,7 @@ def _decode_name(message, start_offset):
             raise DnsParseError("name has too many labels")
 
     return tuple(labels), (read_end_offset if jumped else offset)
+# __END_EXTRACT__
 
 
 def _unpack_header(message):

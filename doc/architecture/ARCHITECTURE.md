@@ -187,7 +187,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 2. Server parses CLI arguments.
 3. Server normalizes/validates config invariants.
 4. Server builds in-memory publish artifacts for each file.
-5. Server generates one standalone client artifact per `(file, target_os)`.
+5. Server generates one universal client artifact for all files and platforms.
 6. Server validates runtime-serving invariants for DNS response construction.
 7. Server binds DNS socket and begins serving queries.
 

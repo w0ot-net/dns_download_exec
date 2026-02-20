@@ -1,215 +1,207 @@
 # Client Generation
 
-This document defines how the server generates per-file download clients.
+This document defines how the server generates the universal download client.
 
-v1 generation is deterministic from validated config and file publish metadata.
-Each generated client is single-purpose: download one specific published file
-for one target OS profile.
+v1 generation produces a single universal client that takes all file-specific
+parameters via CLI arguments.  The server publishes one client for all
+platforms instead of per-file, per-OS templated scripts.
 
 ---
 
 ## Goals
 
 1. Generate minimal Python client code (2.7/3.x, standard library only).
-2. Embed all required metadata so runtime negotiation is unnecessary.
+2. Accept all file-specific metadata via CLI arguments at runtime.
 3. Keep download/verify behavior deterministic and fail-fast.
 4. Keep generated client independent from server source tree at runtime.
-5. Emit exactly one standalone Python file per generated client.
+5. Emit exactly one standalone Python file for all published files.
+
+---
+
+## Architecture
+
+The universal client (`dnsdle/client_standalone.py`) is assembled at server
+startup from canonical source modules using an extraction system:
+
+1. Canonical modules (`compat.py`, `helpers.py`, `dnswire.py`,
+   `cname_payload.py`) have `# __EXTRACT: name__` / `# __END_EXTRACT__`
+   markers around shared functions.
+2. `dnsdle/extract.py` parses markers and applies whole-word renames
+   (e.g. `encode_ascii` -> `_to_ascii_bytes`).
+3. The client source file contains only client-specific logic (CLI parsing,
+   download loop, reassembly, output) plus cross-platform resolver discovery.
+4. `build_client_source()` assembles the full standalone script by combining
+   extracted utilities and client-specific code.
+
+Extracted functions (16 total):
+- **compat.py** (10): `encode_ascii`, `encode_utf8`, `decode_ascii`,
+  `base32_lower_no_pad`, `base32_decode_no_pad`, `byte_value`,
+  `iter_byte_values`, `constant_time_equals`, `encode_ascii_int`, `is_binary`
+- **helpers.py** (2): `hmac_sha256`, `dns_name_wire_length`
+- **dnswire.py** (1): `_decode_name`
+- **cname_payload.py** (3): `_derive_file_bound_key`, `_keystream_bytes`,
+  `_xor_bytes`
 
 ---
 
 ## Inputs
 
-For each published file, generator input is:
-- `base_domains` (canonical ordered list)
-- `mapping_seed`
-- `file_tag`
-- `file_id`
-- `publish_version`
-- `total_slices`
-- `compressed_size`
-- `plaintext_sha256`
-- `slice_token_len` (runtime derivation length)
-- crypto profile metadata required by `doc/architecture/CRYPTO.md`
-- wire/profile metadata required by `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
-- runtime knobs (timeouts, retry pacing, max attempts policy)
-- `target_os` (`windows` or `linux`)
+The universal client accepts all parameters via CLI:
 
-These fields are produced by the startup publish pipeline contract in
-`doc/architecture/PUBLISH_PIPELINE.md`.
+**Required per-file (5 values):**
+- `--publish-version` -- root identity; `file_id` and `file_tag` derive from it
+- `--total-slices` -- needed to know when download is complete
+- `--compressed-size` -- needed for MAC verification (part of MAC message)
+- `--sha256` -- plaintext SHA-256 hex for final verification
+- `--token-len` -- slice token truncation length (per-file)
 
-Global input:
-- resolver target configuration (direct resolver or system resolver behavior)
-- output directory for generated clients
-- runtime PSK supplied by client operator
+**Required deployment-wide:**
+- `--psk`
+- `--domains` (comma-separated base domains)
+- `--mapping-seed`
+
+**Optional deployment-wide (with defaults):**
+- `--resolver` (default: system resolver discovery)
+- `--out` (default: deterministic temp path from derived `file_id`)
+- `--file-tag-len` (default: `4`; deployment-wide, set by server config)
+- `--response-label` (default: `r-x`)
+- `--dns-max-label-len` (default: `63`)
+- `--dns-edns-size` (default: `512`)
+- `--timeout`, `--no-progress-timeout`, `--max-rounds`,
+  `--query-interval` (current defaults)
+- `--verbose`
+
+**Derived at runtime (not passed):**
+- `file_id` = `sha256("dnsdle:file-id:v1|" + publish_version).hexdigest()[:16]`
+- `file_tag` = `base32_lower_no_pad(HMAC-SHA256(mapping_seed, "dnsdle:file:v1|" + publish_version))[:file_tag_len]`
+- `source_filename` = `"dnsdle_" + file_id` (used for default output path)
+- `TARGET_OS` -- detected via `sys.platform`
+- `CRYPTO_PROFILE`, `WIRE_PROFILE` -- hardcoded to `"v1"` in client source
 
 ---
 
 ## Output Artifacts
 
-For each published file and `target_os`, generate exactly one Python script
-artifact.
+A single universal client script is generated per server startup.
 
 Cardinality invariant:
-- `artifact_count = file_count * target_os_count`
-- Cardinality mismatch or identity-tuple
-  `(file_id, publish_version, file_tag, target_os)` duplication is
-  startup-fatal.
+- `artifact_count = 1`
+- The universal client is published through the normal pipeline as a single
+  additional file.
 
 Required properties:
 - standalone executable with only stdlib imports
 - ASCII-only source
 - no dependency on repository-relative imports
-- embeds immutable metadata constants for that one file contract
-- no sidecar files (no separate config, manifest, or module files)
+- cross-platform (Linux and Windows resolver discovery at runtime)
+- no sidecar files
 
-Suggested output naming:
-- `dnsdl_<file_id>_<file_tag>_<target_os>.py`
+Output naming:
+- `dnsdle_universal_client.py`
 - managed output boundary: `client_out_dir/dnsdle_v1/`
 
-Generator ownership rules:
-- only files inside `client_out_dir/dnsdle_v1/` matching managed filename
-  pattern are pruned as stale
-- generator must not delete or rewrite files outside that managed subdirectory
-- reruns replace managed target filenames atomically and deterministically
+---
 
-Filename is not a protocol identifier and may change without wire impact.
+## Cross-Platform Resolver Discovery
+
+Both resolver implementations live in the same file, branched at runtime:
+
+```python
+if sys.platform == "win32":
+    # nslookup-based discovery
+else:
+    # /etc/resolv.conf parsing
+```
+
+This eliminates the per-OS template lifting mechanism.
 
 ---
 
 ## Generated Script Structure
 
-The generated script must contain these sections:
-1. `CONFIG CONSTANTS`: embedded metadata and runtime knobs.
-2. `DNS ENCODE/DECODE HELPERS`: request name construction and CNAME payload
-   parsing for v1 format.
-3. `CRYPTO HELPERS`: key derivation from runtime PSK, decrypt, and MAC
-   verification for v1.
-4. `DOWNLOAD ENGINE`: retry loop and slice store.
-5. `REASSEMBLY`: ordered reassembly, decompress, and final hash verify.
-6. `OUTPUT WRITER`: write reconstructed plaintext to requested output path, or
-   a default temp path when `--out` is omitted.
-7. `CLI ENTRYPOINT`: parse minimal args and run.
+The generated script contains these sections:
+1. `CONSTANTS`: DNS wire constants, payload crypto labels, runtime derivation
+   labels, exit codes, and default timeouts.
+2. `EXTRACTED UTILITIES`: Byte helpers, DNS wire decoding, crypto primitives
+   extracted from canonical modules.
+3. `RUNTIME DERIVATION`: Functions to derive `file_id`, `file_tag`, and
+   `slice_token` from CLI parameters.
+4. `DNS ENCODE/DECODE`: Request name construction and CNAME payload parsing.
+5. `CRYPTO HELPERS`: Key derivation, decrypt, and MAC verification.
+6. `DOWNLOAD ENGINE`: Retry loop and slice store.
+7. `REASSEMBLY`: Ordered reassembly, decompress, and final hash verify.
+8. `OUTPUT WRITER`: Write reconstructed plaintext to requested output path.
+9. `CLI ENTRYPOINT`: Parse CLI args and run.
 
-All helper code must be inlined in the generated file; external package or
-multi-file layouts are not allowed in v1.
-
-Each generated client contains only the resolver discovery code for its
-`target_os`. Linux clients include Unix resolver discovery
-(`/etc/resolv.conf`); Windows clients include Windows resolver discovery
-(`nslookup`). There is no runtime OS branching in `_discover_system_resolver`;
-it calls the single available loader directly. OS-specific imports (for
-example, `import subprocess` for Windows) and helper definitions (for example,
-`_IPV4_RE`) are emitted only when needed.
-
-OS-specific resolver discovery source is maintained in standalone modules
-(`dnsdle/resolver_linux.py`, `dnsdle/resolver_windows.py`). These modules are
-independently importable and testable. At generation time, `client_template.py`
-reads each module file and lifts the function source below the
-`# __TEMPLATE_SOURCE__` sentinel into the generated client template. Everything
-above the sentinel is module boilerplate needed only for direct import; the
-sentinel itself and all content above it are excluded from generated output.
-
-When repository runtime helpers are used as references, generated logic must
-remain behavior-identical to:
-- `dnsdle/client_payload.py` for response-envelope validation, payload parse,
-  MAC verification, and decrypt.
-- `dnsdle/client_reassembly.py` for duplicate handling, reassembly,
-  decompression, and final hash checks.
+All helper code is inlined in the generated file.
 
 ---
 
-## Embedded Constants Contract
+## Stager Integration
 
-The following constants are required in generated code:
-- `BASE_DOMAINS` (ordered list)
-- `FILE_TAG`
-- `FILE_ID`
-- `PUBLISH_VERSION`
-- `TARGET_OS`
-- `TOTAL_SLICES`
-- `COMPRESSED_SIZE`
-- `PLAINTEXT_SHA256_HEX`
-- `MAPPING_SEED`
-- `SLICE_TOKEN_LEN`
-- `CRYPTO_PROFILE`
-- `WIRE_PROFILE`
-- `RESPONSE_LABEL`
-- `DNS_MAX_LABEL_LEN`
-- `DNS_EDNS_SIZE`
-- `SOURCE_FILENAME`
-- retry/timeouts constants
+Stagers download the universal client and exec it, passing payload metadata
+via `sys.argv`:
 
-Invariant:
-- `MAPPING_SEED` is non-empty
-- `SLICE_TOKEN_LEN > 0` and `SLICE_TOKEN_LEN <= DNS_MAX_LABEL_LEN`
-- PSK must not be embedded as a generated constant in v1
+```python
+sys.argv = [
+    "c",
+    "--psk", psk,
+    "--domains", DOMAINS_STR,
+    "--mapping-seed", MAPPING_SEED,
+    "--publish-version", PAYLOAD_PUBLISH_VERSION,
+    "--total-slices", str(PAYLOAD_TOTAL_SLICES),
+    "--compressed-size", str(PAYLOAD_COMPRESSED_SIZE),
+    "--sha256", PAYLOAD_SHA256,
+    "--token-len", str(PAYLOAD_TOKEN_LEN),
+    "--file-tag-len", str(FILE_TAG_LEN),
+    "--response-label", RESPONSE_LABEL,
+    "--dns-edns-size", str(DNS_EDNS_SIZE),
+    "--resolver", resolver,
+]
+exec(client_source)
+```
 
-Any mismatch in generated constants is a generation-time failure.
-
----
-
-## Runtime CLI Contract
-
-Generated client should expose a small, stable CLI:
-- `--psk secret` (required shared secret for v1 crypto profile)
-- `--resolver host:port` (optional override)
-- `--out path` (optional output path)
-- `--timeout seconds` (optional request timeout override)
-- `--no-progress-timeout seconds` (optional override)
-- `--max-rounds n` (optional retry rounds cap)
-- `--verbose` (enable progress and diagnostic logging to stderr)
-
-`--psk` is mandatory and must be non-empty.
-
-If `--out` is omitted, write to `<tempdir>/<source_filename>` where
-`source_filename` is the original basename of the published file.
-
-No execution flags are allowed in v1 (for example, no `--exec` or equivalent).
+Each stager embeds:
+- **Client download params**: universal client publish metadata (same for
+  all stagers)
+- **Payload params**: 5 per-file values passed to the client via `sys.argv`
 
 ---
 
 ## Download Algorithm
 
-1. Validate `--psk` and derive per-file keys before issuing requests.
+1. Validate CLI params and derive per-file keys before issuing requests.
 2. Initialize missing set: all slice indices.
 3. While missing set not empty:
-   - choose next index from missing set (strategy is implementation detail)
-   - derive `slice_token` from `(MAPPING_SEED, PUBLISH_VERSION, index)`
-   - select domain suffix from `BASE_DOMAINS` by fixed deterministic policy
+   - derive `slice_token` from `(mapping_seed, publish_version, index)`
+   - select domain suffix from `domains` by fixed deterministic policy
    - query `<slice_token>.<file_tag>.<selected_base_domain>`
    - parse and validate response format
-   - verify MAC/decrypt with embedded metadata
+   - verify MAC/decrypt with derived metadata
    - store bytes for index if first valid receipt
-   - reset no-progress timer when a new slice index is acquired
+   - reset no-progress timer on new slice acquisition
    - for duplicate index: bytes must match stored bytes exactly
 4. Exit failure when retry/round policy is exhausted.
-5. Exit failure when no new slice is acquired for `no_progress_timeout_seconds`
-   (default `60`).
-6. Continue until every index has validated bytes.
+5. Exit failure when no progress for `no_progress_timeout` seconds.
 
-Required semantics:
-- out-of-order receive accepted
-- duplicate responses accepted only if identical
-- any parse/verification violation is fatal for that run
-- domain-selection policy for v1:
-  - initialize `domain_index = 0` at process start
-  - use `BASE_DOMAINS[domain_index]` for each request
-  - advance on retryable transport events only:
-    `domain_index = (domain_index + 1) % len(BASE_DOMAINS)`
-  - keep index unchanged on valid DNS responses
-  - reset to `0` on process restart
+Domain-selection policy:
+- initialize `domain_index = 0`
+- use `domains[domain_index]` for each request
+- advance on retryable transport events:
+  `domain_index = (domain_index + 1) % len(domains)`
+- keep index unchanged on valid responses
 
 ---
 
 ## Retry and Timeout Policy
 
-Generation emits explicit defaults for:
-- per-request timeout
-- no-progress timeout (`60` seconds by default)
-- sleep/jitter between requests
-- maximum consecutive failures
-- maximum rounds over missing indices
+Built-in defaults:
+- per-request timeout: `3.0` seconds
+- no-progress timeout: `60` seconds
+- max rounds: `64`
+- max consecutive timeouts: `128`
+- retry sleep: `100` ms base + `150` ms jitter
+- query interval: `50` ms
 
 Rules:
 - no infinite unbounded busy loop
@@ -217,57 +209,29 @@ Rules:
 - prolonged no-progress state is terminal
 - cryptographic or contract violations are non-retryable fatal errors
 
-Exact defaults are defined in `doc/architecture/CONFIG.md`.
-
----
-
-## DNS Contract in Generated Client
-
-The generated client must implement exactly the current doc contracts:
-- query name mapping: `doc/architecture/QUERY_MAPPING.md`
-- CNAME payload parsing: `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
-- DNS message construction: include EDNS OPT using embedded `DNS_EDNS_SIZE`
-  (default `1232`; OPT omitted only when configured `512`)
-- response acceptance: recursive-DNS-compatible envelope validation per
-  `doc/architecture/DNS_MESSAGE_FORMAT.md` (MUST NOT gate on `AA`, `RA`, or
-  exact section counts)
-
-No alternate parse modes or fallback wire decoders are allowed in v1.
-
 ---
 
 ## Reconstruction and Verification
 
 After all slices are present:
 1. Reassemble bytes by ascending slice index.
-2. Validate reassembled compressed length equals `COMPRESSED_SIZE`.
+2. Validate reassembled compressed length equals `compressed_size`.
 3. Decompress.
 4. Compute plaintext SHA-256.
-5. Compare to `PLAINTEXT_SHA256_HEX`.
+5. Compare to `sha256`.
 6. Write plaintext bytes to output path only on success.
-
-On any failure:
-- do not emit partially reconstructed final file
-- return non-zero exit code
 
 ---
 
 ## Logging and Exit Codes
 
-Logging should be concise and machine-parseable enough for operator triage.
-
-Minimum events:
-- start metadata summary
-- per-round progress (received/missing counts)
-- fatal failure reason
-- success path and output location
+Client is silent by default. Pass `--verbose` to enable diagnostic output on
+stderr.
 
 Exit code classes:
 - `0`: success
 - `2`: usage/CLI error
-- missing or empty `--psk` is a usage/CLI error
-- `3`: DNS/transport exhaustion (timeouts/retries exhausted or no-progress
-  timeout reached)
+- `3`: DNS/transport exhaustion
 - `4`: parse/format violation
 - `5`: crypto verification failure
 - `6`: reconstruction/hash/decompress failure
@@ -278,26 +242,14 @@ Exit code classes:
 ## Generator Failure Conditions
 
 Generation must fail before emitting client artifact when:
-- any required metadata field is missing
-- `TOTAL_SLICES <= 0`
-- `slice_token_len <= 0`
-- `MAPPING_SEED` is empty
-- unsupported crypto/wire profile selected
-- unsupported `TARGET_OS`
-- generation path would require more than one output file for the client
-- managed output commit/rollback steps fail at any point
-- unreplaced template placeholder after substitution
-- artifact count mismatch (`realized != file_count * target_os_count`)
-- duplicate identity tuple `(file_id, publish_version, file_tag, target_os)`
+- assembled source fails compilation
+- assembled source is not ASCII
+- extraction markers are missing or malformed in canonical modules
 
 Failure semantics:
 - generation is startup-fatal with stable reason codes
   (`generator_invalid_contract`, `generator_write_failed`)
-- generation uses run-level transactional commit; on failure, no newly generated
-  artifact from that run remains in managed output.
-- if rollback restoration itself fails, startup is fatal and backup directory
-  material is preserved for operator recovery (never deleted on rollback-failure
-  paths).
+- transactional commit ensures no partial artifacts remain on failure
 
 ---
 
@@ -316,10 +268,10 @@ Non-goals:
 
 ## Versioning and Breaking Changes
 
-Any change to embedded constants schema, wire parser contract, crypto profile,
-or exit code semantics is a breaking generator/client contract change.
+Any change to CLI parameter schema, wire parser contract, crypto profile,
+or exit code semantics is a breaking client contract change.
 
 Policy:
-- update server generator and generated client template in one change
+- update server generator and client source in one change
 - update referenced architecture docs in the same change
-- do not add compatibility shims for obsolete generated templates
+- do not add compatibility shims for obsolete templates

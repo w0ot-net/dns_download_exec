@@ -238,15 +238,14 @@ Parity-core boundary:
 
 ### Generator Contract
 
-1. Exactly one standalone `.py` artifact per `(file, target_os)`.
+1. Exactly one universal standalone `.py` artifact for all files and platforms.
 2. No sidecar artifacts for runtime dependencies.
-3. Embedded constants must be internally consistent.
+3. Assembled source must compile and be ASCII-clean.
 4. Generator writes only within managed output directory
    `<client_out_dir>/dnsdle_v1/`.
 5. Generation commit is transactional per run; failure leaves no newly emitted
    artifacts from that run.
-6. `artifact_count == file_count * target_os_count`; mismatch is
-   startup-fatal.
+6. `artifact_count == 1`; the universal client handles all files via CLI args.
 
 Any invariant breach is fatal for the current operation context.
 

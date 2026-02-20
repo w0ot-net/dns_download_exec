@@ -5,7 +5,6 @@ import re
 from collections import namedtuple
 
 from dnsdle.compat import binary_type
-from dnsdle.constants import ALLOWED_TARGET_OS
 from dnsdle.constants import DEFAULT_LOG_FILE
 from dnsdle.constants import DEFAULT_LOG_LEVEL
 from dnsdle.constants import FIXED_CONFIG
@@ -41,8 +40,6 @@ Config = namedtuple(
         "response_label",
         "mapping_seed",
         "file_tag_len",
-        "target_os",
-        "target_os_csv",
         "client_out_dir",
         "compression_level",
         "log_level",
@@ -260,37 +257,6 @@ def _normalize_mapping_seed(value):
     return seed
 
 
-def _normalize_target_os(raw_value):
-    value = (raw_value or "").strip().lower()
-    if not value:
-        raise StartupError("config", "invalid_config", "target_os is empty")
-
-    requested = []
-    for part in value.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        if token not in ALLOWED_TARGET_OS:
-            raise StartupError(
-                "config",
-                "invalid_config",
-                "target_os value is unsupported",
-                {"value": token},
-            )
-        if token not in requested:
-            requested.append(token)
-
-    if not requested:
-        raise StartupError("config", "invalid_config", "target_os is empty")
-
-    ordered = []
-    for allowed in ALLOWED_TARGET_OS:
-        if allowed in requested:
-            ordered.append(allowed)
-
-    return tuple(ordered), ",".join(ordered)
-
-
 def _normalize_client_out_dir(raw_value):
     value = (raw_value or "").strip()
     if not value:
@@ -402,7 +368,6 @@ def build_config(parsed_args):
     file_tag_len = _parse_int_in_range(
         "file_tag_len", _arg_value(parsed_args, "file_tag_len"), 4, 16
     )
-    target_os, target_os_csv = _normalize_target_os(_arg_value(parsed_args, "target_os"))
     client_out_dir = _normalize_client_out_dir(_arg_value(parsed_args, "client_out_dir"))
     compression_level = _parse_int_in_range(
         "compression_level",
@@ -449,8 +414,6 @@ def build_config(parsed_args):
         response_label=response_label,
         mapping_seed=mapping_seed,
         file_tag_len=file_tag_len,
-        target_os=target_os,
-        target_os_csv=target_os_csv,
         client_out_dir=client_out_dir,
         compression_level=compression_level,
         log_level=log_level,
