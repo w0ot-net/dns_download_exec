@@ -390,7 +390,7 @@ class StartupConvergenceTests(unittest.TestCase):
         self.assertEqual("mapping_stability_violation", ctx.exception.reason_code)
         self.assertEqual("u0", ctx.exception.context["file_id"])
 
-    def test_raises_token_length_overflow_when_client_items_exceed_budget(self):
+    def test_reconverges_when_client_items_exceed_initial_budget(self):
         (
             fake_config, parse_stub, build_config_stub,
             configure_logger_stub, budget_stub, publish_stub,
@@ -400,16 +400,23 @@ class StartupConvergenceTests(unittest.TestCase):
         def mapping_stub(publish_items, _config):
             if len(publish_items) == 1:
                 return [{"file_id": "u0", "file_tag": "tf0",
-                         "slice_token_len": 1, "slice_tokens": ("a",)}]
+                         "slice_token_len": 1, "slice_tokens": ("a",),
+                         "source_filename": "u0.bin"}]
             return [
                 {"file_id": "u0", "file_tag": "tf0",
-                 "slice_token_len": 1, "slice_tokens": ("a",)},
+                 "slice_token_len": 1, "slice_tokens": ("a",),
+                 "source_filename": "u0.bin"},
                 {"file_id": "c0", "file_tag": "cf0",
-                 "slice_token_len": 2, "slice_tokens": ("x", "y")},
+                 "slice_token_len": 2, "slice_tokens": ("x", "y"),
+                 "source_filename": "client.py"},
             ]
 
-        def runtime_stub(_cfg, _mapped, _mcsb, _bi):
-            return "unused"
+        captured = {}
+
+        def runtime_stub(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
+            captured["query_token_len"] = budget_info["query_token_len"]
+            captured["file_ids"] = [item["file_id"] for item in mapped_publish_items]
+            return "final_state"
 
         self._install(
             parse_stub, build_config_stub, configure_logger_stub,
@@ -417,13 +424,11 @@ class StartupConvergenceTests(unittest.TestCase):
             generate_stub=generate_stub,
             source_publish_stub=source_publish_stub,
         )
-        with self.assertRaises(StartupError) as ctx:
-            startup_module.build_startup_state(["--dummy"])
+        runtime_state, generation_result, stagers = startup_module.build_startup_state(["--dummy"])
 
-        self.assertEqual("token_length_overflow", ctx.exception.reason_code)
-        self.assertEqual(2, ctx.exception.context["combined_max_token_len"])
-        self.assertEqual(1, ctx.exception.context["query_token_len"])
-        self.assertIn("hint", ctx.exception.context)
+        self.assertEqual("final_state", runtime_state)
+        self.assertEqual(2, captured["query_token_len"])
+        self.assertEqual(["u0", "c0"], captured["file_ids"])
 
     def test_phase2_combines_client_items_into_final_runtime_state(self):
         (
