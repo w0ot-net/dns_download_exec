@@ -89,9 +89,9 @@ from the generator; those checks remain in `mapping.py` where they belong.
 `mapping_seed` is not a secret. Its purpose is namespace control (see
 QUERY_MAPPING.md: "To reduce cross-run linkability, rotate mapping_seed").
 Clients already expose all tokens in their embedded tuple; embedding the seed
-instead does not expand an attacker's capability. An attacker with the seed
-still needs `publish_version` (file-specific) to compute tokens for other
-files.
+instead does not expand an attacker's capability. Both `mapping_seed` and
+`publish_version` are embedded in every generated client, so the change does
+not reveal any new derivation inputs.
 
 ## Affected Components
 
@@ -117,9 +117,14 @@ files.
   `_derive_slice_token`.
 - `doc/architecture/QUERY_MAPPING.md`: update "Generated Client Mapping"
   section to describe runtime derivation instead of embedded token list.
-- `doc/architecture/CLIENT_GENERATION.md`: update "Embedded Constants
+- `doc/architecture/CLIENT_GENERATION.md`: update "Inputs" to replace
+  `slice_tokens` array with `slice_token_len`; update "Embedded Constants
   Contract" to list `MAPPING_SEED` + `SLICE_TOKEN_LEN` instead of
   `SLICE_TOKENS`; update "Download Algorithm" to describe runtime derivation;
   update "Generator Failure Conditions" to replace `SLICE_TOKENS`-specific
   conditions (token array length mismatch, duplicate token, token exceeds
   label len) with `MAPPING_SEED`/`SLICE_TOKEN_LEN` validation conditions.
+- `doc/architecture/CLIENT_RUNTIME.md`: update "Runtime Initialization"
+  steps 1-2 to reference `MAPPING_SEED`/`SLICE_TOKEN_LEN` instead of
+  `SLICE_TOKENS`; update "Runtime Invariants" item 1 to describe derivation
+  inputs rather than `SLICE_TOKENS` cardinality.
