@@ -156,3 +156,6 @@ sites were converted correctly with no semantic regression.
   in `client_runtime.py` as real Python, extracted via markers.
 - `doc/architecture/CLIENT_RUNTIME.md`: no change -- documents runtime
   behavior only; unaffected by where the source is authored.
+- `dnsdle/client_generator.py`: no change -- imports `build_client_source`
+  and `_UNIVERSAL_CLIENT_FILENAME` from `client_standalone`; both are
+  unchanged (same name, same signature, same return type).
