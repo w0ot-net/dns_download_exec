@@ -138,3 +138,5 @@ was introduced.
   `import os` and `import re`.
 - `doc/architecture/CLIENT_GENERATION.md`: update to note client logic lives
   in `client_runtime.py` as real Python, extracted via markers.
+- `doc/architecture/CLIENT_RUNTIME.md`: no change -- documents runtime
+  behavior only; unaffected by where the source is authored.
