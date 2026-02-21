@@ -106,7 +106,7 @@ Update the "Runtime State Model" section (line 206) to remove the reference to
 
 ## Execution Notes
 
-Executed 2026-02-21.
+Executed 2026-02-21. Commit: 9e9c98d.
 
 Implemented as planned with one minor deviation in the architecture doc: the
 review identified that the existing "two main state classes" count was wrong
