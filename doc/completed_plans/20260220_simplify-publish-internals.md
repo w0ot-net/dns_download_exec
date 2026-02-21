@@ -138,4 +138,4 @@ Executed 2026-02-20.  All plan items implemented as designed with no deviations.
 3. Updated the sole call site in `build_publish_items_from_sources` to drop
    the `item_context` kwarg and pass `source_index` directly.
 
-Commit: <hash>
+Commit: fcb4606
