@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 
 import signal
 import socket
+import struct
 
 import dnsdle.cname_payload as cname_payload
 import dnsdle.dnswire as dnswire
@@ -299,11 +300,10 @@ def _validate_runtime_state_for_serving(runtime_state):
             {
                 "id": 0,
                 "flags": 0,
-                "question": {
-                    "qname_labels": question_labels,
-                    "qtype": DNS_QTYPE_A,
-                    "qclass": DNS_QCLASS_IN,
-                },
+                "raw_question_bytes": (
+                    dnswire.encode_name(question_labels)
+                    + struct.pack("!HH", DNS_QTYPE_A, DNS_QCLASS_IN)
+                ),
             },
             DNS_RCODE_NOERROR,
             answer_bytes=answer,

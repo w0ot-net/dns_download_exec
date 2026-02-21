@@ -57,8 +57,9 @@ Three areas of the codebase carry more complexity than they justify:
 4. In `server.py:_validate_runtime_state_for_serving`: the synthetic request
    dict currently provides `"question"` but not `"raw_question_bytes"`.
    Replace the `"question"` key with `"raw_question_bytes"` built via
-   `encode_name(question_labels) + struct.pack("!HH", DNS_QTYPE_A,
-   DNS_QCLASS_IN)`.  Drop the `"question"` key entirely.
+   `dnswire.encode_name(question_labels) + struct.pack("!HH", DNS_QTYPE_A,
+   DNS_QCLASS_IN)` (using the existing module-level `dnswire` import).
+   Drop the `"question"` key entirely.
 
 ### Phase 2 -- client_generator.py simplification
 
@@ -67,7 +68,7 @@ Replace the transactional commit with a direct write:
 1. Delete `_build_run_dir`, `_write_staged_file`, `_collect_backup_targets`,
    `_rollback_commit`, `_transactional_commit`, `_cleanup_tree`,
    `_MANAGED_FILE_RE`.
-2. Remove imports: `random`, `shutil`, `time`.
+2. Remove imports: `random`, `re`, `shutil`, `time`.
 3. Add a new private helper `_remove_stale_managed_files(managed_dir,
    keep_name)` that lists the directory and removes any `.py` file whose
    name is not `keep_name` and starts with `dnsdl` (the old/current naming
@@ -80,7 +81,9 @@ Replace the transactional commit with a direct write:
    - Build source via `build_client_source()`.
    - Validate the final path is within `managed_dir` (existing
      `_is_within_dir` check).
-   - Write to `<final_path>.tmp-<pid>` then `os.rename` to `final_path`.
+   - Write to `<final_path>.tmp-<pid>` then remove-before-rename to
+     `final_path` (remove existing target first for Windows compatibility,
+     matching the pattern in `client_runtime.py:292-294`).
      On write failure raise `StartupError`; attempt temp-file cleanup but
      do not suppress the original error.
    - Call `_remove_stale_managed_files` after the successful rename.
@@ -103,3 +106,16 @@ Replace the transactional commit with a direct write:
   simple write-temp-rename; delete six helper functions, `_MANAGED_FILE_RE`,
   and three imports; add `_remove_stale_managed_files`.
 - `dnsdle.py`: delete `_emit_record`, use `emit_structured_record` directly.
+
+## Execution Notes
+
+- Phase 1: Added `import struct` to `server.py` for the `struct.pack` call in
+  the synthetic `raw_question_bytes` construction.
+- Phase 2: Executed as planned.  The remove-before-rename pattern from
+  `client_runtime.py:292-294` was used for Windows compatibility.
+- Phase 3: Executed as planned.  The `serve_runtime` callback was changed from
+  `_emit_record` to `emit_structured_record` directly.
+- Review findings fixed before execution: (1) Windows `os.rename` overwrite
+  handled via remove-before-rename, (2) `re` import added to removal list,
+  (3) `encode_name` referenced via `dnswire.encode_name` using existing
+  module import.

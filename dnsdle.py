@@ -13,22 +13,13 @@ from dnsdle.logging_runtime import reset_active_logger
 from dnsdle.state import StartupError
 
 
-def _emit_record(record, level=None, category=None, required=False):
-    emit_structured_record(
-        record,
-        level=level,
-        category=category,
-        required=required,
-    )
-
-
 def main(argv=None):
     reset_active_logger()
     reset_console()
     try:
         runtime_state, generation_result, stagers, display_names = build_startup_state(argv)
     except StartupError as exc:
-        _emit_record(
+        emit_structured_record(
             exc.to_log_record(),
             level="error",
             category=exc.phase,
@@ -37,7 +28,7 @@ def main(argv=None):
         console_error(exc.message)
         return 1
     except Exception as exc:
-        _emit_record(
+        emit_structured_record(
             {
                 "classification": "startup_error",
                 "phase": "startup",
@@ -51,7 +42,7 @@ def main(argv=None):
         console_error(str(exc))
         return 1
 
-    _emit_record(
+    emit_structured_record(
         {
             "classification": "generation_ok",
             "phase": "publish",
@@ -66,7 +57,7 @@ def main(argv=None):
     )
 
     for stager in stagers:
-        _emit_record(
+        emit_structured_record(
             {
                 "classification": "stager_ready",
                 "phase": "startup",
@@ -80,7 +71,7 @@ def main(argv=None):
         )
 
     config = runtime_state.config
-    _emit_record(
+    emit_structured_record(
         {
             "classification": "startup_ok",
             "phase": "startup",
@@ -99,7 +90,7 @@ def main(argv=None):
     )
 
     for publish_item in runtime_state.publish_items:
-        _emit_record(
+        emit_structured_record(
             {
                 "classification": "startup_ok",
                 "phase": "publish",
@@ -118,9 +109,9 @@ def main(argv=None):
     console_startup(config, generation_result, stagers)
 
     try:
-        return serve_runtime(runtime_state, _emit_record, display_names=display_names)
+        return serve_runtime(runtime_state, emit_structured_record, display_names=display_names)
     except StartupError as exc:
-        _emit_record(
+        emit_structured_record(
             exc.to_log_record(),
             level="error",
             category=exc.phase,
@@ -129,7 +120,7 @@ def main(argv=None):
         console_error(exc.message)
         return 1
     except Exception as exc:
-        _emit_record(
+        emit_structured_record(
             {
                 "classification": "startup_error",
                 "phase": "server",
