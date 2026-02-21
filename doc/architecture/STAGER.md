@@ -103,10 +103,14 @@ triggers a fatal `StartupError("stager_generation_failed")`.
 2. **Strip blank lines** -- remove empty lines.
 3. **Protect strings and rename identifiers** -- extract all string literals
    (single/double quoted, optional `b` prefix) into numbered placeholders
-   (`__S0__`, `__S1__`, ...) to prevent corruption, then apply a longest-first
-   rename table (158 entries) that replaces long identifiers with 1-2 character
-   aliases via compiled `\b`-bounded regex.  String literals are restored after
-   renaming.
+   (`__S0__`, `__S1__`, ...) to prevent corruption, then auto-generate a
+   longest-first rename table from identifiers found in the source.  The
+   generator collects all identifiers, subtracts Python keywords, builtins,
+   stdlib module names, attribute names (after `.`), and placeholder names,
+   selects candidates with `len > 2`, sorts by `(-len, name)`, and assigns
+   deterministic short names (`a`..`z`, `A`..`Z`, `aa`..`az`, ...).  Each
+   rename is applied via compiled `\b`-bounded regex.  String literals are
+   restored after renaming.
 4. **Reduce indentation** -- convert 4-space indentation to 1 space per
    nesting level.
 5. **Semicolon-join** -- join consecutive same-indent non-block lines with `;`.

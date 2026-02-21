@@ -142,3 +142,25 @@ string extraction (step already exists):
 
 - `dnsdle/stager_minify.py`: replace static rename table and pre-compiled patterns with auto-generation logic; add `_RESERVED_NAMES`, `_generate_short_names`, `_build_rename_table`; update the rename pass in `minify()`
 - `doc/architecture/STAGER.md`: update the Minification section to describe auto-generated rename table instead of manual "158 entries" table
+
+## Execution Notes
+
+Implemented 2026-02-21.
+
+**Deviation from plan:** `_RESERVED_NAMES` is generated at import time from
+`dir(builtins)` (or `dir(__builtin__)` on Py2) rather than a fully static
+100+ entry set.  A small `_CROSS_VERSION_BUILTINS` supplement (16 entries)
+covers names present in one Python version's builtins but not another's,
+preserving cross-version determinism.  A separate `_STAGER_STDLIB` set
+covers the 10 stdlib module names.  This approach is more maintainable and
+automatically picks up new builtins added in future Python versions.
+
+**Validation:**
+- Minified output compiles successfully.
+- Output is 8963 bytes (vs 9373 with old static table), -410 bytes smaller
+  because the auto-generator renames identifiers the hand-maintained table
+  conservatively excluded (e.g. `verbose`, `compressed`, `resolver` -- safe
+  because string extraction protects string contents).
+- Determinism verified: two calls produce identical output.
+
+**Commit:** see git log
