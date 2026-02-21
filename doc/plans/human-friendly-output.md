@@ -61,8 +61,10 @@ A new, small module that owns stderr writing.  Key helpers:
 - `console_error(message)` -- prints an error line.
 - `console_shutdown(counters)` -- prints the summary line.
 - All functions are no-ops when the module is disabled (verbose mode).
-  A module-level `_ENABLED` flag, set by `configure_console(enabled)`,
-  gates every function.
+  A module-level `_ENABLED` flag gates every function.  It defaults to
+  `True` so that `console_error` works for errors that occur before
+  `configure_console` is called (e.g. config-parsing failures).
+  `configure_console(enabled)` overrides the flag explicitly.
 
 ### Startup banner content (example)
 
@@ -100,17 +102,45 @@ shutdown: served=142 miss=3 faults=0
 ### Error output
 
 Errors (startup failures, runtime faults) are printed to stderr in red
-regardless of mode.  In default mode they appear as human text; in
-`--verbose` mode they still go to JSON on stdout (current behavior) but
-the console module is disabled so no duplicate stderr line.
+in default mode.  In `--verbose` mode they go to JSON on stdout (current
+behavior) and the console module is disabled, so no duplicate stderr
+line.
+
+Startup errors are surfaced by `console_error(...)` in the except blocks
+of `main()`.
+
+Runtime faults inside `serve_runtime` (recv_error, send_error,
+unhandled_request_exception) are surfaced by calling `console_error(...)`
+alongside the existing `emit_record` call at each fault site.  This
+keeps the user informed of operational errors in real time; the shutdown
+summary still reports aggregate counts.
 
 ### Suppressing JSON in default mode
 
-When `--verbose` is *not* set and `--log-file` is *not* set,
-`logging_runtime.configure_active_logger` receives a stream that
-discards all writes (a `_NullStream` class).  This ensures every
-existing `log_event` / `emit_structured_record` call site works without
-modification; they just write into the void.
+`_NullStream` is a trivial class in `logging_runtime.py` whose `write`
+and `flush` methods silently discard all data.
+
+**Bootstrap logger.**  `_bootstrap_logger()` changes from
+`stream=sys.stdout` to `stream=_NullStream()`.  Combined with
+`_ENABLED = True` in `console.py`, this means errors that occur before
+`configure_active_logger` (e.g. invalid CLI args) are routed to stderr
+via `console_error` and the JSON record is silently discarded.  This is
+the correct default-mode behavior -- the user sees a human error, not
+raw JSON.
+
+**Configured logger.**  `build_logger_from_config` reads `config.verbose`
+and `config.log_file` to choose the stream:
+
+| verbose | log_file set | stream passed to RuntimeLogger |
+|---------|--------------|-------------------------------|
+| False   | no           | `_NullStream()`               |
+| False   | yes          | `None` (opens log_file)       |
+| True    | no           | `None` (falls through to stdout) |
+| True    | yes          | `None` (opens log_file)       |
+
+This ensures every existing `log_event` / `emit_structured_record` call
+site works without modification; in default mode they just write into
+the void.
 
 When `--log-file` *is* set, JSON always goes to that file regardless of
 `--verbose`, so the user can get both human stderr and JSON file output
@@ -149,7 +179,8 @@ default mode.  The sequence:
   behavior), no human output.
 - `--log-file` alone (no --verbose): JSON to file, human output to
   stderr.
-- `--log-file` + `--verbose`: JSON to file, no human output.
+- `--log-file` + `--verbose`: JSON to file, no terminal output.
+  (The `--verbose` help text should note this.)
 - Neither: human output to stderr, JSON suppressed.
 
 ## Affected Components
@@ -158,14 +189,17 @@ default mode.  The sequence:
 - `dnsdle/constants.py`: no changes needed (no new constants required).
 - `dnsdle/config.py`: add `verbose` field to Config namedtuple; wire
   parsed arg through `build_config`.
-- `dnsdle/logging_runtime.py`: add `_NullStream` class; use it in
-  `configure_active_logger` when verbose is False and log_file is empty.
-  Accept `verbose` parameter.
+- `dnsdle/logging_runtime.py`: add `_NullStream` class; change
+  `_bootstrap_logger` to use `_NullStream()` instead of `sys.stdout`;
+  have `build_logger_from_config` read `config.verbose` and
+  `config.log_file` to select the stream (no new parameters on
+  `configure_active_logger`).
 - `dnsdle/console.py` (new file): all human-friendly stderr output
   helpers and color logic.
 - `dnsdle/__init__.py`: call `configure_console` after
-  `configure_active_logger`; pass `verbose` to logger configuration.
+  `configure_active_logger`.
 - `dnsdle.py`: call `console_startup`, `console_error` in `main()`.
 - `dnsdle/server.py`: call `console_server_start`, `console_activity`,
-  `console_shutdown` from `serve_runtime`; build file_tag-to-filename
-  map; track seen file_tags set.
+  `console_shutdown`, and `console_error` (at each runtime-fault site)
+  from `serve_runtime`; build file_tag-to-filename map; track seen
+  file_tags set.
