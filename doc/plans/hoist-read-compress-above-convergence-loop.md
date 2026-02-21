@@ -1,0 +1,101 @@
+# Plan: Hoist file reads and compression above the convergence loop
+
+## Summary
+
+The convergence loop in `dnsdle/__init__.py` re-reads payload files from disk
+and re-compresses every source on every iteration, even though file contents
+and compression results are iteration-invariant -- only slicing changes because
+`max_ciphertext_slice_bytes` changes.  This plan splits publish-item
+construction into a prepare phase (read, hash, compress, derive IDs -- done
+once) and a slice phase (done per iteration), eliminating redundant I/O and
+compression.  It also removes the awkward two-call pattern with `seen_*` set
+forwarding between payload and client publish calls.
+
+## Problem
+
+1. `build_publish_items` reads all payload files and compresses them via
+   `build_publish_items_from_sources` on every convergence iteration.
+2. The client source is likewise re-compressed every iteration via a second
+   call to `build_publish_items_from_sources`.
+3. The caller must extract `seen_sha256`/`seen_ids` sets from the first call
+   and pass them to the second call to enforce cross-set uniqueness.
+4. All of this work (disk I/O, hashing, compression, ID derivation, uniqueness
+   checks) is iteration-invariant and should happen exactly once.
+
+## Goal
+
+- File reads and compression happen exactly once, before the convergence loop.
+- The convergence loop body only re-slices and re-maps.
+- The two-call pattern with `seen_*` forwarding is eliminated.
+- `build_publish_items` and the `seen_*` parameters on
+  `build_publish_items_from_sources` are removed (clean break).
+- Existing publish-item dict schema is preserved for downstream consumers
+  (`apply_mapping`, `build_runtime_state`).
+
+## Design
+
+Split `_build_single_publish_item` into two stages:
+
+### Stage 1: Prepare (once, before loop)
+
+New private function `_prepare_single_source(source_filename, plaintext_bytes,
+compression_level, seen_plaintext_sha256, seen_file_ids)` performs:
+
+- `plaintext_sha256` computation and duplicate check
+- Compression
+- `publish_version` and `file_id` derivation and duplicate check
+- Returns a dict containing `source_filename`, `plaintext_sha256`,
+  `compressed_bytes`, `compressed_size`, `publish_version`, `file_id`
+
+New public function `prepare_publish_sources(sources, compression_level)`
+replaces `build_publish_items_from_sources` for the invariant work.  It
+iterates over sources, calls `_prepare_single_source`, enforces uniqueness
+internally (no `seen_*` parameters needed), logs each prepared item, and
+returns the list of prepared dicts.
+
+### Stage 2: Slice (per iteration, inside loop)
+
+New public function `slice_prepared_sources(prepared_sources,
+max_ciphertext_slice_bytes)` takes the prepared dicts, slices
+`compressed_bytes` for each, and returns publish-item dicts matching the
+existing schema (dropping `compressed_bytes`, adding `slice_bytes_by_index`
+and `total_slices`).
+
+### File reading
+
+New public function `read_payload_sources(config)` is extracted from the
+file-reading portion of `build_publish_items`.  Returns a list of
+`(filename, bytes)` tuples.
+
+### Removed functions
+
+- `build_publish_items` -- its file-reading moves to `read_payload_sources`;
+  its processing moves to `prepare_publish_sources` + `slice_prepared_sources`.
+- `_build_single_publish_item` -- replaced by `_prepare_single_source`.
+- `build_publish_items_from_sources` -- replaced by `prepare_publish_sources`.
+
+### Convergence loop rewrite (`__init__.py`)
+
+Before the loop:
+```python
+payload_sources = read_payload_sources(config)
+all_sources = payload_sources + [(client_filename, client_bytes)]
+prepared = prepare_publish_sources(all_sources, config.compression_level)
+```
+
+Inside the loop (the only work that changes per iteration):
+```python
+publish_items = slice_prepared_sources(prepared, max_ciphertext_slice_bytes)
+combined_mapped = apply_mapping(publish_items, config)
+```
+
+## Affected Components
+
+- `dnsdle/publish.py`: Remove `build_publish_items`,
+  `build_publish_items_from_sources`, `_build_single_publish_item`.  Add
+  `read_payload_sources`, `prepare_publish_sources`,
+  `slice_prepared_sources`, `_prepare_single_source`.  Remove `os` import
+  (moves to `__init__.py` if needed, but `read_payload_sources` uses
+  `os.path.basename` so the import stays).
+- `dnsdle/__init__.py`: Replace imports; hoist source reading and preparation
+  above the loop; simplify the loop body to slice + map only.
