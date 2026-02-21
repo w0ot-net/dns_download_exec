@@ -198,6 +198,14 @@ class RuntimeLogger(object):
         )
 
 
+class _NullStream(object):
+    def write(self, data):
+        pass
+
+    def flush(self):
+        pass
+
+
 def _create_logger(level, log_file, stream):
     try:
         return RuntimeLogger(level=level, log_file=log_file, stream=stream)
@@ -211,10 +219,14 @@ def _create_logger(level, log_file, stream):
 
 
 def build_logger_from_config(config):
+    if not config.verbose and not config.log_file:
+        stream = _NullStream()
+    else:
+        stream = None
     return _create_logger(
         level=config.log_level,
         log_file=config.log_file,
-        stream=None,
+        stream=stream,
     )
 
 
@@ -222,7 +234,7 @@ def _bootstrap_logger():
     return _create_logger(
         level=DEFAULT_LOG_LEVEL,
         log_file="",
-        stream=sys.stdout,
+        stream=_NullStream(),
     )
 
 

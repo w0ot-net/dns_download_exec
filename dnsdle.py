@@ -5,6 +5,9 @@ import sys
 
 from dnsdle import build_startup_state
 from dnsdle import serve_runtime
+from dnsdle.console import console_error
+from dnsdle.console import console_startup
+from dnsdle.console import reset_console
 from dnsdle.logging_runtime import emit_structured_record
 from dnsdle.logging_runtime import reset_active_logger
 from dnsdle.state import StartupError
@@ -21,8 +24,9 @@ def _emit_record(record, level=None, category=None, required=False):
 
 def main(argv=None):
     reset_active_logger()
+    reset_console()
     try:
-        runtime_state, generation_result, stagers = build_startup_state(argv)
+        runtime_state, generation_result, stagers, display_names = build_startup_state(argv)
     except StartupError as exc:
         _emit_record(
             exc.to_log_record(),
@@ -30,6 +34,7 @@ def main(argv=None):
             category=exc.phase,
             required=True,
         )
+        console_error(exc.message)
         return 1
     except Exception as exc:
         _emit_record(
@@ -43,6 +48,7 @@ def main(argv=None):
             category="startup",
             required=True,
         )
+        console_error(str(exc))
         return 1
 
     _emit_record(
@@ -109,8 +115,10 @@ def main(argv=None):
             category="publish",
         )
 
+    console_startup(config, generation_result, stagers)
+
     try:
-        return serve_runtime(runtime_state, _emit_record)
+        return serve_runtime(runtime_state, _emit_record, display_names=display_names)
     except StartupError as exc:
         _emit_record(
             exc.to_log_record(),
@@ -118,6 +126,7 @@ def main(argv=None):
             category=exc.phase,
             required=True,
         )
+        console_error(exc.message)
         return 1
     except Exception as exc:
         _emit_record(
@@ -131,6 +140,7 @@ def main(argv=None):
             category="server",
             required=True,
         )
+        console_error(str(exc))
         return 1
 
 

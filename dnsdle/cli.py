@@ -24,6 +24,7 @@ _KNOWN_LONG_OPTIONS = frozenset((
     "--compression-level",
     "--log-level",
     "--log-file",
+    "--verbose",
     "--help",
 ))
 
@@ -125,6 +126,10 @@ def _build_parser():
                              help="error|warn|info|debug|trace (default: %(default)s)")
     logging_grp.add_argument("--log-file", default=DEFAULT_LOG_FILE,
                              help="log file path (if omitted, logs to stdout)")
+    logging_grp.add_argument("--verbose", action="store_true", default=False,
+                             help="emit JSON logs to stdout instead of human-friendly "
+                                  "output on stderr (with --log-file, JSON goes to "
+                                  "file only)")
     return parser
 
 

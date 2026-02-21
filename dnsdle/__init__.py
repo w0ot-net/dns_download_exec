@@ -6,6 +6,7 @@ from dnsdle.client_standalone import _UNIVERSAL_CLIENT_FILENAME
 from dnsdle.compat import encode_ascii
 from dnsdle.config import build_config
 from dnsdle.client_generator import generate_client_artifacts
+from dnsdle.console import configure_console
 from dnsdle.logging_runtime import configure_active_logger
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
@@ -31,6 +32,7 @@ def build_startup_state(argv=None):
     parsed_args = parse_cli_args(argv)
     config = build_config(parsed_args)
     configure_active_logger(config)
+    configure_console(enabled=not config.verbose)
 
     # Convergence loop: Phase 1 converges user files, Phase 2 adds the
     # universal client.  If the client pushes the combined token length
@@ -151,4 +153,11 @@ def build_startup_state(argv=None):
 
     stagers = generate_stagers(config, generation_result, client_mapped_item, payload_mapped_items)
 
-    return runtime_state, generation_result, stagers
+    display_names = {}
+    for item in runtime_state.publish_items:
+        if item.source_filename == client_filename:
+            display_names[item.file_tag] = "(universal client)"
+        else:
+            display_names[item.file_tag] = item.source_filename
+
+    return runtime_state, generation_result, stagers, display_names

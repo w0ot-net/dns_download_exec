@@ -14,6 +14,10 @@ from dnsdle.constants import DNS_RCODE_NXDOMAIN
 from dnsdle.constants import DNS_RCODE_SERVFAIL
 from dnsdle.constants import DNS_UDP_RECV_MAX
 from dnsdle.helpers import labels_is_suffix
+from dnsdle.console import console_activity
+from dnsdle.console import console_error
+from dnsdle.console import console_server_start
+from dnsdle.console import console_shutdown
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
@@ -314,7 +318,7 @@ def _validate_runtime_state_for_serving(runtime_state):
         )
 
 
-def serve_runtime(runtime_state, emit_record, stop_requested=None):
+def serve_runtime(runtime_state, emit_record, stop_requested=None, display_names=None):
     _validate_runtime_state_for_serving(runtime_state)
     config = runtime_state.config
 
@@ -333,6 +337,9 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
             },
         )
 
+    if display_names is None:
+        display_names = {}
+    seen_tags = set()
     counters = {
         "served": 0,
         "followup": 0,
@@ -362,6 +369,7 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
             "listen_port": config.listen_port,
         }
     )
+    console_server_start(config.listen_host, config.listen_port)
 
     try:
         while not stop_state["stop"]:
@@ -396,6 +404,7 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
                         {"message": str(exc)},
                     )
                 )
+                console_error("recv_error: %s" % exc)
                 counters["runtime_fault"] += 1
                 continue
 
@@ -410,6 +419,7 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
                         {"message": str(exc)},
                     )
                 )
+                console_error("unhandled_request_exception: %s" % exc)
                 continue
 
             if response_bytes is None:
@@ -427,18 +437,28 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
                         {"message": str(exc)},
                     )
                 )
+                console_error("send_error: %s" % exc)
                 continue
 
             if log_record is not None:
                 classification = log_record.get("classification")
                 if classification in counters:
                     counters[classification] += 1
+                if classification == "served":
+                    file_tag = log_record.get("file_tag")
+                    if file_tag is not None and file_tag not in seen_tags:
+                        seen_tags.add(file_tag)
+                        console_activity(
+                            file_tag,
+                            display_names.get(file_tag, file_tag),
+                        )
                 emit_record(log_record)
     finally:
         for sig, previous_handler in signal_handlers.items():
             signal.signal(sig, previous_handler)
         sock.close()
 
+    console_shutdown(counters)
     emit_record(
         {
             "classification": "shutdown",

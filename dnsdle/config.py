@@ -45,6 +45,7 @@ Config = namedtuple(
         "compression_level",
         "log_level",
         "log_file",
+        "verbose",
         "fixed",
     ],
 )
@@ -388,6 +389,7 @@ def build_config(parsed_args):
     log_file = _normalize_log_file(
         _arg_value_default(parsed_args, "log_file", DEFAULT_LOG_FILE)
     )
+    verbose = bool(_arg_value_default(parsed_args, "verbose", False))
 
     if file_tag_len > dns_max_label_len:
         raise StartupError(
@@ -426,5 +428,6 @@ def build_config(parsed_args):
         compression_level=compression_level,
         log_level=log_level,
         log_file=log_file,
+        verbose=verbose,
         fixed=FIXED_CONFIG.copy(),
     )
