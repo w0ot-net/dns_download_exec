@@ -192,24 +192,6 @@ def _extract_payload_text(cname_labels, selected_domain_labels, response_label, 
     return "".join(payload_labels)
 
 
-def _enc_key(psk, file_id, publish_version):
-    return _derive_file_bound_key(
-        psk,
-        file_id,
-        publish_version,
-        PAYLOAD_ENC_KEY_LABEL,
-    )
-
-
-def _mac_key(psk, file_id, publish_version):
-    return _derive_file_bound_key(
-        psk,
-        file_id,
-        publish_version,
-        PAYLOAD_MAC_KEY_LABEL,
-    )
-
-
 def _parse_slice_record(payload_text):
     record = base32_decode_no_pad(payload_text)
     if len(record) < 12:
@@ -327,23 +309,13 @@ def _parse_positive_float(raw_value, flag_name):
     return value
 
 
-def _parse_positive_int(raw_value, flag_name):
+def _parse_int(raw_value, flag_name, min_value):
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
         raise ClientError(EXIT_USAGE, "usage", "%s must be an integer" % flag_name)
-    if value <= 0:
-        raise ClientError(EXIT_USAGE, "usage", "%s must be > 0" % flag_name)
-    return value
-
-
-def _parse_non_negative_int(raw_value, flag_name):
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        raise ClientError(EXIT_USAGE, "usage", "%s must be an integer" % flag_name)
-    if value < 0:
-        raise ClientError(EXIT_USAGE, "usage", "%s must be >= 0" % flag_name)
+    if value < min_value:
+        raise ClientError(EXIT_USAGE, "usage", "%s must be >= %d" % (flag_name, min_value))
     return value
 
 
@@ -513,13 +485,6 @@ def _send_dns_query(resolver_addr, query_packet, timeout_seconds, dns_edns_size)
     return response
 
 
-def _retry_sleep():
-    delay_ms = RETRY_SLEEP_BASE_MS
-    if RETRY_SLEEP_JITTER_MS > 0:
-        delay_ms += random.randint(0, RETRY_SLEEP_JITTER_MS)
-    time.sleep(float(delay_ms) / 1000.0)
-
-
 def _validate_cli_params(base_domains, file_tag, mapping_seed, token_len, total_slices, compressed_size, plaintext_sha256_hex, response_label, dns_max_label_len):
     if not base_domains:
         raise ClientError(EXIT_USAGE, "usage", "BASE_DOMAINS is empty")
@@ -567,8 +532,8 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
     missing = set(range(total_slices))
     stored = {}
     seed_bytes = encode_ascii(mapping_seed)
-    enc_key_bytes = _enc_key(psk_value, file_id, publish_version)
-    mac_key_bytes = _mac_key(psk_value, file_id, publish_version)
+    enc_key_bytes = _derive_file_bound_key(psk_value, file_id, publish_version, PAYLOAD_ENC_KEY_LABEL)
+    mac_key_bytes = _derive_file_bound_key(psk_value, file_id, publish_version, PAYLOAD_MAC_KEY_LABEL)
 
     query_interval_sec = float(query_interval_ms) / 1000.0
 
@@ -606,7 +571,10 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
                         "transport retries exhausted",
                     )
                 domain_index = (domain_index + 1) % len(base_domains)
-                _retry_sleep()
+                delay_ms = RETRY_SLEEP_BASE_MS
+                if RETRY_SLEEP_JITTER_MS > 0:
+                    delay_ms += random.randint(0, RETRY_SLEEP_JITTER_MS)
+                time.sleep(float(delay_ms) / 1000.0)
                 continue
 
             consecutive_timeouts = 0
@@ -688,14 +656,14 @@ def _parse_runtime_args(argv):
     base_domains = tuple(d.strip() for d in args.domains.split(",") if d.strip())
     mapping_seed = args.mapping_seed
     publish_version = args.publish_version
-    total_slices = _parse_positive_int(args.total_slices, "--total-slices")
-    compressed_size = _parse_positive_int(args.compressed_size, "--compressed-size")
+    total_slices = _parse_int(args.total_slices, "--total-slices", 1)
+    compressed_size = _parse_int(args.compressed_size, "--compressed-size", 1)
     plaintext_sha256_hex = args.sha256.strip().lower()
-    token_len = _parse_positive_int(args.token_len, "--token-len")
-    file_tag_len = _parse_positive_int(args.file_tag_len, "--file-tag-len")
+    token_len = _parse_int(args.token_len, "--token-len", 1)
+    file_tag_len = _parse_int(args.file_tag_len, "--file-tag-len", 1)
     response_label = (args.response_label or "").strip().lower()
-    dns_max_label_len = _parse_positive_int(args.dns_max_label_len, "--dns-max-label-len")
-    dns_edns_size = _parse_positive_int(args.dns_edns_size, "--dns-edns-size")
+    dns_max_label_len = _parse_int(args.dns_max_label_len, "--dns-max-label-len", 1)
+    dns_edns_size = _parse_int(args.dns_edns_size, "--dns-edns-size", 1)
 
     file_id = _derive_file_id(publish_version)
     file_tag = _derive_file_tag(encode_ascii(mapping_seed), publish_version, file_tag_len)
@@ -705,8 +673,8 @@ def _parse_runtime_args(argv):
         args.no_progress_timeout,
         "--no-progress-timeout",
     )
-    max_rounds = _parse_positive_int(args.max_rounds, "--max-rounds")
-    query_interval_ms = _parse_non_negative_int(args.query_interval, "--query-interval")
+    max_rounds = _parse_int(args.max_rounds, "--max-rounds", 1)
+    query_interval_ms = _parse_int(args.query_interval, "--query-interval", 0)
 
     resolver_arg = (args.resolver or "").strip()
     if resolver_arg:
