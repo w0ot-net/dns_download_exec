@@ -136,4 +136,4 @@ Executed 2026-02-21. No deviations from the plan.
   were eliminated.
 - Validated: import succeeds for both modules; behavior is identical to
   before with file I/O and compression now occurring exactly once.
-- Commit: `<see below>`.
+- Commit: `a027a3b`.
