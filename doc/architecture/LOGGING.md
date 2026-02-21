@@ -55,7 +55,6 @@ For disabled diagnostics:
 - one fast branch on precomputed logger state
 - no message formatting work
 - no expensive context construction
-- no `context_fn` evaluation
 
 ---
 
