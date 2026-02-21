@@ -22,3 +22,34 @@ keying material. It then emits two artifacts:
 All generated code is standard-library-only Python (2.7 and 3.x), so the
 client side requires nothing beyond a working Python interpreter and DNS
 connectivity.
+
+## How does the download work?
+
+The client downloads a file by retrieving it one slice at a time over DNS.
+
+1. **Token derivation.** The client uses the pre-shared key, mapping seed, and
+   publish version to deterministically derive a `file_tag` and per-slice
+   `slice_token` values -- the same algorithm the server used when it built its
+   lookup table. Neither file names nor slice indexes appear on the wire.
+
+2. **Query.** For each missing slice the client sends a DNS A query for
+   `<slice_token>.<file_tag>.<base_domain>`. It picks a system resolver (or one
+   supplied via `--resolver`) and sends a single UDP packet per slice.
+
+3. **Response.** The dnsdle server recognises the composite key
+   `(file_tag, slice_token)`, looks up the corresponding slice bytes, encrypts
+   and MACs them, base32-encodes the result, and returns it as a CNAME record:
+   `<payload_labels>.<response_label>.<domain>`.
+
+4. **Verify and decrypt.** The client strips the known suffix from the CNAME
+   target, base32-decodes the payload labels, verifies the truncated HMAC, and
+   decrypts the ciphertext with a per-file keystream derived from the PSK.
+
+5. **Reassemble.** Once every slice has been received, the client concatenates
+   them in index order, decompresses with zlib, and verifies the plaintext
+   SHA-256 against the expected hash. On success it atomically writes the file
+   to disk.
+
+Retries, domain rotation, and configurable timeouts handle transient failures.
+Each slice is independently verifiable and decryptable, so they can arrive in
+any order and duplicate responses are safe.
