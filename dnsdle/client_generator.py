@@ -14,19 +14,17 @@ def _norm_abs(path_value):
 
 
 def _safe_mkdir(path_value, reason_code):
+    if os.path.isdir(path_value):
+        return
+    if os.path.exists(path_value):
+        raise StartupError(
+            "startup",
+            reason_code,
+            "path exists but is not a directory",
+            {"path": path_value},
+        )
     try:
-        if os.path.isdir(path_value):
-            return
-        if os.path.exists(path_value):
-            raise StartupError(
-                "startup",
-                reason_code,
-                "path exists but is not a directory",
-                {"path": path_value},
-            )
         os.makedirs(path_value)
-    except StartupError:
-        raise
     except Exception as exc:
         raise StartupError(
             "startup",
@@ -34,37 +32,6 @@ def _safe_mkdir(path_value, reason_code):
             "failed to create directory: %s" % exc,
             {"path": path_value},
         )
-
-
-def _remove_stale_managed_files(managed_dir, keep_name):
-    try:
-        names = sorted(os.listdir(managed_dir))
-    except Exception as exc:
-        raise StartupError(
-            "startup",
-            "generator_write_failed",
-            "failed to list managed output directory: %s" % exc,
-            {"managed_dir": managed_dir},
-        )
-    for name in names:
-        if name == keep_name:
-            continue
-        if not name.startswith("dnsdl"):
-            continue
-        if not name.endswith(".py"):
-            continue
-        path = os.path.join(managed_dir, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            os.remove(path)
-        except Exception as exc:
-            raise StartupError(
-                "startup",
-                "generator_write_failed",
-                "failed to remove stale managed file: %s" % exc,
-                {"path": path},
-            )
 
 
 def generate_client_artifacts(config):
@@ -103,8 +70,6 @@ def generate_client_artifacts(config):
             "failed to write generated client artifact: %s" % exc,
             {"filename": filename},
         )
-
-    _remove_stale_managed_files(managed_dir, filename)
 
     return {
         "managed_dir": managed_dir,

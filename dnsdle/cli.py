@@ -8,27 +8,6 @@ from dnsdle.constants import DEFAULT_LOG_LEVEL
 from dnsdle.state import StartupError
 
 
-_KNOWN_LONG_OPTIONS = frozenset((
-    "--domains",
-    "--files",
-    "--psk",
-    "--listen-addr",
-    "--ttl",
-    "--dns-edns-size",
-    "--dns-max-response-bytes",
-    "--dns-max-label-len",
-    "--response-label",
-    "--mapping-seed",
-    "--file-tag-len",
-    "--client-out-dir",
-    "--compression-level",
-    "--log-level",
-    "--log-file",
-    "--verbose",
-    "--help",
-))
-
-
 class _RaisingArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise StartupError(
@@ -50,35 +29,6 @@ class _RaisingArgumentParser(argparse.ArgumentParser):
         file.write(text)
 
 
-def _raw_argv(argv):
-    if argv is None:
-        return list(sys.argv[1:])
-    return list(argv)
-
-
-def _validate_long_option_tokens(raw_argv):
-    for token in raw_argv:
-        if token == "--":
-            break
-        if not token.startswith("--"):
-            continue
-
-        option = token.split("=", 1)[0]
-        if option == "--domain":
-            raise StartupError(
-                "config",
-                "invalid_config",
-                "--domain is removed; use --domains",
-            )
-        if option in _KNOWN_LONG_OPTIONS:
-            continue
-        raise StartupError(
-            "config",
-            "invalid_config",
-            "argument parsing failed: unrecognized arguments: %s" % option,
-        )
-
-
 def _build_parser():
     try:
         parser = _RaisingArgumentParser(allow_abbrev=False)
@@ -86,6 +36,8 @@ def _build_parser():
         parser = _RaisingArgumentParser()
 
     required = parser.add_argument_group("required")
+    required.add_argument("--domain", dest="domain_deprecated",
+                          default=None, help=argparse.SUPPRESS)
     required.add_argument("--domains", required=True,
                           help="comma-separated base domains (required)")
     required.add_argument("--files", required=True,
@@ -134,7 +86,12 @@ def _build_parser():
 
 
 def parse_cli_args(argv=None):
-    raw_argv = _raw_argv(argv)
-    _validate_long_option_tokens(raw_argv)
     parser = _build_parser()
-    return parser.parse_args(raw_argv)
+    args = parser.parse_args(argv)
+    if args.domain_deprecated is not None:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "--domain is removed; use --domains",
+        )
+    return args

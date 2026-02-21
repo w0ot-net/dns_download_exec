@@ -4,9 +4,6 @@ import json
 import sys
 import time
 
-from dnsdle.compat import is_binary
-from dnsdle.compat import key_text
-from dnsdle.compat import PY2
 from dnsdle.constants import DEFAULT_LOG_LEVEL
 from dnsdle.constants import LOG_CATEGORIES
 from dnsdle.constants import LOG_LEVELS
@@ -37,7 +34,6 @@ _LEVEL_FROM_CLASSIFICATION = {
 _VALID_PHASE_CATEGORIES = frozenset(
     ("startup", "config", "budget", "publish", "mapping", "dnswire", "server")
 )
-_SENSITIVE_EXACT_KEYS = frozenset(("slice_bytes", "plaintext_bytes"))
 _SENSITIVE_KEY_PARTS = ("psk", "key", "payload")
 
 
@@ -45,27 +41,10 @@ def _now_unix_ms():
     return int(time.time() * 1000)
 
 
-def _safe_json_value(value):
-    if is_binary(value):
-        if PY2:
-            try:
-                return value.decode("ascii")
-            except (UnicodeDecodeError, AttributeError):
-                pass
-        return "<bytes:%d>" % len(value)
-    if isinstance(value, (tuple, list)):
-        return [_safe_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return _redact_map(value)
-    return value
-
-
 def _is_sensitive_key(key):
-    key_lower = key_text(key).lower()
-    if key_lower in _SENSITIVE_EXACT_KEYS:
-        return True
+    lower = key.lower()
     for part in _SENSITIVE_KEY_PARTS:
-        if part in key_lower:
+        if part in lower:
             return True
     return False
 
@@ -73,11 +52,13 @@ def _is_sensitive_key(key):
 def _redact_map(record):
     output = {}
     for key, value in record.items():
-        text_key = key_text(key)
-        if _is_sensitive_key(text_key):
-            output[text_key] = "[redacted]"
+        k = key if isinstance(key, str) else str(key)
+        if _is_sensitive_key(k):
+            output[k] = "[redacted]"
+        elif isinstance(value, (tuple, list)):
+            output[k] = list(value)
         else:
-            output[text_key] = _safe_json_value(value)
+            output[k] = value
     return output
 
 
@@ -161,19 +142,10 @@ class RuntimeLogger(object):
             raise RequiredLogEmissionError("required log emission failed")
         return emitted
 
-    def emit(self, level, category, event, context_fn=None, required=False):
+    def emit(self, level, category, event, required=False):
         level_name = _normalize_name(level, LOG_LEVELS, "level")
         category_name = _normalize_name(category, LOG_CATEGORIES, "category")
-        base_event = dict(event or {})
-
-        if context_fn is not None:
-            context = context_fn()
-            if context:
-                for key, value in context.items():
-                    if key not in base_event:
-                        base_event[key] = value
-
-        return self._do_emit(level_name, category_name, base_event, required)
+        return self._do_emit(level_name, category_name, dict(event or {}), required)
 
     def emit_record(self, record, level=None, category=None, required=False):
         base = dict(record or {})
@@ -245,14 +217,8 @@ def logger_enabled(level, required=False):
     return _ACTIVE_LOGGER.enabled(level, required=required)
 
 
-def log_event(level, category, event, context_fn=None, required=False):
-    return _ACTIVE_LOGGER.emit(
-        level,
-        category,
-        event,
-        context_fn=context_fn,
-        required=required,
-    )
+def log_event(level, category, event, required=False):
+    return _ACTIVE_LOGGER.emit(level, category, event, required=required)
 
 
 def emit_structured_record(record, level=None, category=None, required=False):
