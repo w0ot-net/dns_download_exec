@@ -30,29 +30,25 @@ def _build_single_publish_item(
     max_ciphertext_slice_bytes,
     seen_plaintext_sha256,
     seen_file_ids,
-    item_context,
 ):
     plaintext_sha256 = _sha256_hex(plaintext_bytes)
     if plaintext_sha256 in seen_plaintext_sha256:
-        ctx = dict(item_context)
-        ctx["plaintext_sha256"] = plaintext_sha256
         raise StartupError(
             "publish",
             "duplicate_plaintext_sha256",
             "duplicate file content detected",
-            ctx,
+            {"source_filename": source_filename, "plaintext_sha256": plaintext_sha256},
         )
     seen_plaintext_sha256.add(plaintext_sha256)
 
     try:
         compressed_bytes = zlib.compress(plaintext_bytes, compression_level)
     except Exception as exc:
-        ctx = dict(item_context)
         raise StartupError(
             "publish",
             "compression_failed",
             "compression failed: %s" % exc,
-            ctx,
+            {"source_filename": source_filename},
         )
 
     if not compressed_bytes:
@@ -60,19 +56,17 @@ def _build_single_publish_item(
             "publish",
             "compression_empty",
             "compression produced empty output",
-            dict(item_context),
+            {"source_filename": source_filename},
         )
 
     publish_version = _sha256_hex(compressed_bytes)
     file_id = _derive_file_id(publish_version)
     if file_id in seen_file_ids:
-        ctx = dict(item_context)
-        ctx["file_id"] = file_id
         raise StartupError(
             "publish",
             "file_id_collision",
             "file_id collision detected across publish set",
-            ctx,
+            {"source_filename": source_filename, "file_id": file_id},
         )
     seen_file_ids.add(file_id)
 
@@ -93,10 +87,10 @@ def _build_single_publish_item(
     }
 
 
-def _log_publish_item_built(item, extra_context):
+def _log_publish_item_built(item, source_index):
     if not logger_enabled("debug"):
         return
-    event = {
+    log_event("debug", "publish", {
         "phase": "publish",
         "classification": "diagnostic",
         "reason_code": "publish_item_built",
@@ -105,9 +99,9 @@ def _log_publish_item_built(item, extra_context):
         "plaintext_sha256": item["plaintext_sha256"],
         "compressed_size": item["compressed_size"],
         "total_slices": item["total_slices"],
-    }
-    event.update(extra_context)
-    log_event("debug", "publish", event)
+        "source_filename": item["source_filename"],
+        "source_index": source_index,
+    })
 
 
 def build_publish_items(
@@ -168,11 +162,8 @@ def build_publish_items_from_sources(
             max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
             seen_plaintext_sha256=seen_plaintext_sha256,
             seen_file_ids=seen_file_ids,
-            item_context={"source_filename": source_filename},
         )
         publish_items.append(item)
-        _log_publish_item_built(
-            item, {"source_index": source_index, "source_filename": source_filename}
-        )
+        _log_publish_item_built(item, source_index)
 
     return publish_items

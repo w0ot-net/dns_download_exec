@@ -120,3 +120,22 @@ _log_publish_item_built(item, source_index)
 - `dnsdle/publish.py`: remove `item_context` parameter from
   `_build_single_publish_item` and update all internal error paths; simplify
   `_log_publish_item_built` signature and its call site
+
+## Execution Notes
+
+Executed 2026-02-20.  All plan items implemented as designed with no deviations.
+
+1. Removed `item_context` parameter from `_build_single_publish_item`.  All
+   four error paths (`duplicate_plaintext_sha256`, `compression_failed`,
+   `compression_empty`, `file_id_collision`) now construct inline dicts with
+   `source_filename` directly.  Eliminated intermediate `ctx` variables.
+
+2. Changed `_log_publish_item_built(item, extra_context)` to
+   `_log_publish_item_built(item, source_index)`.  Reads `source_filename`
+   from `item["source_filename"]` instead of `extra_context`.  Builds the
+   full event dict inline.
+
+3. Updated the sole call site in `build_publish_items_from_sources` to drop
+   the `item_context` kwarg and pass `source_index` directly.
+
+Commit: <hash>
