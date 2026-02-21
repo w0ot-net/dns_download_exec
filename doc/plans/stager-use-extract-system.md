@@ -108,14 +108,26 @@ PAYLOAD_ENC_STREAM_LABEL = b"dnsdle-enc-stream-v1|"
 PAYLOAD_MAC_KEY_LABEL = b"dnsdle-mac-v1|"
 PAYLOAD_MAC_MESSAGE_LABEL = b"dnsdle-mac-msg-v1|"
 PAYLOAD_MAC_TRUNC_LEN = 8
-PAYLOAD_PROFILE_V1_BYTE = 0x01
-PAYLOAD_FLAGS_V1_BYTE = 0x00
 MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
 ```
 
 These are fixed values from `constants.py`. They are hardcoded in the stager
 template (not pulled dynamically) because the stager template is a string that
 gets placeholder-filled and minified -- it cannot import modules.
+
+`PAYLOAD_PROFILE_V1_BYTE` and `PAYLOAD_FLAGS_V1_BYTE` are not included;
+`_process_slice` keeps the literal `0x01`/`0x00` comparisons since they are
+single-use and already annotated with `"ver"` / `"rsvd"` error tags.
+
+### Behavioral note: `encode_ascii` bytes guard
+
+The current `_ab(v)` returns bytes inputs unchanged; the extracted
+`encode_ascii(value)` unconditionally calls `value.encode("ascii")`.  In
+Python 3, passing bytes would raise `AttributeError`.  All stager call sites
+pass string values (template placeholders are `repr()`-substituted strings,
+`sys.argv` entries are strings, CNAME labels are decoded strings), so this is
+safe.  This is a known invariant: stager code must never pass bytes to
+`encode_ascii`.
 
 ### Key call site changes in `_STAGER_SUFFIX`
 
@@ -137,12 +149,27 @@ Replace inline crypto with extracted building blocks. The function signature
 stays the same (`ek, mk, si, payload_text`), but internals change:
 
 - `_b32d(payload_text)` --> `base32_decode_no_pad(payload_text)`
-- `_expected_mac(mk, si, ciphertext)` --> inline MAC message assembly using
-  `hmac_sha256`, `encode_ascii`, `encode_ascii_int`, and
-  `PAYLOAD_MAC_MESSAGE_LABEL` / `PAYLOAD_MAC_TRUNC_LEN`
+- `_expected_mac(mk, si, ciphertext)` --> inline MAC message assembly (see
+  below)
 - `_secure_compare(em, mac)` --> `constant_time_equals(em, mac)`
 - `_keystream(ek, si, clen)` --> `_keystream_bytes(ek, FILE_ID, PUBLISH_VERSION, si, clen)`
 - `_xor(ciphertext, stream)` --> `_xor_bytes(ciphertext, stream)`
+
+The inlined MAC message assembly follows the canonical pattern from
+`client_runtime.py:222-237`:
+
+```python
+mac_msg = (
+    PAYLOAD_MAC_MESSAGE_LABEL
+    + encode_ascii(FILE_ID) + b"|"
+    + encode_ascii(PUBLISH_VERSION) + b"|"
+    + encode_ascii_int(si, "slice_index") + b"|"
+    + encode_ascii_int(TOTAL_SLICES, "total_slices") + b"|"
+    + encode_ascii_int(COMPRESSED_SIZE, "compressed_size") + b"|"
+    + ciphertext
+)
+em = hmac_sha256(mk, mac_msg)[:PAYLOAD_MAC_TRUNC_LEN]
+```
 
 This eliminates `_expected_mac`, `_secure_compare`, `_keystream`, `_xor`, and
 `_b32d` as standalone stager functions.
@@ -206,6 +233,11 @@ Remove `_read_resolver_source()` from `stager_template.py` and the
 `resolver_windows.py`. The resolver files already have `__EXTRACT__` markers
 that fully cover the same code regions; the sentinel is now redundant.
 
+### Import changes in `stager_template.py`
+
+Remove `import os` and `from dnsdle.state import StartupError` (both only used
+by `_read_resolver_source`). Add `from dnsdle.extract import extract_functions`.
+
 ### Risk: stager one-liner size
 
 Extracted functions have slightly more validation code (e.g.,
@@ -216,15 +248,23 @@ tradeoff for crypto correctness guarantees.
 
 ## Affected Components
 
-- `dnsdle/stager_template.py`: Major rewrite. Split `_STAGER_PRE_RESOLVER`
-  into `_STAGER_HEADER` (imports + template constants + type defs + crypto
-  constants) and `_STAGER_DNS_OPS` (stager-specific functions). Remove
-  `_read_resolver_source()`. Rewrite `build_stager_template()` to use
-  `extract_functions()`. Rewrite `_process_slice` and `_encode_name` to use
-  extracted function names. Update call sites in `_STAGER_SUFFIX`.
+- `dnsdle/stager_template.py`: Major rewrite. Remove `import os` and
+  `from dnsdle.state import StartupError`; add
+  `from dnsdle.extract import extract_functions`. Split
+  `_STAGER_PRE_RESOLVER` into `_STAGER_HEADER` (imports + template constants +
+  type defs + crypto constants) and `_STAGER_DNS_OPS` (stager-specific
+  functions). Remove `_read_resolver_source()`. Rewrite
+  `build_stager_template()` to use `extract_functions()`. Rewrite
+  `_process_slice` and `_encode_name` to use extracted function names. Update
+  call sites in `_STAGER_SUFFIX`.
 - `dnsdle/stager_minify.py`: Regenerate `_RENAME_TABLE` from the new stager
   source. Remove entries for eliminated names, add entries for new names.
 - `dnsdle/resolver_linux.py`: Remove `# __TEMPLATE_SOURCE__` sentinel line
   (line 4). No functional change.
 - `dnsdle/resolver_windows.py`: Remove `# __TEMPLATE_SOURCE__` sentinel line
   (line 6). No functional change.
+- `doc/architecture/STAGER.md`: Update template assembly section. Rename
+  `_STAGER_PRE_RESOLVER` references to `_STAGER_HEADER` + extracted functions +
+  `_STAGER_DNS_OPS`. Replace `# __TEMPLATE_SOURCE__` sentinel description with
+  `extract_functions()` mechanism. Update the 4-section structure to reflect the
+  new 5-part assembly (header, extracted functions, DNS ops, discover, suffix).
