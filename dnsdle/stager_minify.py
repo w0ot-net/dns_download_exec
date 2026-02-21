@@ -91,11 +91,10 @@ def _generate_short_names(count, skip):
                 produced += 1
 
 
-def _build_rename_table(source):
-    """Build rename table from string-extracted source.
+def _build_rename_map(source):
+    """Build rename map from string-extracted source.
 
-    Returns a list of (compiled_regex, short_name) pairs sorted longest-first,
-    ready for sequential re.sub application.
+    Returns a dict mapping old_name -> short_name.
     """
     all_idents = set(_IDENT_RE.findall(source))
     attr_names = set(_ATTR_RE.findall(source))
@@ -107,12 +106,9 @@ def _build_rename_table(source):
         key=lambda n: (-len(n), n),
     )
     if not candidates:
-        return []
+        return {}
     short_names = list(_generate_short_names(len(candidates), skip | all_idents))
-    return [
-        (re.compile(r"\b" + re.escape(old) + r"\b"), new)
-        for old, new in zip(candidates, short_names)
-    ]
+    return dict(zip(candidates, short_names))
 
 
 def minify(source):
@@ -130,9 +126,10 @@ def minify(source):
         saved.append(m.group(0))
         return "__S%d__" % (len(saved) - 1)
     src = _STRING_RE.sub(_extract, src)
-    # Pass 3: rename variables (longest names first, auto-generated).
-    for pattern, new in _build_rename_table(src):
-        src = pattern.sub(new, src)
+    # Pass 3: rename variables (single-pass dict lookup).
+    rename_map = _build_rename_map(src)
+    if rename_map:
+        src = _IDENT_RE.sub(lambda m: rename_map.get(m.group(0), m.group(0)), src)
     # Restore original string literals.
     src = _PLACEHOLDER_RE.sub(lambda m: saved[int(m.group(1))], src)
     lines = src.split("\n")

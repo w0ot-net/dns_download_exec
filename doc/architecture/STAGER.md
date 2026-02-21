@@ -108,9 +108,9 @@ triggers a fatal `StartupError("stager_generation_failed")`.
    generator collects all identifiers, subtracts Python keywords, builtins,
    stdlib module names, attribute names (after `.`), and placeholder names,
    selects candidates with `len > 2`, sorts by `(-len, name)`, and assigns
-   deterministic short names (`a`..`z`, `A`..`Z`, `aa`..`az`, ...).  Each
-   rename is applied via compiled `\b`-bounded regex.  String literals are
-   restored after renaming.
+   deterministic short names (`a`..`z`, `A`..`Z`, `aa`..`az`, ...).  All
+   renames are applied in a single pass over the source using `_IDENT_RE.sub`
+   with a dict lookup.  String literals are restored after renaming.
 4. **Reduce indentation** -- convert 4-space indentation to 1 space per
    nesting level.
 5. **Semicolon-join** -- join consecutive same-indent non-block lines with `;`.
