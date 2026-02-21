@@ -95,3 +95,13 @@ identifiers unchanged.
 - `doc/architecture/STAGER.md`: update the Minification section -- change "Each
   rename is applied via compiled `\b`-bounded regex" to describe single-pass dict
   lookup.
+
+## Execution Notes
+
+Implemented as designed with no deviations.
+
+- `_build_rename_table` renamed to `_build_rename_map`; returns `dict(zip(candidates, short_names))` instead of list of `(compiled_regex, short_name)` pairs; empty case returns `{}` instead of `[]`.
+- `minify()` rename pass replaced: sequential `for pattern, new in _build_rename_table(src)` loop replaced with single `_IDENT_RE.sub(lambda m: rename_map.get(m.group(0), m.group(0)), src)` call.
+- STAGER.md Minification section updated to describe single-pass dict lookup.
+- Net change: -3 lines in `stager_minify.py` (15 removed, 12 added).
+- Implementation commit: `2941885`
