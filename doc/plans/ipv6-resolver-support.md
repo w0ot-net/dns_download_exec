@@ -58,9 +58,12 @@ Replace the regex-based scan with structural extraction of the server section:
 - Collect addresses from lines starting with `Address` (covers both
   `Address:` and `Addresses:`).  Extract the value after the first colon.
 - Handle indented continuation lines (multi-address servers) by accepting
-  lines starting with whitespace while inside the address block.
-- Return a **list** of address strings (breaking change from the current
-  single-string-or-None return).
+  lines starting with whitespace, but **only after** at least one `Address`
+  line has been seen (prevents misinterpreting non-address lines between
+  `Server:` and `Address:` in localized builds).
+- Return a **list** of address strings.  Always return `[]` (never `None`)
+  when no addresses are found, since callers iterate the result directly.
+  This is a breaking change from the current single-string-or-None return.
 
 Remove `_IPV4_RE` from both files.  Remove `import re` from
 `resolver_windows.py` (no longer used).  Keep `import re` in
@@ -81,16 +84,22 @@ Same AF detection.
 
 **`_discover_resolver`** (stager_template.py `_STAGER_DISCOVER`):
 Try `AF_INET` first, then `AF_INET6` for each host, returning the first
-successful `getaddrinfo` result.
+successful `getaddrinfo` result.  Normalize the sockaddr to a plain
+`(host, port)` 2-tuple via `_ai[0][4][:2]` so downstream code never sees
+the 4-tuple that `getaddrinfo` returns for AF_INET6.  (Using `AF_UNSPEC`
+instead of the explicit dual-AF loop would be fewer lines, but defers
+address-family preference to the OS, which may prefer IPv6 on some
+configurations; explicit `AF_INET`-first is more predictable.)
 
 **`_resolve_udp_address`** (client_runtime.py):
-Same dual-AF loop (replaces the current `AF_INET`-only call).
+Same dual-AF loop (replaces the current `AF_INET`-only call).  Already
+normalizes to `(host, port)` 2-tuple, so no shape change needed.
 
 ### 3. Stager resolver string formatting (`_STAGER_SUFFIX`)
 
-When auto-discovered, format the resolver string with bracket notation for
-IPv6: `[host]:port`.  Use `addr[:2]` to handle both 2-tuple (AF_INET) and
-4-tuple (AF_INET6) sockaddrs from `getaddrinfo`.
+Since `_discover_resolver` now always returns a `(host, port)` 2-tuple,
+format the resolver string directly: `"[%s]:%d"` when `":" in host`
+(IPv6), otherwise `"%s:%d"` (IPv4).
 
 For the `--resolver` manual parse path, add bracket-aware parsing (matching
 the client's existing `_parse_resolver_arg` logic): check for leading `[`,
@@ -107,7 +116,11 @@ Remove `("_IPV4_RE", "cu")` from `_RENAME_TABLE` and remove
 `("match", "db")` (the variable was only used by the regex match call).
 Remove `import re` from the stager import list in `_STAGER_PRE_RESOLVER`.
 
-Add new identifiers introduced by the changes (if any survive minification).
+Add rename entries for new identifiers introduced by the structural parser
+and dual-AF loop.  Expected new names (verify against final implementation):
+`addresses` (address list accumulator in `_parse_nslookup_output`),
+`seen_addr` (state guard for continuation lines), `_af` (AF loop variable
+in `_discover_resolver`).
 
 ## Affected Components
 
@@ -115,9 +128,9 @@ Add new identifiers introduced by the changes (if any survive minification).
   parse, return list), simplify `_load_windows_resolvers`, delete `_IPV4_RE`
   and `import re`
 - `dnsdle/stager_template.py`: remove `import re` from `_STAGER_PRE_RESOLVER`;
-  IPv6 AF detection in `_send_query`; dual-AF loop in `_STAGER_DISCOVER`;
-  bracket-formatted resolver string and bracket-aware `--resolver` parsing in
-  `_STAGER_SUFFIX`
+  IPv6 AF detection in `_send_query`; dual-AF loop with 2-tuple normalization
+  in `_STAGER_DISCOVER`; bracket-formatted resolver string and bracket-aware
+  `--resolver` parsing in `_STAGER_SUFFIX`
 - `dnsdle/client_runtime.py`: same parser rewrite in `_parse_nslookup_output`
   and `_load_system_resolvers` Windows branch; delete `_IPV4_RE`; dual-AF in
   `_resolve_udp_address`; IPv6 AF detection in `_send_dns_query`; bracket
