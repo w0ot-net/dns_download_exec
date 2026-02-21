@@ -43,10 +43,9 @@ startup from canonical source modules using an extraction system:
    to `ClientError`'s `(code, phase, message)` signature.
 
 Extracted blocks:
-- **compat.py** (10 functions): `encode_ascii`, `encode_utf8`,
+- **compat.py** (8 functions): `encode_ascii`, `encode_utf8`,
   `decode_ascii`, `base32_lower_no_pad`, `base32_decode_no_pad`,
-  `byte_value`, `iter_byte_values`, `constant_time_equals`,
-  `encode_ascii_int`, `is_binary`
+  `constant_time_equals`, `encode_ascii_int`, `is_binary`
 - **helpers.py** (5 functions): `hmac_sha256`, `dns_name_wire_length`,
   `_derive_file_id`, `_derive_file_tag`, `_derive_slice_token`
 - **dnswire.py** (1 function): `_decode_name`
