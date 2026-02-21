@@ -195,25 +195,16 @@ def handle_request_message(runtime_state, request_bytes):
             },
         )
     identity = (file_id, publish_version)
-    slice_table = runtime_state.slice_bytes_by_identity.get(identity)
-    if slice_table is None:
+    slice_data = runtime_state.slice_data_by_identity.get(identity)
+    if slice_data is None:
         return _classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", "identity_missing", request_context)
-    if slice_index < 0 or slice_index >= len(slice_table):
+    slice_table, compressed_size = slice_data
+    total_slices = len(slice_table)
+    if slice_index < 0 or slice_index >= total_slices:
         return _classified_response(
             request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
             "slice_index_out_of_bounds",
-            dict(request_context, slice_index=slice_index, slice_count=len(slice_table)),
-        )
-    publish_meta = runtime_state.publish_meta_by_identity.get(identity)
-    if publish_meta is None:
-        return _classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", "publish_meta_missing", request_context)
-
-    total_slices, compressed_size = publish_meta
-    if total_slices != len(slice_table):
-        return _classified_response(
-            request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
-            "slice_table_length_mismatch",
-            dict(request_context, total_slices=total_slices, slice_count=len(slice_table)),
+            dict(request_context, slice_index=slice_index, slice_count=total_slices),
         )
 
     slice_bytes = slice_table[slice_index]

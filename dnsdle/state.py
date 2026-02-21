@@ -64,8 +64,7 @@ RuntimeState = namedtuple(
         "budget_info",
         "publish_items",
         "lookup_by_key",
-        "slice_bytes_by_identity",
-        "publish_meta_by_identity",
+        "slice_data_by_identity",
     ],
 )
 
@@ -90,14 +89,13 @@ def to_publish_item(mapped_item):
 def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
     publish_items = []
     lookup = {}
-    slice_bytes_by_identity = {}
-    publish_meta_by_identity = {}
+    slice_data_by_identity = {}
 
     for item in mapped_publish_items:
         publish_item = to_publish_item(item)
         publish_items.append(publish_item)
         identity = (publish_item.file_id, publish_item.publish_version)
-        if identity in slice_bytes_by_identity:
+        if identity in slice_data_by_identity:
             raise StartupError(
                 "publish",
                 "duplicate_publish_identity",
@@ -107,9 +105,8 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
                     "publish_version": publish_item.publish_version,
                 },
             )
-        slice_bytes_by_identity[identity] = publish_item.slice_bytes_by_index
-        publish_meta_by_identity[identity] = (
-            publish_item.total_slices,
+        slice_data_by_identity[identity] = (
+            publish_item.slice_bytes_by_index,
             publish_item.compressed_size,
         )
 
@@ -133,6 +130,5 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
         budget_info=FrozenDict(budget_info),
         publish_items=tuple(publish_items),
         lookup_by_key=FrozenDict(lookup),
-        slice_bytes_by_identity=FrozenDict(slice_bytes_by_identity),
-        publish_meta_by_identity=FrozenDict(publish_meta_by_identity),
+        slice_data_by_identity=FrozenDict(slice_data_by_identity),
     )

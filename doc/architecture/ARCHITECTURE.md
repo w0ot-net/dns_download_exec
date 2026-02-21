@@ -205,7 +205,7 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 The server has two main state classes:
 - immutable publish state (file manifests and slices)
-- immutable lookup indexes (`lookup_by_key`, `slice_bytes_by_identity`)
+- immutable lookup indexes (`lookup_by_key`, `slice_data_by_identity`)
 - network service state (socket, request handling, logging)
 
 The server must not mutate publish bytes while serving.

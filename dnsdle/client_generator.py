@@ -13,20 +13,6 @@ def _norm_abs(path_value):
     return os.path.abspath(os.path.normpath(path_value))
 
 
-def _is_within_dir(parent_dir, child_path):
-    parent = _norm_abs(parent_dir)
-    child = _norm_abs(child_path)
-    parent_case = os.path.normcase(parent)
-    child_case = os.path.normcase(child)
-    if child_case == parent_case:
-        return True
-    if parent_case.endswith(os.sep):
-        prefix = parent_case
-    else:
-        prefix = parent_case + os.sep
-    return child_case.startswith(prefix)
-
-
 def _safe_mkdir(path_value, reason_code):
     try:
         if os.path.isdir(path_value):
@@ -93,27 +79,11 @@ def generate_client_artifacts(config):
     _safe_mkdir(base_output_dir, "generator_write_failed")
 
     managed_dir = _norm_abs(os.path.join(base_output_dir, GENERATED_CLIENT_MANAGED_SUBDIR))
-    if not _is_within_dir(base_output_dir, managed_dir):
-        raise StartupError(
-            "startup",
-            "generator_write_failed",
-            "managed output path escapes client_out_dir",
-            {"client_out_dir": base_output_dir, "managed_dir": managed_dir},
-        )
     _safe_mkdir(managed_dir, "generator_write_failed")
 
     source_text = build_client_source()
     filename = _UNIVERSAL_CLIENT_FILENAME
     final_path = os.path.join(managed_dir, filename)
-
-    if not _is_within_dir(managed_dir, final_path):
-        raise StartupError(
-            "startup",
-            "generator_write_failed",
-            "generated managed path escapes managed_dir",
-            {"path": final_path},
-        )
-
     temp_path = final_path + ".tmp-%d" % os.getpid()
     try:
         with open(temp_path, "wb") as handle:

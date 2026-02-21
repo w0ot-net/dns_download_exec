@@ -151,6 +151,23 @@ base64 payload (lines 76-83) since `base64.b64encode` always produces ASCII.
 - `doc/architecture/ARCHITECTURE.md`: update Runtime State Model section to
   reflect merged identity index (remove mention of separate
   `slice_bytes_by_identity`)
-- `doc/architecture/ERRORS_AND_INVARIANTS.md`: remove references to
-  `publish_meta_missing` and `slice_table_length_mismatch` runtime fault
-  codes that no longer exist
+## Execution Notes
+
+Executed 2026-02-20.  Review findings addressed during execution:
+
+1. **Item 3 call-site count**: plan text said "two call sites" but listed three
+   line numbers (56, 67, 82).  All three were replaced with
+   `config.longest_domain_labels`.
+2. **Item 2 stability invariant reasoning**: the plan stated "user items always
+   appear first" as the reason the snapshot invariant is redundant.  The actual
+   reason is that `file_tag` is derived from `publish_version` (SHA-256 of
+   compressed bytes), so client and user files always have different
+   `file_tag` values, and lookup keys are `(file_tag, token)` pairs --
+   different file_tags cannot collide in `apply_mapping`.
+3. **Phantom ERRORS_AND_INVARIANTS.md update**: the plan listed this doc as an
+   affected component to remove `publish_meta_missing` and
+   `slice_table_length_mismatch` references, but those strings do not appear
+   in the doc.  The generic runtime-fault descriptions still accurately cover
+   the remaining `identity_missing` fault.  Dropped as a no-op.
+4. **Dead import removed**: `_UNIVERSAL_CLIENT_FILENAME` was imported but unused
+   in `dnsdle/__init__.py` before this change; removed as part of cleanup.

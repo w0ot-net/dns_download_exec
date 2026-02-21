@@ -26,17 +26,6 @@ def _payload_labels_for_chars(char_count, label_cap):
     return tuple(labels)
 
 
-def _domain_labels(config):
-    labels = getattr(config, "longest_domain_labels", None)
-    if labels is None:
-        raise StartupError(
-            "budget",
-            "budget_unusable",
-            "config does not expose longest_domain_labels",
-        )
-    return tuple(labels)
-
-
 def _validate_query_token_len(config, query_token_len):
     if query_token_len <= 0:
         raise StartupError(
@@ -53,7 +42,7 @@ def _validate_query_token_len(config, query_token_len):
             {"query_token_len": query_token_len},
         )
 
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + config.longest_domain_labels
     if dns_name_wire_length(qname_labels) > MAX_DNS_NAME_WIRE_LENGTH:
         raise StartupError(
             "budget",
@@ -64,7 +53,7 @@ def _validate_query_token_len(config, query_token_len):
 
 
 def _response_size_estimate(config, query_token_len, target_wire_len):
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + _domain_labels(config)
+    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + config.longest_domain_labels
     qname_wire_len = dns_name_wire_length(qname_labels)
     question_size = qname_wire_len + QUESTION_FIXED_BYTES
 
@@ -79,7 +68,7 @@ def _response_size_estimate(config, query_token_len, target_wire_len):
 
 
 def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
-    domain_labels = _domain_labels(config)
+    domain_labels = config.longest_domain_labels
     suffix_labels = (config.response_label,) + domain_labels
     packet_size_limit = max(config.dns_edns_size, CLASSIC_DNS_PACKET_LIMIT)
     if config.dns_max_response_bytes > 0:
