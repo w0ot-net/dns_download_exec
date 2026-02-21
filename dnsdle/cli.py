@@ -8,7 +8,7 @@ from dnsdle.constants import DEFAULT_LOG_LEVEL
 from dnsdle.state import StartupError
 
 
-_LONG_OPTIONS = (
+_KNOWN_LONG_OPTIONS = frozenset((
     "--domains",
     "--files",
     "--psk",
@@ -25,8 +25,7 @@ _LONG_OPTIONS = (
     "--log-level",
     "--log-file",
     "--help",
-)
-_KNOWN_LONG_OPTIONS = set(_LONG_OPTIONS)
+))
 
 
 class _RaisingArgumentParser(argparse.ArgumentParser):
@@ -80,11 +79,10 @@ def _validate_long_option_tokens(raw_argv):
 
 
 def _build_parser():
-    parser_kwargs = {"add_help": True}
     try:
-        parser = _RaisingArgumentParser(allow_abbrev=False, **parser_kwargs)
+        parser = _RaisingArgumentParser(allow_abbrev=False)
     except TypeError:
-        parser = _RaisingArgumentParser(**parser_kwargs)
+        parser = _RaisingArgumentParser()
 
     required = parser.add_argument_group("required")
     required.add_argument("--domains", required=True,
