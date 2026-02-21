@@ -11,7 +11,6 @@ MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
 
 # DNS/packet sizing constants
 MAX_DNS_NAME_WIRE_LENGTH = 255
-MAX_DNS_NAME_TEXT_LENGTH = 253
 CLASSIC_DNS_PACKET_LIMIT = 512
 BINARY_RECORD_OVERHEAD = 12  # 4-byte header + 8-byte truncated MAC
 DNS_HEADER_BYTES = 12
