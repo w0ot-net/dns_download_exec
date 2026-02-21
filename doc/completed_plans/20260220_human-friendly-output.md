@@ -203,3 +203,60 @@ default mode.  The sequence:
   `console_shutdown`, and `console_error` (at each runtime-fault site)
   from `serve_runtime`; build file_tag-to-filename map; track seen
   file_tags set.
+
+## Execution Notes
+
+Implemented as planned with the following deviations from the review:
+
+1. **Review finding (Medium): `serve_runtime` cannot identify universal
+   client.** Addressed by building the `file_tag -> display_name` dict
+   in `build_startup_state` (where `client_filename` is already known)
+   and passing it to `serve_runtime` via a `display_names` keyword
+   argument.  The universal client is labeled `"(universal client)"` in
+   the map; `server.py` never imports `_UNIVERSAL_CLIENT_FILENAME`.
+
+2. **Review finding (Medium): `console_activity` signature includes
+   unused `file_id`.** Dropped `file_id` from the signature.
+   `console_activity(file_tag, display_name)` takes only the two values
+   actually shown in the output.
+
+3. **Review finding (Low): Console `_ENABLED` not reset alongside
+   `reset_active_logger()`.** Added `reset_console()` to `console.py`
+   and `main()` calls it alongside `reset_active_logger()` to ensure
+   clean state when `main()` is called multiple times.
+
+4. **Review finding (Low): `cli.py` help color inconsistency.**
+   Not addressed -- the existing `print_help` colorization is unrelated
+   to the plan scope and changing it would add unnecessary churn.
+
+### Files changed
+
+- `dnsdle/cli.py`: added `--verbose` to `_KNOWN_LONG_OPTIONS` and
+  `_build_parser` (store_true, logging group).
+- `dnsdle/config.py`: added `verbose` field to `Config` namedtuple;
+  wired through `build_config` via `_arg_value_default`.
+- `dnsdle/logging_runtime.py`: added `_NullStream`; bootstrap logger
+  now uses `_NullStream()`; `build_logger_from_config` selects
+  `_NullStream()` when `not config.verbose and not config.log_file`.
+- `dnsdle/console.py`: new module with `configure_console`,
+  `reset_console`, `console_startup`, `console_server_start`,
+  `console_activity`, `console_error`, `console_shutdown`, color
+  helpers, and `_ENABLED`/`_USE_COLOR` flags.
+- `dnsdle/__init__.py`: calls `configure_console` after
+  `configure_active_logger`; builds `display_names` dict mapping
+  `file_tag -> display_name` (universal client labeled
+  `"(universal client)"`); returns it as fourth element from
+  `build_startup_state`.
+- `dnsdle.py`: unpacks fourth return value; calls `reset_console` in
+  `main()`; calls `console_startup` after startup emits; calls
+  `console_error` in all except blocks; passes `display_names` to
+  `serve_runtime`.
+- `dnsdle/server.py`: accepts `display_names` kwarg; initializes
+  `seen_tags` set; calls `console_server_start` after server_start
+  emit; calls `console_activity` on first serve per file_tag; calls
+  `console_error` at all three runtime-fault sites; calls
+  `console_shutdown` before shutdown emit.
+
+### Commits
+
+- `1c888c6`: Add human-friendly console output with --verbose flag
