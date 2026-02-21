@@ -10,24 +10,9 @@ from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _compute_tokens(seed_bytes, publish_version, total_slices, token_len):
-    return tuple(
-        _derive_slice_token(seed_bytes, publish_version, index, token_len)
-        for index in range(total_slices)
-    )
-
-
 def _max_token_len_for_file(config, file_tag):
     budget = MAX_DNS_NAME_WIRE_LENGTH - 2 - len(file_tag) - config.longest_domain_wire_len
     return min(max(budget, 0), config.dns_max_label_len, DIGEST_TEXT_CAPACITY)
-
-
-def _find_min_local_len(seed_bytes, publish_version, total_slices, max_token_len):
-    for token_len in range(1, max_token_len + 1):
-        tokens = _compute_tokens(seed_bytes, publish_version, total_slices, token_len)
-        if len(set(tokens)) == total_slices:
-            return token_len, tokens
-    return None, None
 
 
 def _find_colliding_files(entries):
@@ -73,12 +58,16 @@ def apply_mapping(publish_items, config):
                 {"file_id": entry["file_id"], "file_tag": file_tag},
             )
 
-        local_len, local_tokens = _find_min_local_len(
-            seed_bytes,
-            entry["publish_version"],
-            entry["total_slices"],
-            max_token_len,
+        full_tokens = tuple(
+            _derive_slice_token(seed_bytes, entry["publish_version"], i, max_token_len)
+            for i in range(entry["total_slices"])
         )
+
+        local_len = None
+        for length in range(1, max_token_len + 1):
+            if len(set(t[:length] for t in full_tokens)) == entry["total_slices"]:
+                local_len = length
+                break
         if local_len is None:
             raise StartupError(
                 "mapping",
@@ -89,8 +78,9 @@ def apply_mapping(publish_items, config):
 
         entry["file_tag"] = file_tag
         entry["slice_token_len"] = local_len
-        entry["slice_tokens"] = local_tokens
+        entry["slice_tokens"] = tuple(t[:local_len] for t in full_tokens)
         entry["max_token_len"] = max_token_len
+        entry["_full_tokens"] = full_tokens
         entries.append(entry)
 
     canonical_order = sorted(
@@ -130,28 +120,19 @@ def apply_mapping(publish_items, config):
             )
 
         new_len = current_len + 1
-        tokens = _compute_tokens(
-            seed_bytes,
-            entry["publish_version"],
-            entry["total_slices"],
-            new_len,
-        )
         entry["slice_token_len"] = new_len
-        entry["slice_tokens"] = tokens
+        entry["slice_tokens"] = tuple(t[:new_len] for t in entry["_full_tokens"])
+
+    for entry in entries:
+        del entry["_full_tokens"]
 
     if logger_enabled("debug"):
-        log_event(
-            "debug",
-            "mapping",
-            {
-                "phase": "mapping",
-                "classification": "diagnostic",
-                "reason_code": "mapping_applied",
-            },
-            context_fn=lambda: {
-                "file_count": len(entries),
-                "total_slice_tokens": sum(len(item["slice_tokens"]) for item in entries),
-            },
-        )
+        log_event("debug", "mapping", {
+            "phase": "mapping",
+            "classification": "diagnostic",
+            "reason_code": "mapping_applied",
+            "file_count": len(entries),
+            "total_slice_tokens": sum(len(item["slice_tokens"]) for item in entries),
+        })
 
     return entries
