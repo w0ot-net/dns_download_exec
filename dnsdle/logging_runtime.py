@@ -18,19 +18,8 @@ _LEVEL_RANK = {
     "warn": 40,
     "error": 50,
 }
-_LEVEL_FROM_CLASSIFICATION = {
-    "startup_error": "error",
-    "runtime_fault": "error",
-    "server_start": "info",
-    "shutdown": "info",
-    "startup_ok": "info",
-    "generation_ok": "info",
-    "generation_summary": "info",
-    "publish": "info",
-    "served": "info",
-    "followup": "info",
-    "miss": "warn",
-}
+_ERROR_CLASSIFICATIONS = frozenset(("startup_error", "runtime_fault"))
+_WARN_CLASSIFICATIONS  = frozenset(("miss",))
 _VALID_PHASE_CATEGORIES = frozenset(
     ("startup", "config", "budget", "publish", "mapping", "dnswire", "server")
 )
@@ -75,8 +64,12 @@ def _record_category(record):
 
 
 def _record_level(record):
-    classification = str(record.get("classification", "")).lower()
-    return _LEVEL_FROM_CLASSIFICATION.get(classification, "info")
+    c = str(record.get("classification", "")).lower()
+    if c in _ERROR_CLASSIFICATIONS:
+        return "error"
+    if c in _WARN_CLASSIFICATIONS:
+        return "warn"
+    return "info"
 
 
 def _record_is_required(record):

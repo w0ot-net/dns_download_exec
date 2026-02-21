@@ -82,3 +82,15 @@ calls it unchanged.
 - `dnsdle/logging_runtime.py`: replace `_LEVEL_FROM_CLASSIFICATION` dict with
   `_ERROR_CLASSIFICATIONS` / `_WARN_CLASSIFICATIONS` frozensets and rewrite
   `_record_level`
+
+## Execution Notes
+
+- **Issue 2 (client_runtime.py)**: Already resolved in a prior change. The
+  `_consume_rrs` function and the ns/ar parse + trailing-bytes check no longer
+  exist in `_parse_response_for_cname`. The function already only parses answer
+  RRs and returns. No code change needed.
+- **Issue 3 (logging_runtime.py)**: Implemented as designed. Replaced the
+  11-entry `_LEVEL_FROM_CLASSIFICATION` dict with `_ERROR_CLASSIFICATIONS` and
+  `_WARN_CLASSIFICATIONS` frozensets. Rewrote `_record_level` to use frozenset
+  membership checks with `"info"` as default.
+- **Commit**: `846246d` Simplify logging level inference to frozenset membership checks
