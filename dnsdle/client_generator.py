@@ -102,7 +102,7 @@ def _write_staged_file(stage_dir, filename, source_text):
         )
 
 
-def _collect_backup_targets(managed_dir, expected_names):
+def _collect_backup_targets(managed_dir, expected_name):
     targets = []
     try:
         names = sorted(os.listdir(managed_dir))
@@ -118,10 +118,10 @@ def _collect_backup_targets(managed_dir, expected_names):
         path = os.path.join(managed_dir, name)
         if not os.path.isfile(path):
             continue
-        if name in expected_names or _MANAGED_FILE_RE.match(name):
+        if name == expected_name or _MANAGED_FILE_RE.match(name):
             targets.append(path)
 
-    return tuple(sorted(targets))
+    return tuple(targets)
 
 
 def _rollback_commit(moved_pairs, placed_paths, backup_dir):
@@ -172,9 +172,8 @@ def _rollback_commit(moved_pairs, placed_paths, backup_dir):
         )
 
 
-def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
-    expected_names = tuple(sorted(item["filename"] for item in artifacts))
-    targets_to_backup = _collect_backup_targets(managed_dir, expected_names)
+def _transactional_commit(managed_dir, stage_dir, backup_dir, filename):
+    targets_to_backup = _collect_backup_targets(managed_dir, filename)
 
     moved_pairs = []
     placed_paths = []
@@ -194,18 +193,17 @@ def _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts):
             os.rename(original_path, backup_path)
             moved_pairs.append((backup_path, original_path))
 
-        for filename in expected_names:
-            staged_path = os.path.join(stage_dir, filename)
-            managed_path = os.path.join(managed_dir, filename)
-            if not _is_within_dir(managed_dir, managed_path):
-                raise StartupError(
-                    "startup",
-                    "generator_write_failed",
-                    "generated managed path escapes managed_dir",
-                    {"path": managed_path},
-                )
-            os.rename(staged_path, managed_path)
-            placed_paths.append(managed_path)
+        staged_path = os.path.join(stage_dir, filename)
+        managed_path = os.path.join(managed_dir, filename)
+        if not _is_within_dir(managed_dir, managed_path):
+            raise StartupError(
+                "startup",
+                "generator_write_failed",
+                "generated managed path escapes managed_dir",
+                {"path": managed_path},
+            )
+        os.rename(staged_path, managed_path)
+        placed_paths.append(managed_path)
     except StartupError as exc:
         failure = exc
     except Exception as exc:
@@ -257,7 +255,6 @@ def generate_client_artifacts(config):
 
     source_text = build_client_source()
     filename = _UNIVERSAL_CLIENT_FILENAME
-    artifacts = ({"filename": filename, "source": source_text},)
 
     stage_dir = _build_run_dir(managed_dir, ".stage")
     backup_dir = _build_run_dir(managed_dir, ".backup")
@@ -266,7 +263,7 @@ def generate_client_artifacts(config):
 
     try:
         _write_staged_file(stage_dir, filename, source_text)
-        _transactional_commit(managed_dir, stage_dir, backup_dir, artifacts)
+        _transactional_commit(managed_dir, stage_dir, backup_dir, filename)
     except StartupError as exc:
         _cleanup_tree(stage_dir)
         if not exc.context.get("preserve_backup_dir"):
