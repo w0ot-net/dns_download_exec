@@ -114,7 +114,7 @@ Decoding steps:
 3. Base32-decode (accept lowercase form).
 4. Parse binary record and validate profile/flags/length invariants.
 
-The v1 parity parser (`dnsdle/client_payload.py`) treats any decode-step
+The v1 parity parser (`dnsdle/client_runtime.py`) treats any decode-step
 violation as a parse/format fatal error with no fallback mode.
 
 The server must emit canonical lowercase/no-padding encoding so duplicate
@@ -131,6 +131,8 @@ Inputs:
 - maximum DNS name length (255 bytes including label lengths)
 - configured `effective_label_cap` (16..63)
 - configured `dns_edns_size` (default `1232`)
+- configured `dns_max_response_bytes` (default `0`/disabled; when positive,
+  caps the packet-size limit)
 - fixed suffix length for `.<response_label>.<selected_base_domain>`
   using longest configured domain
 - DNS message envelope terms (header, echoed question, one CNAME answer,
