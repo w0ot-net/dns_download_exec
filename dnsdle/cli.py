@@ -40,6 +40,8 @@ def _build_parser():
                           default=None, help=argparse.SUPPRESS)
     required.add_argument("--domains", required=True,
                           help="comma-separated base domains (required)")
+    required.add_argument("--file", dest="file_deprecated",
+                          default=None, help=argparse.SUPPRESS)
     required.add_argument("--files", required=True,
                           help="comma-separated file paths to publish (required)")
     required.add_argument("--psk", required=True,
@@ -93,5 +95,11 @@ def parse_cli_args(argv=None):
             "config",
             "invalid_config",
             "--domain is removed; use --domains",
+        )
+    if args.file_deprecated is not None:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "--file is removed; use --files",
         )
     return args
