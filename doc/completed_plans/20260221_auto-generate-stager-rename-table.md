@@ -163,4 +163,4 @@ automatically picks up new builtins added in future Python versions.
   because string extraction protects string contents).
 - Determinism verified: two calls produce identical output.
 
-**Commit:** see git log
+**Commit:** `56602d5`
