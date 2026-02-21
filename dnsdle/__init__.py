@@ -12,8 +12,9 @@ from dnsdle.logging_runtime import configure_active_logger
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.mapping import apply_mapping
-from dnsdle.publish import build_publish_items
-from dnsdle.publish import build_publish_items_from_sources
+from dnsdle.publish import read_payload_sources
+from dnsdle.publish import prepare_publish_sources
+from dnsdle.publish import slice_prepared_sources
 from dnsdle.server import serve_runtime
 from dnsdle.stager_generator import generate_stagers
 from dnsdle.state import build_runtime_state
@@ -30,38 +31,27 @@ def build_startup_state(argv=None):
     client_filename = generation_result["filename"]
     client_bytes = encode_ascii(generation_result["source"])
 
+    payload_sources = read_payload_sources(config)
+    all_sources = payload_sources + [(client_filename, client_bytes)]
+    prepared = prepare_publish_sources(all_sources, config.compression_level)
+
     query_token_len = 4
     for _iteration in range(10):
         max_ciphertext_slice_bytes, budget_info = compute_max_ciphertext_slice_bytes(
             config, query_token_len=query_token_len
         )
-        publish_items = build_publish_items(config, max_ciphertext_slice_bytes)
-        seen_sha256 = set(item["plaintext_sha256"] for item in publish_items)
-        seen_ids = set(item["file_id"] for item in publish_items)
-        client_publish_items = build_publish_items_from_sources(
-            [(client_filename, client_bytes)],
-            config.compression_level,
-            max_ciphertext_slice_bytes,
-            seen_sha256,
-            seen_ids,
-        )
-        combined_mapped = apply_mapping(list(publish_items) + client_publish_items, config)
+        publish_items = slice_prepared_sources(prepared, max_ciphertext_slice_bytes)
+        combined_mapped = apply_mapping(publish_items, config)
         realized = max(item["slice_token_len"] for item in combined_mapped)
         if logger_enabled("debug"):
-            log_event(
-                "debug",
-                "startup",
-                {
-                    "phase": "startup",
-                    "classification": "diagnostic",
-                    "reason_code": "startup_iteration",
-                },
-                context_fn=lambda: {
-                    "query_token_len": query_token_len,
-                    "realized_max_token_len": realized,
-                    "max_ciphertext_slice_bytes": max_ciphertext_slice_bytes,
-                },
-            )
+            log_event("debug", "startup", {
+                "phase": "startup",
+                "classification": "diagnostic",
+                "reason_code": "startup_iteration",
+                "query_token_len": query_token_len,
+                "realized_max_token_len": realized,
+                "max_ciphertext_slice_bytes": max_ciphertext_slice_bytes,
+            })
         if realized <= query_token_len:
             break
         query_token_len = realized

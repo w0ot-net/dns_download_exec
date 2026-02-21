@@ -111,3 +111,29 @@ combined_mapped = apply_mapping(publish_items, config)
   `os.path.basename` so the import stays).
 - `dnsdle/__init__.py`: Replace imports; hoist source reading and preparation
   above the loop; simplify the loop body to slice + map only.
+
+## Execution Notes
+
+Executed 2026-02-21. No deviations from the plan.
+
+- Removed `build_publish_items`, `build_publish_items_from_sources`,
+  `_build_single_publish_item`, and `_log_publish_item_built` from
+  `dnsdle/publish.py`.
+- Added `_prepare_single_source`, `read_payload_sources`,
+  `prepare_publish_sources`, and `slice_prepared_sources` to
+  `dnsdle/publish.py`.  The `os` import was retained (used by
+  `read_payload_sources`).
+- `slice_prepared_sources` constructs fresh output dicts on each call;
+  prepared dicts are never mutated.  The `max_ciphertext_slice_bytes > 0`
+  guard was moved here from the removed `build_publish_items_from_sources`.
+- The debug log in `prepare_publish_sources` omits `total_slices` (not
+  known at prepare time); all other fields from the old log are preserved.
+- In `dnsdle/__init__.py`: replaced the two old imports with the three new
+  ones; hoisted `read_payload_sources` + `prepare_publish_sources` above the
+  convergence loop; loop body now calls only `slice_prepared_sources` +
+  `apply_mapping`.  The `seen_sha256`/`seen_ids` extraction and the
+  cross-set forwarding to the second `build_publish_items_from_sources` call
+  were eliminated.
+- Validated: import succeeds for both modules; behavior is identical to
+  before with file I/O and compression now occurring exactly once.
+- Commit: `<see below>`.

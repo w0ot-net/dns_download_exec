@@ -11,11 +11,10 @@ from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _build_single_publish_item(
+def _prepare_single_source(
     source_filename,
     plaintext_bytes,
     compression_level,
-    max_ciphertext_slice_bytes,
     seen_plaintext_sha256,
     seen_file_ids,
 ):
@@ -58,42 +57,17 @@ def _build_single_publish_item(
         )
     seen_file_ids.add(file_id)
 
-    compressed_size = len(compressed_bytes)
-    slice_bytes_by_index = tuple(
-        compressed_bytes[i:i + max_ciphertext_slice_bytes]
-        for i in range(0, compressed_size, max_ciphertext_slice_bytes)
-    )
-    total_slices = len(slice_bytes_by_index)
-
     return {
-        "file_id": file_id,
-        "publish_version": publish_version,
-        "plaintext_sha256": plaintext_sha256,
-        "compressed_size": compressed_size,
-        "total_slices": total_slices,
-        "slice_bytes_by_index": slice_bytes_by_index,
         "source_filename": source_filename,
+        "plaintext_sha256": plaintext_sha256,
+        "compressed_bytes": compressed_bytes,
+        "compressed_size": len(compressed_bytes),
+        "publish_version": publish_version,
+        "file_id": file_id,
     }
 
 
-def _log_publish_item_built(item, source_index):
-    if not logger_enabled("debug"):
-        return
-    log_event("debug", "publish", {
-        "phase": "publish",
-        "classification": "diagnostic",
-        "reason_code": "publish_item_built",
-        "file_id": item["file_id"],
-        "publish_version": item["publish_version"],
-        "plaintext_sha256": item["plaintext_sha256"],
-        "compressed_size": item["compressed_size"],
-        "total_slices": item["total_slices"],
-        "source_filename": item["source_filename"],
-        "source_index": source_index,
-    })
-
-
-def build_publish_items(config, max_ciphertext_slice_bytes):
+def read_payload_sources(config):
     sources = []
     for file_index, path in enumerate(config.files):
         try:
@@ -107,45 +81,59 @@ def build_publish_items(config, max_ciphertext_slice_bytes):
                 {"file_index": file_index},
             )
         sources.append((os.path.basename(path), plaintext_bytes))
-
-    return build_publish_items_from_sources(
-        sources,
-        config.compression_level,
-        max_ciphertext_slice_bytes,
-    )
+    return sources
 
 
-def build_publish_items_from_sources(
-    sources,
-    compression_level,
-    max_ciphertext_slice_bytes,
-    seen_plaintext_sha256=None,
-    seen_file_ids=None,
-):
+def prepare_publish_sources(sources, compression_level):
+    seen_plaintext_sha256 = set()
+    seen_file_ids = set()
+    prepared = []
+    for source_index, (source_filename, plaintext_bytes) in enumerate(sources):
+        item = _prepare_single_source(
+            source_filename=source_filename,
+            plaintext_bytes=plaintext_bytes,
+            compression_level=compression_level,
+            seen_plaintext_sha256=seen_plaintext_sha256,
+            seen_file_ids=seen_file_ids,
+        )
+        if logger_enabled("debug"):
+            log_event("debug", "publish", {
+                "phase": "publish",
+                "classification": "diagnostic",
+                "reason_code": "publish_item_built",
+                "file_id": item["file_id"],
+                "publish_version": item["publish_version"],
+                "plaintext_sha256": item["plaintext_sha256"],
+                "compressed_size": item["compressed_size"],
+                "source_filename": item["source_filename"],
+                "source_index": source_index,
+            })
+        prepared.append(item)
+    return prepared
+
+
+def slice_prepared_sources(prepared_sources, max_ciphertext_slice_bytes):
     if max_ciphertext_slice_bytes <= 0:
         raise StartupError(
             "publish",
             "budget_unusable",
             "max_ciphertext_slice_bytes must be positive",
         )
-
-    if seen_plaintext_sha256 is None:
-        seen_plaintext_sha256 = set()
-    if seen_file_ids is None:
-        seen_file_ids = set()
-
     publish_items = []
-
-    for source_index, (source_filename, plaintext_bytes) in enumerate(sources):
-        item = _build_single_publish_item(
-            source_filename=source_filename,
-            plaintext_bytes=plaintext_bytes,
-            compression_level=compression_level,
-            max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
-            seen_plaintext_sha256=seen_plaintext_sha256,
-            seen_file_ids=seen_file_ids,
+    for item in prepared_sources:
+        compressed_bytes = item["compressed_bytes"]
+        compressed_size = item["compressed_size"]
+        slice_bytes_by_index = tuple(
+            compressed_bytes[i:i + max_ciphertext_slice_bytes]
+            for i in range(0, compressed_size, max_ciphertext_slice_bytes)
         )
-        publish_items.append(item)
-        _log_publish_item_built(item, source_index)
-
+        publish_items.append({
+            "file_id": item["file_id"],
+            "publish_version": item["publish_version"],
+            "plaintext_sha256": item["plaintext_sha256"],
+            "compressed_size": compressed_size,
+            "total_slices": len(slice_bytes_by_index),
+            "slice_bytes_by_index": slice_bytes_by_index,
+            "source_filename": item["source_filename"],
+        })
     return publish_items
