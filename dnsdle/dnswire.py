@@ -206,23 +206,19 @@ def _encode_opt_record(edns_size):
     return b"\x00" + struct.pack("!HHIH", DNS_QTYPE_OPT, edns_size, 0, 0)
 
 
-def _response_flags(request_flags, rcode):
-    return (
-        DNS_FLAG_QR
-        | DNS_FLAG_AA
-        | (request_flags & DNS_FLAG_RD)
-        | (request_flags & DNS_OPCODE_MASK)
-        | (rcode & 0x000F)
-    )
-
-
 def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_size=512):
     raw_question_bytes = request["raw_question_bytes"]
     qdcount = 1 if raw_question_bytes else 0
 
     ancount = 1 if answer_bytes else 0
     arcount = 1 if include_opt else 0
-    flags = _response_flags(request["flags"], rcode)
+    flags = (
+        DNS_FLAG_QR
+        | DNS_FLAG_AA
+        | (request["flags"] & DNS_FLAG_RD)
+        | (request["flags"] & DNS_OPCODE_MASK)
+        | (rcode & 0x000F)
+    )
 
     header = struct.pack(
         "!HHHHHH",

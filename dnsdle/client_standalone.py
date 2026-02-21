@@ -8,43 +8,27 @@ from dnsdle.extract import extract_functions
 from dnsdle.state import StartupError
 
 
-# Extraction specifications: function names to extract from each module
-_COMPAT_EXTRACTIONS = [
-    "encode_ascii",
-    "encode_utf8",
-    "decode_ascii",
-    "base32_lower_no_pad",
-    "base32_decode_no_pad",
-    "constant_time_equals",
-    "encode_ascii_int",
-    "is_binary",
+# Extraction specifications: (module_filename, [function_names]) in assembly order.
+_EXTRACTIONS = [
+    ("compat.py", [
+        "encode_ascii", "encode_utf8", "decode_ascii", "base32_lower_no_pad",
+        "base32_decode_no_pad", "constant_time_equals", "encode_ascii_int",
+        "is_binary",
+    ]),
+    ("helpers.py", [
+        "hmac_sha256", "dns_name_wire_length", "_derive_file_id",
+        "_derive_file_tag", "_derive_slice_token",
+    ]),
+    ("dnswire.py", ["_decode_name"]),
+    ("cname_payload.py", [
+        "_derive_file_bound_key", "_keystream_bytes", "_xor_bytes",
+    ]),
+    ("resolver_linux.py", ["_load_unix_resolvers"]),
+    ("resolver_windows.py", [
+        "_run_nslookup", "_parse_nslookup_output", "_load_windows_resolvers",
+    ]),
+    ("client_runtime.py", ["client_runtime"]),
 ]
-
-_HELPERS_EXTRACTIONS = [
-    "hmac_sha256",
-    "dns_name_wire_length",
-    "_derive_file_id",
-    "_derive_file_tag",
-    "_derive_slice_token",
-]
-
-_DNSWIRE_EXTRACTIONS = ["_decode_name"]
-
-_CNAME_PAYLOAD_EXTRACTIONS = [
-    "_derive_file_bound_key",
-    "_keystream_bytes",
-    "_xor_bytes",
-]
-
-_RESOLVER_LINUX_EXTRACTIONS = ["_load_unix_resolvers"]
-
-_RESOLVER_WINDOWS_EXTRACTIONS = [
-    "_run_nslookup",
-    "_parse_nslookup_output",
-    "_load_windows_resolvers",
-]
-
-_CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]
 
 
 _PREAMBLE_CONSTANTS = (
@@ -165,19 +149,9 @@ def build_client_source():
     )
     preamble = _PREAMBLE_HEADER + constants_lines + "\n" + _PREAMBLE_FOOTER
 
-    compat_blocks = extract_functions("compat.py", _COMPAT_EXTRACTIONS)
-    helpers_blocks = extract_functions("helpers.py", _HELPERS_EXTRACTIONS)
-    dnswire_blocks = extract_functions("dnswire.py", _DNSWIRE_EXTRACTIONS)
-    cname_blocks = extract_functions("cname_payload.py", _CNAME_PAYLOAD_EXTRACTIONS)
-    resolver_linux_blocks = extract_functions("resolver_linux.py", _RESOLVER_LINUX_EXTRACTIONS)
-    resolver_windows_blocks = extract_functions("resolver_windows.py", _RESOLVER_WINDOWS_EXTRACTIONS)
-    runtime_blocks = extract_functions("client_runtime.py", _CLIENT_RUNTIME_EXTRACTIONS)
-
-    extracted_parts = (
-        compat_blocks + helpers_blocks + dnswire_blocks
-        + cname_blocks + resolver_linux_blocks
-        + resolver_windows_blocks + runtime_blocks
-    )
+    extracted_parts = []
+    for module, names in _EXTRACTIONS:
+        extracted_parts.extend(extract_functions(module, names))
 
     extracted_source = "\n\n".join(extracted_parts)
     source = preamble + extracted_source + "\n"

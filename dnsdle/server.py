@@ -54,46 +54,25 @@ def _classified_response(request, config, rcode, classification, reason_code, co
     return response, _build_log(classification, reason_code, context)
 
 
-def _is_followup_query(prefix_labels, response_label):
-    return len(prefix_labels) >= 2 and prefix_labels[-1] == response_label
-
-
-def _invalid_additional_count(config, arcount):
-    if config.dns_edns_size == 512:
-        return arcount != 0
-    return arcount > 1
-
-
-def _query_section_counts(request):
-    return {
-        "qdcount": request["qdcount"],
-        "ancount": request["ancount"],
-        "nscount": request["nscount"],
-        "arcount": request["arcount"],
-    }
-
-
 def _envelope_miss_reason(request, config):
     if request["flags"] & DNS_FLAG_QR:
         return "invalid_query_flags", {"flags": request["flags"]}
     if request["opcode"] != DNS_OPCODE_QUERY:
         return "unsupported_opcode", {"opcode": request["opcode"]}
     if request["qdcount"] != 1 or request["ancount"] != 0 or request["nscount"] != 0:
-        return "invalid_query_section_counts", _query_section_counts(request)
-    if _invalid_additional_count(config, request["arcount"]):
+        return "invalid_query_section_counts", {
+            "qdcount": request["qdcount"],
+            "ancount": request["ancount"],
+            "nscount": request["nscount"],
+            "arcount": request["arcount"],
+        }
+    invalid_ar = request["arcount"] != 0 if config.dns_edns_size == 512 else request["arcount"] > 1
+    if invalid_ar:
         return "invalid_additional_count", {
             "arcount": request["arcount"],
             "dns_edns_size": config.dns_edns_size,
         }
     return None, None
-
-
-def _mapped_request_context(selected_domain, file_tag, slice_token):
-    return {
-        "selected_base_domain": selected_domain,
-        "file_tag": file_tag,
-        "slice_token": slice_token,
-    }
 
 
 def handle_request_message(runtime_state, request_bytes):
@@ -139,7 +118,7 @@ def handle_request_message(runtime_state, request_bytes):
             {"qtype": qtype, "qclass": qclass},
         )
 
-    if _is_followup_query(prefix_labels, config.response_label):
+    if len(prefix_labels) >= 2 and prefix_labels[-1] == config.response_label:
         answer_bytes = dnswire.build_a_answer(config.ttl)
         response = dnswire.build_response(
             request,
@@ -166,7 +145,11 @@ def handle_request_message(runtime_state, request_bytes):
 
     slice_token = prefix_labels[0]
     file_tag = prefix_labels[1]
-    request_context = _mapped_request_context(selected_domain, file_tag, slice_token)
+    request_context = {
+        "selected_base_domain": selected_domain,
+        "file_tag": file_tag,
+        "slice_token": slice_token,
+    }
     key = (file_tag, slice_token)
     identity_value = runtime_state.lookup_by_key.get(key)
     if identity_value is None:

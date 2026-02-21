@@ -14,20 +14,6 @@ from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _payload_wire_contribution(char_count, label_cap):
-    if char_count <= 0:
-        return 0
-    return char_count + (char_count + label_cap - 1) // label_cap
-
-
-def _max_chars_for_wire_budget(wire_budget, label_cap):
-    if wire_budget <= 0:
-        return 0
-    k = wire_budget // (label_cap + 1)
-    remaining = wire_budget - k * (label_cap + 1)
-    return k * label_cap + max(remaining - 1, 0)
-
-
 def _validate_query_token_len(config, query_token_len):
     if query_token_len <= 0:
         raise StartupError(
@@ -79,10 +65,17 @@ def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
     )
     response_budget = packet_size_limit - response_fixed
 
-    max_payload_chars = _max_chars_for_wire_budget(
-        min(wire_budget, response_budget), label_cap
+    combined_budget = min(wire_budget, response_budget)
+    if combined_budget <= 0:
+        max_payload_chars = 0
+    else:
+        k = combined_budget // (label_cap + 1)
+        remaining = combined_budget - k * (label_cap + 1)
+        max_payload_chars = k * label_cap + max(remaining - 1, 0)
+    payload_wire = (
+        max_payload_chars + (max_payload_chars + label_cap - 1) // label_cap
+        if max_payload_chars > 0 else 0
     )
-    payload_wire = _payload_wire_contribution(max_payload_chars, label_cap)
     winning_response_size = response_fixed + payload_wire
 
     if max_payload_chars <= 0:

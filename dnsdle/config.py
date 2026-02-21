@@ -55,8 +55,7 @@ def _normalize_domain(value):
         raise StartupError("config", "invalid_config", "domain is required")
 
     domain = value.strip().lower()
-    while domain.endswith("."):
-        domain = domain[:-1]
+    domain = domain.rstrip(".")
 
     if not domain:
         raise StartupError("config", "invalid_config", "domain is empty")
@@ -184,11 +183,7 @@ def _normalize_files(raw_value):
     if raw_value is None:
         raise StartupError("config", "invalid_config", "files is required")
 
-    values = []
-    for part in raw_value.split(","):
-        path = part.strip()
-        if path:
-            values.append(path)
+    values = [p.strip() for p in raw_value.split(",") if p.strip()]
 
     if not values:
         raise StartupError("config", "invalid_config", "files list is empty")

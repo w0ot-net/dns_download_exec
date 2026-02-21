@@ -11,17 +11,6 @@ from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _sha256_hex(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def _chunk_bytes(data, chunk_size):
-    return tuple(
-        data[i:i + chunk_size]
-        for i in range(0, len(data), chunk_size)
-    )
-
-
 def _build_single_publish_item(
     source_filename,
     plaintext_bytes,
@@ -30,7 +19,7 @@ def _build_single_publish_item(
     seen_plaintext_sha256,
     seen_file_ids,
 ):
-    plaintext_sha256 = _sha256_hex(plaintext_bytes)
+    plaintext_sha256 = hashlib.sha256(plaintext_bytes).hexdigest()
     if plaintext_sha256 in seen_plaintext_sha256:
         raise StartupError(
             "publish",
@@ -58,7 +47,7 @@ def _build_single_publish_item(
             {"source_filename": source_filename},
         )
 
-    publish_version = _sha256_hex(compressed_bytes)
+    publish_version = hashlib.sha256(compressed_bytes).hexdigest()
     file_id = _derive_file_id(publish_version)
     if file_id in seen_file_ids:
         raise StartupError(
@@ -70,7 +59,10 @@ def _build_single_publish_item(
     seen_file_ids.add(file_id)
 
     compressed_size = len(compressed_bytes)
-    slice_bytes_by_index = _chunk_bytes(compressed_bytes, max_ciphertext_slice_bytes)
+    slice_bytes_by_index = tuple(
+        compressed_bytes[i:i + max_ciphertext_slice_bytes]
+        for i in range(0, compressed_size, max_ciphertext_slice_bytes)
+    )
     total_slices = len(slice_bytes_by_index)
 
     return {
