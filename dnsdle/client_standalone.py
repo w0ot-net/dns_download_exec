@@ -1,5 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 
+import sys
+
 from dnsdle.compat import encode_ascii
 from dnsdle import constants as _c
 from dnsdle.extract import extract_functions
@@ -138,7 +140,7 @@ class DnsParseError(ClientError):
 '''
 
 
-_PY2 = (str is bytes)
+_PY2 = sys.version_info[0] == 2
 
 _UNIVERSAL_CLIENT_FILENAME = "dnsdle_universal_client.py"
 
