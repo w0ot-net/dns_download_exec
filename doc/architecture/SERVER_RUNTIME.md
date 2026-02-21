@@ -18,7 +18,7 @@ semantics for deterministic mappings.
 
 ## Process Lifecycle
 
-Server runtime has four phases:
+Server runtime has five phases:
 1. startup validation
 2. publish preparation
 3. generated-client emission
@@ -64,6 +64,48 @@ Publish pipeline details are defined in
 After publish preparation, startup must run client generation before entering
 serve mode. Generation behavior is specified in
 `doc/architecture/CLIENT_GENERATION.md`.
+
+---
+
+## Startup Convergence
+
+Token length and slice budget are mutually dependent: longer query tokens
+consume more QNAME bytes, reducing the available CNAME payload budget, which
+produces more slices per file, which may require longer tokens to avoid mapping
+collisions.  The server resolves this circular dependency at startup using a
+fixed-point iteration in `build_startup_state()` (`dnsdle/__init__.py`).
+
+### Algorithm
+
+1. Generate the universal client source (independent of token length).
+2. Initialize `query_token_len = 4` (minimum practical token length).
+3. For each iteration (up to 10):
+   a. Compute the CNAME payload budget from `query_token_len` and config.
+   b. Build publish items for all user files using the computed budget.
+   c. Build publish items for the universal client using the same budget.
+   d. Apply deterministic mapping to all items combined.
+   e. Find the maximum realized `slice_token_len` across all mapped items.
+   f. If `realized <= query_token_len`: converged.  Break.
+   g. Otherwise: set `query_token_len = realized` and repeat.
+4. If 10 iterations complete without convergence: raise
+   `StartupError("token_convergence_failed")`.
+
+### Monotonicity
+
+`query_token_len` only increases across iterations (step 3g sets it to
+`realized`, which was strictly greater than the previous value).  The realized
+token length is bounded by the finite base32 alphabet and available mapping
+space, so the iteration is guaranteed to converge or exhaust the safety bound
+within a small number of steps.
+
+### Post-Convergence
+
+After convergence, the combined mapping is used to build `RuntimeState`.  The
+universal client publish item must be present in the combined mapping; its
+absence raises `StartupError("mapping_stability_violation")`.
+
+Stagers are then generated for each payload file using the converged client and
+payload publish items (see `doc/architecture/STAGER.md`).
 
 ---
 
@@ -224,3 +266,4 @@ Forced shutdown may drop in-flight responses; this is acceptable for UDP.
 - `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
 - `doc/architecture/CLIENT_GENERATION.md`
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`
+- `doc/architecture/STAGER.md`

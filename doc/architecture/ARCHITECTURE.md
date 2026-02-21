@@ -97,16 +97,14 @@ Python 2.7/3.x compatibility helpers are centralized in `dnsdle/compat.py`.
 Runtime modules should consume compat aliases/helpers instead of reimplementing
 per-module byte/text/int branching.
 
-### Client Parity Core Boundaries
+### Client Protocol Modules
 
-Client protocol verification logic is split into non-overlapping modules:
+Client protocol logic lives in two modules:
 - `dnsdle/dnswire.py`: low-level DNS wire parsing primitives only (header, name
   decode, RR traversal, pointer safety checks).
-- `dnsdle/client_payload.py`: response-envelope contract validation plus CNAME
-  payload decode, record invariant checks, MAC verify, and decrypt.
-- `dnsdle/client_reassembly.py`: duplicate-slice equality enforcement,
-  full-index coverage checks, ordered reassembly, decompress, and plaintext hash
-  verification.
+- `dnsdle/client_runtime.py`: all client-side protocol logic -- CLI parsing,
+  download loop, DNS query/response handling, CNAME payload decode, crypto
+  verification, reassembly, decompression, and output writing.
 
 No module may maintain a second compressed-name decoding implementation.
 
@@ -269,3 +267,4 @@ The v1 goal is a small, deterministic, auditable file download path over DNS.
 ## Related Docs
 
 - `doc/architecture/LOGGING.md`
+- `doc/architecture/STAGER.md`

@@ -135,3 +135,23 @@ Process Lifecycle section (line 21 says "four phases" but lists 5 items).
 - `doc/architecture/SERVER_RUNTIME.md`: Add "Startup Convergence" section;
   fix phase count text; add STAGER.md to Related Docs.
 - `doc/architecture/STAGER.md`: New file documenting the full stager pipeline.
+
+## Execution Notes
+
+Executed 2026-02-21.  All plan items implemented as designed with no deviations.
+
+1. **ARCHITECTURE.md**: Renamed section "Client Parity Core Boundaries" to
+   "Client Protocol Modules"; replaced `client_payload.py`/`client_reassembly.py`
+   references with `client_runtime.py`; added STAGER.md to Related Docs.
+2. **ERRORS_AND_INVARIANTS.md**: Replaced "Parity-core boundary" with
+   "Client module boundary" referencing `client_runtime.py` as single authority
+   for exit codes 4/5/6.
+3. **STAGER.md**: Created with sections: Overview, Template Assembly,
+   Placeholder Substitution (19-token table), Minification (5-pass pipeline),
+   Encoding and Verification, Output Contract, Runtime Behavior, Invariants,
+   Related Docs.
+4. **SERVER_RUNTIME.md**: Fixed "four phases" to "five phases"; added
+   "Startup Convergence" section (Algorithm, Monotonicity, Post-Convergence);
+   added STAGER.md to Related Docs.
+
+Commit: (see below)
