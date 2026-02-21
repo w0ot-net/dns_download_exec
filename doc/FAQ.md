@@ -71,3 +71,42 @@ you want file delivery to blend into normal DNS traffic.
 - **Covert file distribution.** DNS queries are routine traffic and rarely
   inspected at the payload level, making dnsdle less visible than HTTP-based
   transfers in environments with deep packet inspection.
+
+## How does the crypto work?
+
+Everything is built from HMAC-SHA256 and XOR using the standard library only.
+The operator supplies a pre-shared key (PSK); all other keying material is
+derived deterministically from the PSK, a file identity, and a publish version.
+
+**Key derivation.** For each published file the server derives two independent
+32-byte keys:
+
+- `enc_key = HMAC-SHA256(psk, "dnsdle-enc-v1|" + file_id + "|" + publish_version)`
+- `mac_key = HMAC-SHA256(psk, "dnsdle-mac-v1|" + file_id + "|" + publish_version)`
+
+Because the key context includes `file_id` and `publish_version`, different
+files and different versions of the same file never share keys.
+
+**Encryption.** Each slice is encrypted by XOR with a deterministic keystream.
+The keystream is a concatenation of HMAC-SHA256 blocks keyed by `enc_key`:
+
+    block[i] = HMAC-SHA256(enc_key, "dnsdle-enc-stream-v1|" + file_id
+               + "|" + publish_version + "|" + slice_index + "|" + i)
+
+The stream is truncated to the slice length. Because the nonce input is
+`(file_id, publish_version, slice_index)` rather than a send-order counter,
+the same slice always produces the same ciphertext regardless of retrieval
+order or retries.
+
+**Authentication.** Each slice carries an 8-byte truncated HMAC-SHA256 tag
+computed with `mac_key` over the slice metadata and ciphertext:
+
+    mac_input = file_id | publish_version | slice_index
+                | total_slices | compressed_size | ciphertext
+
+The client verifies the MAC before decrypting. Any mismatch is a hard failure
+-- there are no warnings or fallbacks.
+
+**End-to-end integrity.** After all slices are decrypted and reassembled in
+index order, the client decompresses and checks the plaintext SHA-256 against
+the hash embedded in the client parameters. A mismatch discards the output.
