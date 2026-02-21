@@ -47,6 +47,28 @@ _PLACEHOLDER_RE = re.compile(r"__S(\d+)__")
 _IDENT_RE = re.compile(r"\b[a-zA-Z_]\w*\b")
 _ATTR_RE = re.compile(r"\.([a-zA-Z_]\w*)")
 _PLACEHOLDER_NAME_RE = re.compile(r"^__S\d+__$")
+_KWARG_RE = re.compile(r"\b([a-zA-Z_]\w*)\s*=(?!=)")
+
+
+def _collect_kwarg_names(source):
+    """Collect keyword argument names (identifiers before = inside parens).
+
+    These are external parameter names (e.g. subprocess.run(timeout=5))
+    that must not be renamed.
+    """
+    depth = 0
+    depths = []
+    for ch in source:
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        depths.append(depth)
+    kwarg_names = set()
+    for m in _KWARG_RE.finditer(source):
+        if depths[m.start()] > 0:
+            kwarg_names.add(m.group(1))
+    return kwarg_names
 
 
 def _generate_short_names(count, skip):
@@ -77,7 +99,8 @@ def _build_rename_table(source):
     """
     all_idents = set(_IDENT_RE.findall(source))
     attr_names = set(_ATTR_RE.findall(source))
-    skip = set(keyword.kwlist) | _RESERVED_NAMES | attr_names
+    kwarg_names = _collect_kwarg_names(source)
+    skip = set(keyword.kwlist) | _RESERVED_NAMES | attr_names | kwarg_names
     skip.update(n for n in all_idents if _PLACEHOLDER_NAME_RE.match(n))
     candidates = sorted(
         (n for n in all_idents if n not in skip and len(n) > 2),
