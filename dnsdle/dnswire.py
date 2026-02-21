@@ -26,13 +26,6 @@ class DnsParseError(Exception):
     pass
 
 
-def _message_length(message):
-    return len(message)
-
-
-def _ord_byte(value):
-    return byte_value(value)
-
 
 def _to_label_bytes(label):
     raw = encode_ascii(label)
@@ -113,7 +106,7 @@ def _unpack_header(message):
 
 def _decode_question(message, start_offset):
     labels, offset = _decode_name(message, start_offset)
-    if offset + 4 > _message_length(message):
+    if offset + 4 > len(message):
         raise DnsParseError("truncated DNS question")
     qtype, qclass = struct.unpack("!HH", message[offset : offset + 4])
     return (
@@ -128,12 +121,12 @@ def _decode_question(message, start_offset):
 
 def _decode_resource_record(message, start_offset):
     name_labels, offset = _decode_name(message, start_offset)
-    if offset + 10 > _message_length(message):
+    if offset + 10 > len(message):
         raise DnsParseError("truncated resource record")
     rtype, rclass, ttl, rdlength = struct.unpack("!HHIH", message[offset : offset + 10])
     rdata_offset = offset + 10
     rdata_end = rdata_offset + rdlength
-    if rdata_end > _message_length(message):
+    if rdata_end > len(message):
         raise DnsParseError("truncated resource record rdata")
     record = {
         "name_labels": name_labels,
@@ -160,7 +153,7 @@ def _decode_resource_records(message, start_offset, count):
 
 
 def parse_message(message):
-    if _message_length(message) < DNS_HEADER_BYTES:
+    if len(message) < DNS_HEADER_BYTES:
         raise DnsParseError("message shorter than DNS header")
 
     message_id, flags, qdcount, ancount, nscount, arcount = _unpack_header(message)
@@ -175,7 +168,7 @@ def parse_message(message):
     authorities, offset = _decode_resource_records(message, offset, nscount)
     additionals, offset = _decode_resource_records(message, offset, arcount)
 
-    if offset != _message_length(message):
+    if offset != len(message):
         raise DnsParseError("trailing bytes in message")
 
     return {
@@ -196,7 +189,7 @@ def parse_message(message):
 
 
 def parse_request(message):
-    if _message_length(message) < DNS_HEADER_BYTES:
+    if len(message) < DNS_HEADER_BYTES:
         raise DnsParseError("message shorter than DNS header")
 
     request_id, flags, qdcount, ancount, nscount, arcount = _unpack_header(message)
