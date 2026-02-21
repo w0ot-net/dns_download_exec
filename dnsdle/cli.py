@@ -125,7 +125,7 @@ def _build_parser():
     logging_grp.add_argument("--log-level", default=DEFAULT_LOG_LEVEL,
                              help="error|warn|info|debug|trace (default: %(default)s)")
     logging_grp.add_argument("--log-file", default=DEFAULT_LOG_FILE,
-                             help="log file path (if omitted, logs to stdout)")
+                             help="log file path (default: none)")
     logging_grp.add_argument("--verbose", action="store_true", default=False,
                              help="emit JSON logs to stdout instead of human-friendly "
                                   "output on stderr (with --log-file, JSON goes to "

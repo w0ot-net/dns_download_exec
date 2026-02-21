@@ -1,5 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 
+import os
+
 from dnsdle.budget import compute_max_ciphertext_slice_bytes
 from dnsdle.cli import parse_cli_args
 from dnsdle.client_standalone import _UNIVERSAL_CLIENT_FILENAME
@@ -158,6 +160,6 @@ def build_startup_state(argv=None):
         if item.source_filename == client_filename:
             display_names[item.file_tag] = "(universal client)"
         else:
-            display_names[item.file_tag] = item.source_filename
+            display_names[item.file_tag] = os.path.basename(item.source_filename)
 
     return runtime_state, generation_result, stagers, display_names
