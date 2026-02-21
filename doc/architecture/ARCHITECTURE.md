@@ -201,10 +201,10 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
 ## Runtime State Model
 
-The server has two main state classes:
-- immutable publish state (file manifests and slices)
-- immutable lookup indexes (`lookup_by_key`, `slice_data_by_identity`)
+The server has three main state classes:
+- immutable publish state (file manifests, slices, and `lookup_by_key` index)
 - network service state (socket, request handling, logging)
+- per-request transient state (counters, signal flags)
 
 The server must not mutate publish bytes while serving.
 

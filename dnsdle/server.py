@@ -82,19 +82,13 @@ def handle_request_message(runtime_state, request_bytes):
     except dnswire.DnsParseError:
         return None, None
     if logger_enabled("trace"):
-        log_event(
-            "trace",
-            "server",
-            {
-                "phase": "server",
-                "classification": "diagnostic",
-                "reason_code": "request_parsed",
-            },
-            context_fn=lambda: {
-                "request_len": len(request_bytes),
-                "qdcount": request.get("qdcount"),
-            },
-        )
+        log_event("trace", "server", {
+            "phase": "server",
+            "classification": "diagnostic",
+            "reason_code": "request_parsed",
+            "request_len": len(request_bytes),
+            "qdcount": request.get("qdcount"),
+        })
 
     miss_reason, miss_context = _envelope_miss_reason(request, config)
     if miss_reason is not None:
@@ -151,42 +145,22 @@ def handle_request_message(runtime_state, request_bytes):
         "slice_token": slice_token,
     }
     key = (file_tag, slice_token)
-    identity_value = runtime_state.lookup_by_key.get(key)
-    if identity_value is None:
+    entry = runtime_state.lookup_by_key.get(key)
+    if entry is None:
         return _classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", "mapping_not_found", request_context)
 
-    file_id, publish_version, slice_index = identity_value
+    file_id, publish_version, slice_index, slice_bytes, total_slices, compressed_size = entry
     if logger_enabled("debug"):
-        log_event(
-            "debug",
-            "server",
-            {
-                "phase": "server",
-                "classification": "diagnostic",
-                "reason_code": "mapping_resolved",
-            },
-            context_fn=lambda: {
-                "selected_base_domain": selected_domain,
-                "file_tag": file_tag,
-                "slice_token": slice_token,
-                "file_id": file_id,
-                "slice_index": slice_index,
-            },
-        )
-    identity = (file_id, publish_version)
-    slice_data = runtime_state.slice_data_by_identity.get(identity)
-    if slice_data is None:
-        return _classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", "identity_missing", request_context)
-    slice_table, compressed_size = slice_data
-    total_slices = len(slice_table)
-    if slice_index < 0 or slice_index >= total_slices:
-        return _classified_response(
-            request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
-            "slice_index_out_of_bounds",
-            dict(request_context, slice_index=slice_index, slice_count=total_slices),
-        )
-
-    slice_bytes = slice_table[slice_index]
+        log_event("debug", "server", {
+            "phase": "server",
+            "classification": "diagnostic",
+            "reason_code": "mapping_resolved",
+            "selected_base_domain": selected_domain,
+            "file_tag": file_tag,
+            "slice_token": slice_token,
+            "file_id": file_id,
+            "slice_index": slice_index,
+        })
     try:
         payload_labels = cname_payload.payload_labels_for_slice(
             config.psk,

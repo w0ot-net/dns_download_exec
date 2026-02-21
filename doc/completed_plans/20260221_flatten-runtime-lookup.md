@@ -103,3 +103,26 @@ Update the "Runtime State Model" section (line 206) to remove the reference to
 - `dnsdle/state.py`: remove `slice_data_by_identity` from `RuntimeState` namedtuple; flatten lookup values in `build_runtime_state`; remove `slice_data_by_identity` dict and its `duplicate_publish_identity` check
 - `dnsdle/server.py`: replace two-hop lookup in `handle_request_message` with single destructure; remove `identity_missing` and `slice_index_out_of_bounds` error paths
 - `doc/architecture/ARCHITECTURE.md`: update Runtime State Model to reflect single lookup table
+
+## Execution Notes
+
+Executed 2026-02-21.
+
+Implemented as planned with one minor deviation in the architecture doc: the
+review identified that the existing "two main state classes" count was wrong
+(three bullets listed). Rather than just removing `slice_data_by_identity`
+from the second bullet, the section was rewritten to three accurate bullets:
+immutable publish state (now including `lookup_by_key`), network service
+state, and per-request transient state.
+
+Changes:
+- `dnsdle/state.py`: removed `slice_data_by_identity` field from
+  `RuntimeState` namedtuple; removed identity dict, its population loop, and
+  the `duplicate_publish_identity` check from `build_runtime_state`; flattened
+  lookup values to 6-tuples containing `(file_id, publish_version, index,
+  slice_bytes, total_slices, compressed_size)`
+- `dnsdle/server.py`: replaced two-hop lookup in `handle_request_message`
+  with single flat destructure; removed `identity_missing` and
+  `slice_index_out_of_bounds` error paths (14 lines removed)
+- `doc/architecture/ARCHITECTURE.md`: rewrote Runtime State Model bullets to
+  reflect single lookup table and correct the bullet count

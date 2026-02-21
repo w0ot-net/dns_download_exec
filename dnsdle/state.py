@@ -49,7 +49,6 @@ RuntimeState = namedtuple(
         "budget_info",
         "publish_items",
         "lookup_by_key",
-        "slice_data_by_identity",
     ],
 )
 
@@ -72,26 +71,10 @@ def to_publish_item(mapped_item):
 def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes, budget_info):
     publish_items = []
     lookup = {}
-    slice_data_by_identity = {}
 
     for item in mapped_publish_items:
         publish_item = to_publish_item(item)
         publish_items.append(publish_item)
-        identity = (publish_item.file_id, publish_item.publish_version)
-        if identity in slice_data_by_identity:
-            raise StartupError(
-                "publish",
-                "duplicate_publish_identity",
-                "duplicate publish identity while building final state",
-                {
-                    "file_id": publish_item.file_id,
-                    "publish_version": publish_item.publish_version,
-                },
-            )
-        slice_data_by_identity[identity] = (
-            publish_item.slice_bytes_by_index,
-            publish_item.compressed_size,
-        )
 
         for index, token in enumerate(publish_item.slice_tokens):
             key = (publish_item.file_tag, token)
@@ -105,7 +88,14 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
                         "slice_token": token,
                     },
                 )
-            lookup[key] = (publish_item.file_id, publish_item.publish_version, index)
+            lookup[key] = (
+                publish_item.file_id,
+                publish_item.publish_version,
+                index,
+                publish_item.slice_bytes_by_index[index],
+                publish_item.total_slices,
+                publish_item.compressed_size,
+            )
 
     return RuntimeState(
         config=config,
@@ -113,5 +103,4 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
         budget_info=budget_info,
         publish_items=tuple(publish_items),
         lookup_by_key=lookup,
-        slice_data_by_identity=slice_data_by_identity,
     )
