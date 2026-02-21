@@ -131,3 +131,24 @@ count from 10 to 8.
 - `dnsdle/config.py`: inline `_is_printable_ascii`
 - `dnsdle/logging_runtime.py`: remove unused `level_name` param from `_record_is_required`
 - `doc/architecture/CLIENT_GENERATION.md`: update extraction function list
+
+## Execution Notes
+
+Executed 2026-02-21.  All three phases implemented as planned with no deviations.
+
+**Phase 1** (`5926c49`): Removed `byte_value` and `iter_byte_values` from
+`compat.py`.  Updated all call sites (`cname_payload._xor_bytes`,
+`dnswire._decode_name`, `client_runtime._parse_slice_record`) to use
+`bytearray` directly.  Simplified `constant_time_equals` by removing
+unreachable `try/except`.  Removed both entries from `_COMPAT_EXTRACTIONS`
+in `client_standalone.py`.  Care taken to convert `bytearray` slices back
+to `bytes` at API boundaries (`_parse_slice_record` return values) to
+maintain `is_binary` compatibility.
+
+**Phase 2** (`7908a80`): Inlined `_is_printable_ascii` in `config.py`.
+Removed redundant `question_bytes` alias in `dnswire.build_response`.
+Removed unused `level_name` parameter from
+`logging_runtime._record_is_required` and its call site.
+
+**Phase 3** (`92ca6ea`): Updated `CLIENT_GENERATION.md` extraction list
+(10 -> 8 functions).
