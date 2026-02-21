@@ -123,3 +123,23 @@ Remove: `_safe_json_value`, `_SENSITIVE_EXACT_KEYS`, imports of `is_binary`,
 - `dnsdle/logging_runtime.py`: delete `_safe_json_value`, `_SENSITIVE_EXACT_KEYS`;
   simplify `_is_sensitive_key` and `_redact_map`; remove unused `is_binary`,
   `key_text`, `PY2` imports.
+
+## Execution Notes
+
+Executed 2026-02-21. All changes implemented as designed, no deviations.
+
+- `cli.py`: deleted `_KNOWN_LONG_OPTIONS` (19 lines), `_validate_long_option_tokens`
+  (21 lines), and `_raw_argv` (3 lines). Added hidden `--domain` argument with
+  `dest="domain_deprecated"` and `help=argparse.SUPPRESS`. `parse_cli_args` now
+  delegates directly to `parser.parse_args(argv)` (argparse handles `None` argv
+  natively) and checks `domain_deprecated` post-parse.
+- `client_generator.py`: deleted `_remove_stale_managed_files` (29 lines) and its
+  call site.
+- `logging_runtime.py`: deleted `_safe_json_value` (13 lines), `_SENSITIVE_EXACT_KEYS`,
+  and imports of `is_binary`, `key_text`, `PY2`. Simplified `_is_sensitive_key` to
+  operate on `str` keys directly. Simplified `_redact_map` to flat key scan with
+  inline `tuple`/`list` -> `list` conversion.
+
+Net: -112 lines deleted, +30 lines added across 3 files.
+
+Commit: `7a2c515`
