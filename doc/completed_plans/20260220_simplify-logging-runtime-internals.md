@@ -25,7 +25,7 @@ internal to the module with no impact on external callers.
    must be applied twice.
 
 3. **`reset_active_logger` and `configure_active_logger` duplicate the
-   close-and-replace pattern (lines 232–246).**  Both functions repeat:
+   close-and-replace pattern (lines 244–258).**  Both functions repeat:
    ```python
    if _ACTIVE_LOGGER is not None:
        _ACTIVE_LOGGER.close()
@@ -115,3 +115,18 @@ def configure_active_logger(config):
   replace `_normalize_level_name` / `_normalize_category_name` with
   `_normalize_name`; extract `_swap_active_logger` and update
   `reset_active_logger` / `configure_active_logger`
+
+## Execution Notes
+
+All three changes applied to `dnsdle/logging_runtime.py` as designed:
+
+1. `emit` output-dict construction: replaced loop with direct assignment after
+   `_redact_map` (lines 168-171).
+2. Merged `_normalize_level_name` and `_normalize_category_name` into
+   `_normalize_name(value, valid_set, label)` (line 84); updated all four call
+   sites (`__init__`, `enabled`, `emit` x2).
+3. Extracted `_swap_active_logger` (lines 233-238); `reset_active_logger` and
+   `configure_active_logger` now delegate to it (lines 241-246).
+
+Review finding addressed: fixed line reference in Problem section from
+"lines 232-246" to "lines 244-258".

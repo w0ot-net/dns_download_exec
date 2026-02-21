@@ -81,18 +81,11 @@ def _redact_map(record):
     return output
 
 
-def _normalize_level_name(level):
-    level_name = (level or "").strip().lower()
-    if level_name not in LOG_LEVELS:
-        raise ValueError("unsupported log level: %s" % level)
-    return level_name
-
-
-def _normalize_category_name(category):
-    category_name = (category or "").strip().lower()
-    if category_name not in LOG_CATEGORIES:
-        raise ValueError("unsupported log category: %s" % category)
-    return category_name
+def _normalize_name(value, valid_set, label):
+    name = (value or "").strip().lower()
+    if name not in valid_set:
+        raise ValueError("unsupported log %s: %s" % (label, value))
+    return name
 
 
 def _record_category(record):
@@ -128,7 +121,7 @@ class RequiredLogEmissionError(Exception):
 
 class RuntimeLogger(object):
     def __init__(self, level=DEFAULT_LOG_LEVEL, log_file="", stream=None):
-        self.level = _normalize_level_name(level)
+        self.level = _normalize_name(level, LOG_LEVELS, "level")
         self.log_file = log_file
         self._owns_stream = False
         self._stream = stream
@@ -151,15 +144,15 @@ class RuntimeLogger(object):
     def enabled(self, level, required=False):
         if required:
             return True
-        return _LEVEL_RANK[_normalize_level_name(level)] >= _LEVEL_RANK[self.level]
+        return _LEVEL_RANK[_normalize_name(level, LOG_LEVELS, "level")] >= _LEVEL_RANK[self.level]
 
     def _write_record(self, record):
         line = json.dumps(record, sort_keys=True)
         return _write_line(self._stream, line)
 
     def emit(self, level, category, event, context_fn=None, required=False):
-        level_name = _normalize_level_name(level)
-        category_name = _normalize_category_name(category)
+        level_name = _normalize_name(level, LOG_LEVELS, "level")
+        category_name = _normalize_name(category, LOG_CATEGORIES, "category")
         base_event = dict(event or {})
         event_required = required or _record_is_required(base_event, level_name)
         if not event_required and _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
@@ -172,14 +165,10 @@ class RuntimeLogger(object):
                     if key not in base_event:
                         base_event[key] = value
 
-        output = {
-            "ts_unix_ms": _now_unix_ms(),
-            "level": level_name.upper(),
-            "category": category_name,
-        }
-        for key, value in _redact_map(base_event).items():
-            if key not in output:
-                output[key] = value
+        output = _redact_map(base_event)
+        output["ts_unix_ms"] = _now_unix_ms()
+        output["level"] = level_name.upper()
+        output["category"] = category_name
         emitted = self._write_record(output)
         if event_required and not emitted:
             raise RequiredLogEmissionError("required log emission failed")
@@ -241,21 +230,20 @@ def _bootstrap_logger():
 _ACTIVE_LOGGER = _bootstrap_logger()
 
 
-def reset_active_logger():
+def _swap_active_logger(new_logger):
     global _ACTIVE_LOGGER
     if _ACTIVE_LOGGER is not None:
         _ACTIVE_LOGGER.close()
-    _ACTIVE_LOGGER = _bootstrap_logger()
+    _ACTIVE_LOGGER = new_logger
     return _ACTIVE_LOGGER
+
+
+def reset_active_logger():
+    return _swap_active_logger(_bootstrap_logger())
 
 
 def configure_active_logger(config):
-    global _ACTIVE_LOGGER
-    logger = build_logger_from_config(config)
-    if _ACTIVE_LOGGER is not None:
-        _ACTIVE_LOGGER.close()
-    _ACTIVE_LOGGER = logger
-    return _ACTIVE_LOGGER
+    return _swap_active_logger(build_logger_from_config(config))
 
 
 def logger_enabled(level, required=False):
