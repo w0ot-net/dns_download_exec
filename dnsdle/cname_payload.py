@@ -43,15 +43,6 @@ def _derive_file_bound_key(psk, file_id, publish_version, key_label):
 # __END_EXTRACT__
 
 
-def _enc_key(psk, file_id, publish_version):
-    return _derive_file_bound_key(
-        psk,
-        file_id,
-        publish_version,
-        PAYLOAD_ENC_KEY_LABEL,
-    )
-
-
 # __EXTRACT: _keystream_bytes__
 def _keystream_bytes(enc_key, file_id, publish_version, slice_index, output_len):
     if output_len <= 0:
@@ -88,8 +79,8 @@ def _xor_bytes(left_bytes, right_bytes):
         raise ValueError("xor inputs must have equal length")
 
     out = bytearray(len(left_bytes))
-    for index, values in enumerate(zip(iter_byte_values(left_bytes), iter_byte_values(right_bytes))):
-        out[index] = values[0] ^ values[1]
+    for index, (a, b) in enumerate(zip(iter_byte_values(left_bytes), iter_byte_values(right_bytes))):
+        out[index] = a ^ b
     return bytes(out)
 # __END_EXTRACT__
 
@@ -97,7 +88,7 @@ def _xor_bytes(left_bytes, right_bytes):
 def _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, slice_bytes):
     if not slice_bytes:
         raise ValueError("slice_bytes must be non-empty")
-    key = _enc_key(psk, file_id, publish_version)
+    key = _derive_file_bound_key(psk, file_id, publish_version, PAYLOAD_ENC_KEY_LABEL)
     stream = _keystream_bytes(
         key,
         file_id,
@@ -145,30 +136,6 @@ def _mac_bytes(
         PAYLOAD_MAC_KEY_LABEL,
     )
     return hmac_sha256(mac_key, message)[:PAYLOAD_MAC_TRUNC_LEN]
-
-
-def decrypt_slice_ciphertext(psk, file_id, publish_version, slice_index, ciphertext_bytes):
-    return _encrypt_slice_bytes(psk, file_id, publish_version, slice_index, ciphertext_bytes)
-
-
-def compute_slice_mac(
-    psk,
-    file_id,
-    publish_version,
-    slice_index,
-    total_slices,
-    compressed_size,
-    ciphertext_bytes,
-):
-    return _mac_bytes(
-        psk,
-        file_id,
-        publish_version,
-        slice_index,
-        total_slices,
-        compressed_size,
-        ciphertext_bytes,
-    )
 
 
 def build_slice_record(
