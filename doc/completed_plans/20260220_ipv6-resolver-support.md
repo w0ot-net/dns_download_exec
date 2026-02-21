@@ -137,3 +137,30 @@ in `_discover_resolver`).
   notation in start log line
 - `dnsdle/stager_minify.py`: remove `_IPV4_RE` and `match` entries from
   `_RENAME_TABLE`
+
+## Execution Notes
+
+Implemented as planned with no deviations.  All five design sections
+executed:
+
+1. **Parser rewrite** -- identical structural parser in both
+   `resolver_windows.py` and `client_runtime.py`.  Returns `[]` on no match.
+   Uses `seen_addr` state guard for continuation lines.  Uses `addr` (already
+   in rename table) instead of introducing `value` to avoid a new minifier
+   entry.
+
+2. **IPv6 socket support** -- `_send_query` and `_send_dns_query` detect AF
+   via `":" in addr[0]`.  `_discover_resolver` dual-AF loop with
+   `_ai[0][4][:2]` normalization.  `_resolve_udp_address` dual-AF loop,
+   already returns 2-tuple.
+
+3. **Stager suffix** -- bracket formatting for auto-discovered IPv6; bracket-
+   aware `--resolver` parsing with `startswith("[")` / `count(":") == 1`.
+
+4. **Client log line** -- `_resolver_fmt` selects bracket or plain format.
+
+5. **Minifier** -- replaced `_IPV4_RE`/`match` codes (`cu`/`db`) with
+   `addresses`/`seen_addr`.  Added `_rest` (`do`), `_end` (`dp`), `_af`
+   (`dq`).
+
+Commit: `152cc17`
