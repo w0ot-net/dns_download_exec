@@ -123,4 +123,4 @@ Executed 2026-02-20.  All plan items implemented as designed with no deviations.
 3. Replaced unreachable `if promote_idx is None: raise StartupError(...)`
    with `assert promote_idx is not None`.
 
-Commit: <hash>
+Commit: edfaf04
