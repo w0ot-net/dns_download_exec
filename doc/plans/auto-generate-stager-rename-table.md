@@ -54,14 +54,46 @@ string extraction (step already exists):
    be renamed.
 3. **Build skip set** -- union of:
    - Python keywords (`keyword.kwlist`)
-   - Python builtins (a static set covering both Py2 and Py3 names:
-     `True`, `False`, `None`, `range`, `len`, `int`, `str`, `bytes`,
-     `bytearray`, `type`, `isinstance`, `getattr`, `hasattr`, `bool`,
-     `open`, `Exception`, `ValueError`, `TypeError`, `NameError`,
-     `UnicodeDecodeError`, `unicode`, `long`, etc.)
-   - stdlib module names used in the stager (`base64`, `hashlib`, `hmac`,
-     `random`, `socket`, `struct`, `subprocess`, `sys`, `time`, `zlib`,
-     `os`)
+   - Python builtins -- an exhaustive static set covering both Py2 and Py3
+     builtins.  This must include Py2 keywords that became Py3 builtins
+     (`exec`, `print`) so the table is identical regardless of build Python
+     version.  Full set:
+     `True`, `False`, `None`, `abs`, `all`, `any`, `bin`, `bool`, `bytes`,
+     `bytearray`, `callable`, `chr`, `classmethod`, `compile`, `complex`,
+     `delattr`, `dict`, `dir`, `divmod`, `enumerate`, `eval`, `exec`,
+     `Exception`, `filter`, `float`, `format`, `frozenset`, `getattr`,
+     `globals`, `hasattr`, `hash`, `hex`, `id`, `input`, `int`,
+     `isinstance`, `issubclass`, `iter`, `len`, `list`, `locals`, `long`,
+     `map`, `max`, `memoryview`, `min`, `next`, `object`, `oct`, `open`,
+     `ord`, `pow`, `print`, `property`, `range`, `raw_input`, `repr`,
+     `reversed`, `round`, `set`, `setattr`, `slice`, `sorted`,
+     `staticmethod`, `str`, `sum`, `super`, `tuple`, `type`, `unicode`,
+     `vars`, `xrange`, `zip`,
+     `ArithmeticError`, `AssertionError`, `AttributeError`,
+     `BaseException`, `BlockingIOError`, `BrokenPipeError`,
+     `BufferError`, `BytesWarning`, `ChildProcessError`,
+     `ConnectionAbortedError`, `ConnectionError`,
+     `ConnectionRefusedError`, `ConnectionResetError`,
+     `DeprecationWarning`, `EOFError`, `EnvironmentError`,
+     `FileExistsError`, `FileNotFoundError`, `FloatingPointError`,
+     `FutureWarning`, `GeneratorExit`, `IOError`, `ImportError`,
+     `ImportWarning`, `IndentationError`, `IndexError`,
+     `InterruptedError`, `IsADirectoryError`, `KeyError`,
+     `KeyboardInterrupt`, `LookupError`, `MemoryError`, `ModuleNotFoundError`,
+     `NameError`, `NotADirectoryError`, `NotImplemented`,
+     `NotImplementedError`, `OSError`, `OverflowError`,
+     `PendingDeprecationWarning`, `PermissionError`, `ProcessLookupError`,
+     `RecursionError`, `ReferenceError`, `ResourceWarning`,
+     `RuntimeError`, `RuntimeWarning`, `StopAsyncIteration`,
+     `StopIteration`, `SyntaxError`, `SyntaxWarning`, `SystemError`,
+     `SystemExit`, `TabError`, `TimeoutError`, `TypeError`,
+     `UnboundLocalError`, `UnicodeDecodeError`, `UnicodeEncodeError`,
+     `UnicodeError`, `UnicodeTranslationError`, `UnicodeWarning`,
+     `UserWarning`, `ValueError`, `Warning`, `WindowsError`,
+     `ZeroDivisionError`
+   - stdlib module names imported by the stager (`base64`, `hashlib`,
+     `hmac`, `random`, `socket`, `struct`, `subprocess`, `sys`, `time`,
+     `zlib`)
    - Attribute names collected in step 2
    - String placeholder pattern names (`__S\d+__`)
 4. **Select candidates** -- identifiers from step 1 that are not in the skip
@@ -95,8 +127,9 @@ string extraction (step already exists):
 ### What is added
 
 - `import keyword` at the top of the module.
-- `_RESERVED_NAMES` -- a frozen set of Python keywords + builtins + stdlib
-  module names (approximately 80 entries, static and self-documenting).
+- `_RESERVED_NAMES` -- a frozen set of Python builtins + stdlib module names
+  (exhaustive list of both Py2 and Py3 builtins as enumerated in the
+  algorithm section above; combined with `keyword.kwlist` at runtime).
 - `_generate_short_names(count, skip)` -- yields deterministic short
   identifier names, skipping any in the skip set.
 - `_build_rename_table(source_without_strings)` -- implements steps 1-5
