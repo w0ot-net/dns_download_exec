@@ -47,7 +47,8 @@ Extracted blocks:
   `decode_ascii`, `base32_lower_no_pad`, `base32_decode_no_pad`,
   `byte_value`, `iter_byte_values`, `constant_time_equals`,
   `encode_ascii_int`, `is_binary`
-- **helpers.py** (2 functions): `hmac_sha256`, `dns_name_wire_length`
+- **helpers.py** (5 functions): `hmac_sha256`, `dns_name_wire_length`,
+  `_derive_file_id`, `_derive_file_tag`, `_derive_slice_token`
 - **dnswire.py** (1 function): `_decode_name`
 - **cname_payload.py** (3 functions): `_derive_file_bound_key`,
   `_keystream_bytes`, `_xor_bytes`
