@@ -53,3 +53,21 @@ The client downloads a file by retrieving it one slice at a time over DNS.
 Retries, domain rotation, and configurable timeouts handle transient failures.
 Each slice is independently verifiable and decryptable, so they can arrive in
 any order and duplicate responses are safe.
+
+## When would this tool be useful?
+
+dnsdle is useful whenever DNS is the only outbound channel available or when
+you want file delivery to blend into normal DNS traffic.
+
+- **Restricted networks.** Environments that block direct HTTP/HTTPS but still
+  allow DNS resolution (common in segmented corporate networks, locked-down
+  VPNs, and air-gapped-adjacent hosts with a DNS forwarder).
+- **Penetration testing and red-team engagements.** Delivering payloads or
+  tooling to a compromised host that has no other outbound path. The one-liner
+  stagers are designed to bootstrap from a single command.
+- **Minimal-dependency hosts.** Servers or containers that have Python and DNS
+  but no curl, wget, or outbound TCP. dnsdle needs only the standard library
+  and UDP port 53.
+- **Covert file distribution.** DNS queries are routine traffic and rarely
+  inspected at the payload level, making dnsdle less visible than HTTP-based
+  transfers in environments with deep packet inspection.
