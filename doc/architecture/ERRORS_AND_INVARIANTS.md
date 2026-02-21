@@ -113,10 +113,20 @@ For parseable DNS requests in v1:
 - Behavior must be deterministic for identical request name and current publish
   state.
 
-5. **Internal runtime fault**
+5. **Internal runtime fault (classified)**
 - Response: `RCODE=SERVFAIL`
 - Answer section: empty
 - Log as internal error with reason code.
+- Applies to faults classified within `handle_request_message` (e.g. missing
+  manifest entry, encoding failure, invariant mismatch in publish state).
+
+6. **Unhandled serve-loop exception**
+- Response: none (datagram dropped)
+- Log as `runtime_fault` with reason code `unhandled_request_exception`.
+- Applies to unexpected exceptions escaping `handle_request_message` in the
+  serve loop.  Dropping is preferred over SERVFAIL because the generated client
+  treats non-NOERROR responses as non-retryable contract violations; a dropped
+  datagram produces a retryable DNS timeout instead.
 
 For unparseable/garbled datagrams (cannot safely parse request envelope), the
 server may drop silently.

@@ -137,3 +137,26 @@ no response).
   unhandled-exception handler in `serve_runtime`
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`: update response matrix item 5
   to distinguish classified runtime faults from unhandled serve-loop exceptions
+
+## Execution Notes
+
+Executed 2026-02-20.  All three plan items implemented as designed with no
+deviations.
+
+1. Replaced `_runtime_fault_response`, `_miss_response`, `_nodata_response`
+   with single `_classified_response(request, config, rcode, classification,
+   reason_code, context)`.  Updated all 11 call sites in
+   `handle_request_message`.
+
+2. Replaced manual `for key, value in context.items()` loop in `_build_log`
+   with `record.update(context)`.
+
+3. Simplified unhandled-exception handler in `serve_runtime`: removed
+   re-parse + SERVFAIL fallback, replaced with `continue` (drop datagram).
+   Fixes runtime_fault double-count bug.
+
+4. Updated `doc/architecture/ERRORS_AND_INVARIANTS.md` response matrix: split
+   old item 5 into item 5 (classified runtime faults, SERVFAIL) and item 6
+   (unhandled serve-loop exceptions, drop).
+
+Commit: <hash>

@@ -34,8 +34,7 @@ def _build_log(classification, reason_code, context=None):
         "reason_code": reason_code,
     }
     if context:
-        for key, value in context.items():
-            record[key] = value
+        record.update(context)
     return record
 
 
@@ -43,37 +42,15 @@ def _include_opt(config):
     return config.dns_edns_size > 512
 
 
-def _runtime_fault_response(request, config, reason_code, context):
+def _classified_response(request, config, rcode, classification, reason_code, context):
     response = dnswire.build_response(
         request,
-        DNS_RCODE_SERVFAIL,
+        rcode,
         answer_bytes=None,
         include_opt=_include_opt(config),
         edns_size=config.dns_edns_size,
     )
-    return response, _build_log("runtime_fault", reason_code, context)
-
-
-def _miss_response(request, config, reason_code, context):
-    response = dnswire.build_response(
-        request,
-        DNS_RCODE_NXDOMAIN,
-        answer_bytes=None,
-        include_opt=_include_opt(config),
-        edns_size=config.dns_edns_size,
-    )
-    return response, _build_log("miss", reason_code, context)
-
-
-def _nodata_response(request, config, reason_code, context):
-    response = dnswire.build_response(
-        request,
-        DNS_RCODE_NOERROR,
-        answer_bytes=None,
-        include_opt=_include_opt(config),
-        edns_size=config.dns_edns_size,
-    )
-    return response, _build_log("miss", reason_code, context)
+    return response, _build_log(classification, reason_code, context)
 
 
 def _is_followup_query(prefix_labels, response_label):
@@ -141,23 +118,22 @@ def handle_request_message(runtime_state, request_bytes):
 
     miss_reason, miss_context = _envelope_miss_reason(request, config)
     if miss_reason is not None:
-        return _miss_response(request, config, miss_reason, miss_context)
+        return _classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", miss_reason, miss_context)
 
     question = request.get("question")
     if question is None:
-        return _miss_response(request, config, "missing_question", None)
+        return _classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", "missing_question", None)
 
     qname_labels = question["qname_labels"]
     selected_domain, prefix_labels = _selected_domain(config, qname_labels)
     if selected_domain is None:
-        return _miss_response(request, config, "unknown_domain", None)
+        return _classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", "unknown_domain", None)
 
     qtype = question["qtype"]
     qclass = question["qclass"]
     if qtype != DNS_QTYPE_A or qclass != DNS_QCLASS_IN:
-        return _nodata_response(
-            request,
-            config,
+        return _classified_response(
+            request, config, DNS_RCODE_NOERROR, "miss",
             "unsupported_qtype_or_class",
             {"qtype": qtype, "qclass": qclass},
         )
@@ -178,9 +154,8 @@ def handle_request_message(runtime_state, request_bytes):
         )
 
     if len(prefix_labels) != 2:
-        return _nodata_response(
-            request,
-            config,
+        return _classified_response(
+            request, config, DNS_RCODE_NOERROR, "miss",
             "invalid_slice_qname_shape",
             {
                 "selected_base_domain": selected_domain,
@@ -194,7 +169,7 @@ def handle_request_message(runtime_state, request_bytes):
     key = (file_tag, slice_token)
     identity_value = runtime_state.lookup_by_key.get(key)
     if identity_value is None:
-        return _miss_response(request, config, "mapping_not_found", request_context)
+        return _classified_response(request, config, DNS_RCODE_NXDOMAIN, "miss", "mapping_not_found", request_context)
 
     file_id, publish_version, slice_index = identity_value
     if logger_enabled("debug"):
@@ -217,23 +192,21 @@ def handle_request_message(runtime_state, request_bytes):
     identity = (file_id, publish_version)
     slice_table = runtime_state.slice_bytes_by_identity.get(identity)
     if slice_table is None:
-        return _runtime_fault_response(request, config, "identity_missing", request_context)
+        return _classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", "identity_missing", request_context)
     if slice_index < 0 or slice_index >= len(slice_table):
-        return _runtime_fault_response(
-            request,
-            config,
+        return _classified_response(
+            request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
             "slice_index_out_of_bounds",
             dict(request_context, slice_index=slice_index, slice_count=len(slice_table)),
         )
     publish_meta = runtime_state.publish_meta_by_identity.get(identity)
     if publish_meta is None:
-        return _runtime_fault_response(request, config, "publish_meta_missing", request_context)
+        return _classified_response(request, config, DNS_RCODE_SERVFAIL, "runtime_fault", "publish_meta_missing", request_context)
 
     total_slices, compressed_size = publish_meta
     if total_slices != len(slice_table):
-        return _runtime_fault_response(
-            request,
-            config,
+        return _classified_response(
+            request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
             "slice_table_length_mismatch",
             dict(request_context, total_slices=total_slices, slice_count=len(slice_table)),
         )
@@ -265,9 +238,8 @@ def handle_request_message(runtime_state, request_bytes):
             edns_size=config.dns_edns_size,
         )
     except Exception as exc:
-        return _runtime_fault_response(
-            request,
-            config,
+        return _classified_response(
+            request, config, DNS_RCODE_SERVFAIL, "runtime_fault",
             "encode_failure",
             dict(request_context, message=str(exc)),
         )
@@ -438,19 +410,7 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None):
                         {"message": str(exc)},
                     )
                 )
-                try:
-                    request = dnswire.parse_request(datagram)
-                except dnswire.DnsParseError:
-                    counters["dropped"] += 1
-                    continue
-                response_bytes = dnswire.build_response(
-                    request,
-                    DNS_RCODE_SERVFAIL,
-                    answer_bytes=None,
-                    include_opt=_include_opt(config),
-                    edns_size=config.dns_edns_size,
-                )
-                log_record = _build_log("runtime_fault", "servfail_fallback", None)
+                continue
 
             if response_bytes is None:
                 counters["dropped"] += 1
