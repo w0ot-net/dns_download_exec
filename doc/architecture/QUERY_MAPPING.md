@@ -188,17 +188,23 @@ Grouping invariant:
 
 ---
 
-## Generated Client Mapping
+## Universal Client Mapping
 
-Each generated client is file-specific and embeds:
-- `file_tag`
-- `file_id` and `publish_version`
-- `mapping_seed` and `slice_token_len`
-- `total_slices`
+The server generates a single universal client (`dnsdle_universal_client.py`)
+that accepts all mapping parameters via CLI arguments:
+- `--mapping-seed` and `--token-len`
+- `--publish-version`
+- `--total-slices`
+- `--file-tag-len`
 
-At runtime the client derives each slice token on the fly using the same
-algorithm the server uses:
+At runtime the client derives `file_id`, `file_tag`, and each slice token on
+the fly using the same algorithms the server uses:
 ```
+file_id       = sha256(b"dnsdle:file-id:v1|" + publish_version_bytes)[:16]
+file_tag      = trunc_token(
+    HMAC_SHA256(seed_bytes,
+        b"dnsdle:file:v1|" + publish_version_bytes)
+)[:file_tag_len]
 slice_token[i] = trunc_token(
     HMAC_SHA256(seed_bytes,
         b"dnsdle:slice:v1|" + publish_version_bytes + b"|" + index_bytes)
@@ -209,7 +215,7 @@ Download loop behavior:
 - pick missing `slice_index`
 - derive `slice_token` from `(mapping_seed, publish_version, slice_index)`
 - query `<slice_token>.<file_tag>.<selected_base_domain>`
-- verify returned slice against embedded metadata and crypto rules
+- verify returned slice against CLI-provided metadata and crypto rules
 
 This supports out-of-order fetch and repeat retries without exposing index
 values in QNAMEs. Client file size is bounded by code size alone, independent
@@ -222,11 +228,10 @@ of slice count.
 For each query:
 1. Parse labels and match `<slice_token>.<file_tag>.<selected_base_domain>`
    where selected domain is in configured `domains`.
-2. Reject if `file_tag` is unknown for current process.
-3. Resolve composite key `(file_tag, slice_token)` in deterministic mapping
-   table.
-4. Retrieve canonical slice bytes for resolved file/publish-version/index.
-5. Return deterministic CNAME answer for that slice.
+2. Resolve composite key `(file_tag, slice_token)` in deterministic mapping
+   table. Reject if the key is not found.
+3. Retrieve canonical slice bytes for resolved file/publish-version/index.
+4. Return deterministic CNAME answer for that slice.
 
 Unknown or malformed mapping keys must be rejected explicitly; no fallback to
 other files, versions, or indexes is allowed.
