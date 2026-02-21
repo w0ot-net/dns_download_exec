@@ -7,7 +7,6 @@ from collections import namedtuple
 from dnsdle.compat import binary_type
 from dnsdle.constants import DEFAULT_LOG_FILE
 from dnsdle.constants import DEFAULT_LOG_LEVEL
-from dnsdle.constants import FIXED_CONFIG
 from dnsdle.constants import LOG_LEVELS
 from dnsdle.constants import MAX_DNS_EDNS_SIZE
 from dnsdle.constants import MIN_DNS_EDNS_SIZE
@@ -19,6 +18,7 @@ from dnsdle.state import StartupError
 
 TOKEN_ALPHABET = set(TOKEN_ALPHABET_CHARS)
 LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_SENTINEL = object()
 
 
 Config = namedtuple(
@@ -46,7 +46,6 @@ Config = namedtuple(
         "log_level",
         "log_file",
         "verbose",
-        "fixed",
     ],
 )
 
@@ -283,10 +282,6 @@ def _normalize_log_level(raw_value):
     )
 
 
-def _normalize_log_file(raw_value):
-    return (raw_value or "").strip()
-
-
 def _normalize_listen_addr(raw_value):
     value = (raw_value or "").strip()
     if not value:
@@ -310,10 +305,9 @@ def _normalize_listen_addr(raw_value):
 
 
 def _arg_value(parsed_args, name):
-    if hasattr(parsed_args, name):
-        return getattr(parsed_args, name)
-    if isinstance(parsed_args, dict) and name in parsed_args:
-        return parsed_args[name]
+    value = getattr(parsed_args, name, _SENTINEL)
+    if value is not _SENTINEL:
+        return value
     raise StartupError(
         "config",
         "invalid_config",
@@ -323,11 +317,7 @@ def _arg_value(parsed_args, name):
 
 
 def _arg_value_default(parsed_args, name, default):
-    if hasattr(parsed_args, name):
-        return getattr(parsed_args, name)
-    if isinstance(parsed_args, dict) and name in parsed_args:
-        return parsed_args[name]
-    return default
+    return getattr(parsed_args, name, default)
 
 
 def build_config(parsed_args):
@@ -386,9 +376,7 @@ def build_config(parsed_args):
     log_level = _normalize_log_level(
         _arg_value_default(parsed_args, "log_level", DEFAULT_LOG_LEVEL)
     )
-    log_file = _normalize_log_file(
-        _arg_value_default(parsed_args, "log_file", DEFAULT_LOG_FILE)
-    )
+    log_file = (_arg_value_default(parsed_args, "log_file", DEFAULT_LOG_FILE) or "").strip()
     verbose = bool(_arg_value_default(parsed_args, "verbose", False))
 
     if file_tag_len > dns_max_label_len:
@@ -429,5 +417,4 @@ def build_config(parsed_args):
         log_level=log_level,
         log_file=log_file,
         verbose=verbose,
-        fixed=FIXED_CONFIG.copy(),
     )

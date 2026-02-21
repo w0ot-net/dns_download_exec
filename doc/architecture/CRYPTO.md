@@ -161,11 +161,10 @@ After all indices are present:
 
 ## Algorithm Agility
 
-The wire profile must carry an explicit crypto profile identifier, for example:
-- `crypto_profile = "v1"`
-
-Future profiles (for different ciphers or record layouts) must use a new
-profile id and must not silently reinterpret v1 records.
+The wire format carries an explicit profile byte in each CNAME payload record
+(`PAYLOAD_PROFILE_V1_BYTE = 0x01` for v1). Future profiles (for different
+ciphers or record layouts) must use a new profile byte and must not silently
+reinterpret v1 records.
 
 ---
 

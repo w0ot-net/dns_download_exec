@@ -43,16 +43,12 @@ def _build_log(classification, reason_code, context=None):
     return record
 
 
-def _include_opt(config):
-    return config.dns_edns_size > 512
-
-
 def _classified_response(request, config, rcode, classification, reason_code, context):
     response = dnswire.build_response(
         request,
         rcode,
         answer_bytes=None,
-        include_opt=_include_opt(config),
+        include_opt=config.dns_edns_size > 512,
         edns_size=config.dns_edns_size,
     )
     return response, _build_log(classification, reason_code, context)
@@ -149,7 +145,7 @@ def handle_request_message(runtime_state, request_bytes):
             request,
             DNS_RCODE_NOERROR,
             answer_bytes=answer_bytes,
-            include_opt=_include_opt(config),
+            include_opt=config.dns_edns_size > 512,
             edns_size=config.dns_edns_size,
         )
         return response, _build_log(
@@ -230,7 +226,7 @@ def handle_request_message(runtime_state, request_bytes):
             request,
             DNS_RCODE_NOERROR,
             answer_bytes=answer_bytes,
-            include_opt=_include_opt(config),
+            include_opt=config.dns_edns_size > 512,
             edns_size=config.dns_edns_size,
         )
     except Exception as exc:
@@ -298,7 +294,7 @@ def _validate_runtime_state_for_serving(runtime_state):
             },
             DNS_RCODE_NOERROR,
             answer_bytes=answer,
-            include_opt=_include_opt(config),
+            include_opt=config.dns_edns_size > 512,
             edns_size=config.dns_edns_size,
         )
     except Exception as exc:

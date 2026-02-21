@@ -162,3 +162,25 @@ Remove `seen_plaintext_sha256=None` and `seen_file_ids=None` from the
 - `doc/architecture/PUBLISH_PIPELINE.md`: remove `crypto_profile`/`wire_profile` references
 - `doc/architecture/CONFIG.md`: update "Fixed v1 Config" section
 - `doc/architecture/CRYPTO.md`: remove `crypto_profile = "v1"` bullet
+
+## Execution Notes
+
+Executed 2026-02-20. All six plan sections implemented. Review findings addressed:
+
+1. **Section C (logging)**: Instead of duplicating the write path in
+   `emit_record`, extracted a shared `_do_emit` private method that both
+   `emit` and `emit_record` call. This eliminates the redundant
+   `_normalize_name` round-trip without code duplication.
+
+2. **CRYPTO.md**: Rewrote the Algorithm Agility section to reference the
+   actual wire-level profile byte (`PAYLOAD_PROFILE_V1_BYTE = 0x01`) instead
+   of removing the example and leaving a dangling sentence.
+
+3. **CONFIG.md**: Scoped the note to say wire profile, crypto profile, and
+   response type are implicit in the v1 wire format. Kept the remaining 4
+   fixed config items (`query_mapping_alphabet`, `query_mapping_case`,
+   `generated_client_single_file`, `generated_client_download_only`).
+
+4. **Section F**: Omitted `seen_plaintext_sha256` and `seen_file_ids`
+   arguments entirely when calling `build_publish_items_from_sources`,
+   letting its own defaults apply, instead of passing `None` explicitly.

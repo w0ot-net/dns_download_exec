@@ -29,7 +29,6 @@ Required validated inputs:
   `dns_edns_size`)
 - `max_ciphertext_slice_bytes` from
   `doc/architecture/CNAME_PAYLOAD_FORMAT.md`
-- fixed profile ids (`crypto_profile=v1`, `wire_profile=v1`)
 
 All inputs must be validated before this pipeline starts.
 
@@ -48,8 +47,6 @@ Required fields per publish object:
 - `total_slices`
 - `slice_bytes_by_index` (0-based contiguous array)
 - `slice_tokens` (same cardinality/order as `slice_bytes_by_index`)
-- `crypto_profile`
-- `wire_profile`
 
 Invariants:
 1. `len(slice_bytes_by_index) == total_slices`

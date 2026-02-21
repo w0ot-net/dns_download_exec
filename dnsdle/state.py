@@ -24,19 +24,6 @@ class StartupError(Exception):
         return record
 
 
-class FrozenDict(dict):
-    def _immutable(self, *args, **kwargs):
-        raise TypeError("FrozenDict is immutable")
-
-    __setitem__ = _immutable
-    __delitem__ = _immutable
-    clear = _immutable
-    pop = _immutable
-    popitem = _immutable
-    setdefault = _immutable
-    update = _immutable
-
-
 PublishItem = namedtuple(
     "PublishItem",
     [
@@ -49,8 +36,6 @@ PublishItem = namedtuple(
         "slice_token_len",
         "slice_tokens",
         "slice_bytes_by_index",
-        "crypto_profile",
-        "wire_profile",
         "source_filename",
     ],
 )
@@ -80,8 +65,6 @@ def to_publish_item(mapped_item):
         slice_token_len=mapped_item["slice_token_len"],
         slice_tokens=tuple(mapped_item["slice_tokens"]),
         slice_bytes_by_index=tuple(mapped_item["slice_bytes_by_index"]),
-        crypto_profile=mapped_item["crypto_profile"],
-        wire_profile=mapped_item["wire_profile"],
         source_filename=mapped_item["source_filename"],
     )
 
@@ -127,8 +110,8 @@ def build_runtime_state(config, mapped_publish_items, max_ciphertext_slice_bytes
     return RuntimeState(
         config=config,
         max_ciphertext_slice_bytes=max_ciphertext_slice_bytes,
-        budget_info=FrozenDict(budget_info),
+        budget_info=budget_info,
         publish_items=tuple(publish_items),
-        lookup_by_key=FrozenDict(lookup),
-        slice_data_by_identity=FrozenDict(slice_data_by_identity),
+        lookup_by_key=lookup,
+        slice_data_by_identity=slice_data_by_identity,
     )

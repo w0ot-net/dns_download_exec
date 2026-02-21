@@ -1,11 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
 
-# Fixed v1 profiles
-PROFILE_V1 = "v1"
-QTYPE_RESPONSE_CNAME = "CNAME"
-
-
 # Mapping/token constants
 TOKEN_ALPHABET_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 DIGEST_TEXT_CAPACITY = 52  # base32(lower, no-pad) chars from SHA-256 digest
@@ -87,17 +82,6 @@ EXIT_PARSE = 4
 EXIT_CRYPTO = 5
 EXIT_REASSEMBLY = 6
 EXIT_WRITE = 7
-
-
-FIXED_CONFIG = {
-    "query_mapping_alphabet": "[a-z0-9]",
-    "query_mapping_case": "lowercase",
-    "wire_profile": PROFILE_V1,
-    "crypto_profile": PROFILE_V1,
-    "qtype_response": QTYPE_RESPONSE_CNAME,
-    "generated_client_single_file": True,
-    "generated_client_download_only": True,
-}
 
 
 # Logging defaults and contracts

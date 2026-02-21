@@ -5,7 +5,6 @@ import zlib
 
 import os
 
-from dnsdle.constants import PROFILE_V1
 from dnsdle.helpers import _derive_file_id
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
@@ -81,8 +80,6 @@ def _build_single_publish_item(
         "compressed_size": compressed_size,
         "total_slices": total_slices,
         "slice_bytes_by_index": slice_bytes_by_index,
-        "crypto_profile": PROFILE_V1,
-        "wire_profile": PROFILE_V1,
         "source_filename": source_filename,
     }
 
@@ -104,12 +101,7 @@ def _log_publish_item_built(item, source_index):
     })
 
 
-def build_publish_items(
-    config,
-    max_ciphertext_slice_bytes,
-    seen_plaintext_sha256=None,
-    seen_file_ids=None,
-):
+def build_publish_items(config, max_ciphertext_slice_bytes):
     sources = []
     for file_index, path in enumerate(config.files):
         try:
@@ -128,8 +120,6 @@ def build_publish_items(
         sources,
         config.compression_level,
         max_ciphertext_slice_bytes,
-        seen_plaintext_sha256,
-        seen_file_ids,
     )
 
 

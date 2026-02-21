@@ -100,8 +100,6 @@ def _record_level(record):
 
 def _record_is_required(record, level_name):
     classification = str(record.get("classification", "")).lower()
-    if level_name == "error":
-        return True
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
 
@@ -150,21 +148,10 @@ class RuntimeLogger(object):
         line = json.dumps(record, sort_keys=True)
         return _write_line(self._stream, line)
 
-    def emit(self, level, category, event, context_fn=None, required=False):
-        level_name = _normalize_name(level, LOG_LEVELS, "level")
-        category_name = _normalize_name(category, LOG_CATEGORIES, "category")
-        base_event = dict(event or {})
+    def _do_emit(self, level_name, category_name, base_event, required):
         event_required = required or _record_is_required(base_event, level_name)
         if not event_required and _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
             return False
-
-        if context_fn is not None:
-            context = context_fn()
-            if context:
-                for key, value in context.items():
-                    if key not in base_event:
-                        base_event[key] = value
-
         output = _redact_map(base_event)
         output["ts_unix_ms"] = _now_unix_ms()
         output["level"] = level_name.upper()
@@ -174,17 +161,25 @@ class RuntimeLogger(object):
             raise RequiredLogEmissionError("required log emission failed")
         return emitted
 
+    def emit(self, level, category, event, context_fn=None, required=False):
+        level_name = _normalize_name(level, LOG_LEVELS, "level")
+        category_name = _normalize_name(category, LOG_CATEGORIES, "category")
+        base_event = dict(event or {})
+
+        if context_fn is not None:
+            context = context_fn()
+            if context:
+                for key, value in context.items():
+                    if key not in base_event:
+                        base_event[key] = value
+
+        return self._do_emit(level_name, category_name, base_event, required)
+
     def emit_record(self, record, level=None, category=None, required=False):
         base = dict(record or {})
         level_name = _record_level(base) if level is None else level
         category_name = _record_category(base) if category is None else category
-        return self.emit(
-            level_name,
-            category_name,
-            base,
-            context_fn=None,
-            required=required,
-        )
+        return self._do_emit(level_name, category_name, base, required)
 
 
 class _NullStream(object):

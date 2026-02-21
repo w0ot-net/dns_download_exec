@@ -61,11 +61,11 @@ Processing flow is two-step:
 
 - `query_mapping_alphabet = [a-z0-9]`
 - `query_mapping_case = lowercase`
-- `wire_profile = v1`
-- `crypto_profile = v1`
-- `qtype_response = CNAME`
 - `generated_client_single_file = true`
 - `generated_client_download_only = true`
+
+Wire profile, crypto profile, and response type are implicit in the v1 wire
+format and not carried as runtime configuration fields.
 
 Changing these values requires architecture/version updates, not runtime flags.
 
