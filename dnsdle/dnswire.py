@@ -218,7 +218,6 @@ def _response_flags(request_flags, rcode):
 
 def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_size=512):
     raw_question_bytes = request["raw_question_bytes"]
-    question_bytes = raw_question_bytes
     qdcount = 1 if raw_question_bytes else 0
 
     ancount = 1 if answer_bytes else 0
@@ -235,7 +234,7 @@ def build_response(request, rcode, answer_bytes=None, include_opt=False, edns_si
         arcount,
     )
 
-    parts = [header, question_bytes]
+    parts = [header, raw_question_bytes]
     if answer_bytes:
         parts.append(answer_bytes)
     if include_opt:

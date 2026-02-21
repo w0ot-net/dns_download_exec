@@ -49,13 +49,6 @@ Config = namedtuple(
 )
 
 
-def _is_printable_ascii(value):
-    for ch in value:
-        code = ord(ch)
-        if code < 32 or code > 126:
-            return False
-    return True
-
 
 def _normalize_domain(value):
     if value is None:
@@ -235,7 +228,7 @@ def _normalize_mapping_seed(value):
     seed = str(value)
     if not seed:
         raise StartupError("config", "invalid_config", "mapping_seed is empty")
-    if not _is_printable_ascii(seed):
+    if not all(32 <= ord(ch) <= 126 for ch in seed):
         raise StartupError(
             "config",
             "invalid_config",

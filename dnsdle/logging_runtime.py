@@ -98,7 +98,7 @@ def _record_level(record):
     return _LEVEL_FROM_CLASSIFICATION.get(classification, "info")
 
 
-def _record_is_required(record, level_name):
+def _record_is_required(record):
     classification = str(record.get("classification", "")).lower()
     return classification in REQUIRED_LIFECYCLE_CLASSIFICATIONS
 
@@ -149,7 +149,7 @@ class RuntimeLogger(object):
         return _write_line(self._stream, line)
 
     def _do_emit(self, level_name, category_name, base_event, required):
-        event_required = required or _record_is_required(base_event, level_name)
+        event_required = required or _record_is_required(base_event)
         if not event_required and _LEVEL_RANK[level_name] < _LEVEL_RANK[self.level]:
             return False
         output = _redact_map(base_event)
