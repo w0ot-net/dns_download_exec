@@ -48,7 +48,7 @@ Optional arguments:
 - `--out path`
 - `--file-tag-len n` (default: `4`)
 - `--response-label label` (default: `r-x`)
-- `--dns-max-label-len n` (default: `63`)
+- `--dns-max-label-len n` (default: `40`)
 - `--dns-edns-size n` (default: `512`)
 - `--timeout seconds` (default: `3.0`)
 - `--no-progress-timeout seconds` (default: `60`)
@@ -114,9 +114,9 @@ Per-iteration steps:
 4. build query name `<slice_token>.<file_tag>.<selected_base_domain>`
 5. send DNS query (include OPT when `dns_edns_size > 512`)
 6. wait for response subject to request timeout
-7. on timeout/no-response/TC, update retry state and continue
-8. on response, validate expected CNAME answer contract
-9. decode CNAME payload record
+7. on timeout/no-response/TC/DNS envelope error, update retry state and continue
+8. extract and validate CNAME payload labels
+9. parse binary slice record
 10. verify crypto and decrypt slice
 11. store slice if new index; verify equality if duplicate index
 12. when a new index is stored, reset no-progress timer
@@ -161,19 +161,31 @@ If no progress occurs within threshold, runtime exits with code `3`.
 
 ## Response and Payload Validation
 
-For each received response:
-1. validate response-question association
-2. validate required answer type and suffix contract
-3. parse binary record fields and invariants
-4. verify MAC using derived crypto context and mapped metadata
-5. decrypt ciphertext payload
-6. validate duplicate-slice consistency if index already stored
+Validation is split into two stages with different retry behavior.
+
+**Stage 1 -- DNS envelope (retryable on failure):**
+1. validate response ID, QR flag, opcode, rcode
+2. validate question echo and section structure
+3. locate required IN CNAME answer matching query name
+
+DNS envelope errors (including non-NOERROR rcode) are caught alongside
+transport errors and retried up to `MAX_CONSECUTIVE_TIMEOUTS` (`128`).
+This is intentional: a bad response from a recursive resolver should not
+be fatal.
+
+**Stage 2 -- payload and crypto (fatal on failure):**
+4. extract and validate CNAME payload labels and suffix
+5. parse binary record fields and invariants
+6. verify MAC using derived crypto context and mapped metadata
+7. decrypt ciphertext payload
+8. validate duplicate-slice consistency if index already stored
 
 Classification:
 - transport timeout/no-response: retryable
 - TC (truncated) response: retryable
-- DNS miss response or parse/format mismatch: fatal (exit `4`)
-- crypto mismatch: fatal (exit `5`)
+- DNS envelope parse error (stage 1): retryable
+- payload parse/format mismatch (stage 2): fatal (exit `4`)
+- crypto mismatch (stage 2): fatal (exit `5`)
 
 ---
 
