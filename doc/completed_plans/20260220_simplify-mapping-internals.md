@@ -107,3 +107,20 @@ assert promote_idx is not None
 - `dnsdle/mapping.py`: remove `max_len_by_index` parallel list and store
   `max_token_len` on the entry dict; delete `_entry_sort_key` and inline the
   sort tuple; replace unreachable `promote_idx is None` guard with assertion
+
+## Execution Notes
+
+Executed 2026-02-20.  All plan items implemented as designed with no deviations.
+
+1. Removed `max_len_by_index` parallel list.  `max_token_len` is now stored
+   directly on each entry dict (`entry["max_token_len"] = max_token_len`).
+   The promotion loop reads it as `entry["max_token_len"]`.
+
+2. Deleted `_entry_sort_key` helper.  Sort key is inlined as a lambda
+   returning `(entries[idx]["file_tag"], entries[idx]["file_id"],
+   entries[idx]["publish_version"])`.
+
+3. Replaced unreachable `if promote_idx is None: raise StartupError(...)`
+   with `assert promote_idx is not None`.
+
+Commit: <hash>

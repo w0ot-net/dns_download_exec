@@ -52,19 +52,10 @@ def _find_colliding_files(entries):
     return colliding_files
 
 
-def _entry_sort_key(entry):
-    return (
-        entry["file_tag"],
-        entry["file_id"],
-        entry["publish_version"],
-    )
-
-
 def apply_mapping(publish_items, config):
     seed_bytes = encode_ascii(config.mapping_seed)
 
     entries = []
-    max_len_by_index = []
     for item in publish_items:
         entry = dict(item)
         file_tag = _derive_file_tag(
@@ -104,12 +95,16 @@ def apply_mapping(publish_items, config):
         entry["file_tag"] = file_tag
         entry["slice_token_len"] = local_len
         entry["slice_tokens"] = local_tokens
+        entry["max_token_len"] = max_token_len
         entries.append(entry)
-        max_len_by_index.append(max_token_len)
 
     canonical_order = sorted(
         range(len(entries)),
-        key=lambda idx: _entry_sort_key(entries[idx]),
+        key=lambda idx: (
+            entries[idx]["file_tag"],
+            entries[idx]["file_id"],
+            entries[idx]["publish_version"],
+        ),
     )
 
     while True:
@@ -121,17 +116,11 @@ def apply_mapping(publish_items, config):
             (idx for idx in canonical_order if idx in colliding_files),
             None,
         )
-
-        if promote_idx is None:
-            raise StartupError(
-                "mapping",
-                "mapping_collision",
-                "collision set could not be resolved deterministically",
-            )
+        assert promote_idx is not None
 
         entry = entries[promote_idx]
         current_len = entry["slice_token_len"]
-        max_len = max_len_by_index[promote_idx]
+        max_len = entry["max_token_len"]
         if current_len >= max_len:
             raise StartupError(
                 "mapping",
