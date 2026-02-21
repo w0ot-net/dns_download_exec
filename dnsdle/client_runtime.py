@@ -16,6 +16,8 @@ from dnsdle.helpers import (
 )
 from dnsdle.dnswire import _decode_name
 from dnsdle.cname_payload import _derive_file_bound_key, _keystream_bytes, _xor_bytes
+from dnsdle.resolver_linux import _load_unix_resolvers
+from dnsdle.resolver_windows import _load_windows_resolvers
 
 # dnsdle constants -- DNS/payload/mapping/exit/tuning values used by the
 # extract block; canonical home is constants.py
@@ -369,86 +371,10 @@ def _parse_resolver_arg(raw_value):
         raise ClientError(EXIT_USAGE, "usage", "--resolver lookup failed: %s" % exc)
 
 
-def _run_nslookup():
-    args = ["nslookup", "google.com"]
-    run_fn = getattr(subprocess, "run", None)
-    if run_fn is not None:
-        result = run_fn(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=5,
-            universal_newlines=True,
-        )
-        return result.stdout or ""
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    output, _ = proc.communicate()
-    return output or ""
-
-
-def _parse_nslookup_output(output):
-    lines = output.splitlines()
-    server_index = None
-    for index, line in enumerate(lines):
-        if line.strip().lower().startswith("server:"):
-            server_index = index
-            break
-    if server_index is None:
-        return []
-
-    addresses = []
-    seen_addr = False
-    for line in lines[server_index + 1:]:
-        stripped = line.strip()
-        if not stripped:
-            break
-        if stripped.lower().startswith("address") and ":" in stripped:
-            addr = stripped.split(":", 1)[1].strip()
-            if addr:
-                addresses.append(addr)
-            seen_addr = True
-        elif seen_addr and line[0:1] in (" ", "\t"):
-            addresses.append(stripped)
-    return addresses
-
-
 def _load_system_resolvers():
     if sys.platform == "win32":
-        try:
-            output = _run_nslookup()
-        except Exception:
-            return []
-        return _parse_nslookup_output(output)
-    else:
-        resolvers = []
-        try:
-            with open("/etc/resolv.conf", "r") as handle:
-                for raw_line in handle:
-                    line = raw_line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "#" in line:
-                        line = line.split("#", 1)[0].strip()
-                        if not line:
-                            continue
-                    parts = line.split()
-                    if len(parts) < 2:
-                        continue
-                    if parts[0].lower() != "nameserver":
-                        continue
-                    host = parts[1].strip()
-                    if not host:
-                        continue
-                    if host not in resolvers:
-                        resolvers.append(host)
-        except Exception:
-            return []
-        return resolvers
+        return _load_windows_resolvers()
+    return _load_unix_resolvers()
 
 
 def _discover_system_resolver():

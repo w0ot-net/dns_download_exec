@@ -2,6 +2,7 @@
 from __future__ import absolute_import, unicode_literals
 
 # __TEMPLATE_SOURCE__
+# __EXTRACT: _load_unix_resolvers__
 def _load_unix_resolvers():
     resolvers = []
     try:
@@ -27,3 +28,4 @@ def _load_unix_resolvers():
     except Exception:
         return []
     return resolvers
+# __END_EXTRACT__

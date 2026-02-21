@@ -38,6 +38,14 @@ _CNAME_PAYLOAD_EXTRACTIONS = [
     "_xor_bytes",
 ]
 
+_RESOLVER_LINUX_EXTRACTIONS = ["_load_unix_resolvers"]
+
+_RESOLVER_WINDOWS_EXTRACTIONS = [
+    "_run_nslookup",
+    "_parse_nslookup_output",
+    "_load_windows_resolvers",
+]
+
 _CLIENT_RUNTIME_EXTRACTIONS = ["client_runtime"]
 
 
@@ -163,11 +171,14 @@ def build_client_source():
     helpers_blocks = extract_functions("helpers.py", _HELPERS_EXTRACTIONS)
     dnswire_blocks = extract_functions("dnswire.py", _DNSWIRE_EXTRACTIONS)
     cname_blocks = extract_functions("cname_payload.py", _CNAME_PAYLOAD_EXTRACTIONS)
+    resolver_linux_blocks = extract_functions("resolver_linux.py", _RESOLVER_LINUX_EXTRACTIONS)
+    resolver_windows_blocks = extract_functions("resolver_windows.py", _RESOLVER_WINDOWS_EXTRACTIONS)
     runtime_blocks = extract_functions("client_runtime.py", _CLIENT_RUNTIME_EXTRACTIONS)
 
     extracted_parts = (
         compat_blocks + helpers_blocks + dnswire_blocks
-        + cname_blocks + runtime_blocks
+        + cname_blocks + resolver_linux_blocks
+        + resolver_windows_blocks + runtime_blocks
     )
 
     extracted_source = "\n\n".join(extracted_parts)

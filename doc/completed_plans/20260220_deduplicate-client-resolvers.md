@@ -104,3 +104,32 @@ stager is minified).
   from resolver modules, replace with delegating `_load_system_resolvers`
 - `dnsdle/client_standalone.py`: add resolver extraction specs and include
   them in `build_client_source()`
+
+## Execution Notes
+
+Executed 2026-02-20.
+
+All three tasks implemented as designed with no deviations:
+
+1. **Resolver module markers**: added `# __EXTRACT__` / `# __END_EXTRACT__`
+   markers to `resolver_linux.py` (1 block) and `resolver_windows.py`
+   (3 blocks), coexisting with existing `# __TEMPLATE_SOURCE__` sentinels.
+
+2. **client_runtime.py cleanup**: removed ~80 lines of duplicated resolver
+   code (`_run_nslookup`, `_parse_nslookup_output`, inline resolv.conf
+   parsing). Added imports from canonical resolver modules. Replaced with
+   3-line delegating `_load_system_resolvers`.
+
+3. **client_standalone.py wiring**: added `_RESOLVER_LINUX_EXTRACTIONS` and
+   `_RESOLVER_WINDOWS_EXTRACTIONS` specs. Inserted extraction calls and
+   concatenation in `build_client_source()` so resolver functions appear
+   ahead of the `client_runtime` block.
+
+Validation:
+- All four changed modules pass `py_compile`.
+- All module imports succeed (no circular dependency).
+- `extract_functions` successfully extracts all 4 resolver blocks.
+- `build_client_source()` produces valid universal client (35618 chars)
+  containing all resolver functions.
+- `build_stager_template()` still produces valid stager template (13436
+  chars) with resolver functions -- no regression.
