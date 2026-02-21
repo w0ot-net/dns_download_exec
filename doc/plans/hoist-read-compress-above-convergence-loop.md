@@ -50,16 +50,28 @@ compression_level, seen_plaintext_sha256, seen_file_ids)` performs:
 New public function `prepare_publish_sources(sources, compression_level)`
 replaces `build_publish_items_from_sources` for the invariant work.  It
 iterates over sources, calls `_prepare_single_source`, enforces uniqueness
-internally (no `seen_*` parameters needed), logs each prepared item, and
-returns the list of prepared dicts.
+internally (no `seen_*` parameters needed), and returns the list of prepared
+dicts.  Logs each prepared item at debug level with the fields available at
+prepare time (`file_id`, `publish_version`, `plaintext_sha256`,
+`compressed_size`, `source_filename`, `source_index`).  The `total_slices`
+field is dropped from this log record because it depends on the
+iteration-dependent slice size; it is already reported downstream by
+`apply_mapping`'s diagnostic log.
 
 ### Stage 2: Slice (per iteration, inside loop)
 
 New public function `slice_prepared_sources(prepared_sources,
 max_ciphertext_slice_bytes)` takes the prepared dicts, slices
-`compressed_bytes` for each, and returns publish-item dicts matching the
-existing schema (dropping `compressed_bytes`, adding `slice_bytes_by_index`
-and `total_slices`).
+`compressed_bytes` for each, and returns **new** publish-item dicts matching
+the existing schema (with `slice_bytes_by_index` and `total_slices`, without
+`compressed_bytes`).
+
+Invariants:
+- `slice_prepared_sources` must never mutate the prepared dicts.  The same
+  prepared list is reused across convergence iterations, so each call must
+  construct fresh output dicts from the prepared inputs.
+- `slice_prepared_sources` validates `max_ciphertext_slice_bytes > 0`
+  (moved from the removed `build_publish_items_from_sources`).
 
 ### File reading
 
