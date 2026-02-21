@@ -307,4 +307,4 @@ line ending with `(` and current line starting with an operator or `)`.
 Validation: Assembled template compiles after placeholder substitution and
 minification. Minified output is 9342 bytes, compresses to 4984 bytes base64.
 
-Commit: PENDING
+Commit: 594fe80
