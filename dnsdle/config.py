@@ -18,7 +18,6 @@ from dnsdle.state import StartupError
 
 TOKEN_ALPHABET = set(TOKEN_ALPHABET_CHARS)
 LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-_SENTINEL = object()
 
 
 Config = namedtuple(
@@ -120,35 +119,22 @@ def _normalize_domains(raw_value):
     domain_labels_by_domain = tuple(normalized[domain] for domain in domains)
 
     for index in range(len(domains)):
-        domain_a = domains[index]
         labels_a = domain_labels_by_domain[index]
         for other_index in range(index + 1, len(domains)):
-            domain_b = domains[other_index]
             labels_b = domain_labels_by_domain[other_index]
-            if labels_is_suffix(labels_a, labels_b):
+            if labels_is_suffix(labels_a, labels_b) or labels_is_suffix(labels_b, labels_a):
                 raise StartupError(
                     "config",
                     "overlapping_domains",
                     "configured domains overlap on label boundaries",
-                    {"domain": domain_a, "other_domain": domain_b},
-                )
-            if labels_is_suffix(labels_b, labels_a):
-                raise StartupError(
-                    "config",
-                    "overlapping_domains",
-                    "configured domains overlap on label boundaries",
-                    {"domain": domain_b, "other_domain": domain_a},
+                    {"domain": domains[index], "other_domain": domains[other_index]},
                 )
 
-    longest_domain = domains[0]
-    longest_domain_labels = domain_labels_by_domain[0]
+    longest_idx = max(range(len(domains)),
+                      key=lambda i: dns_name_wire_length(domain_labels_by_domain[i]))
+    longest_domain = domains[longest_idx]
+    longest_domain_labels = domain_labels_by_domain[longest_idx]
     longest_domain_wire_len = dns_name_wire_length(longest_domain_labels)
-    for index in range(1, len(domains)):
-        wire_len = dns_name_wire_length(domain_labels_by_domain[index])
-        if wire_len > longest_domain_wire_len:
-            longest_domain = domains[index]
-            longest_domain_labels = domain_labels_by_domain[index]
-            longest_domain_wire_len = wire_len
 
     return (
         domains,
@@ -264,10 +250,7 @@ def _normalize_client_out_dir(raw_value):
         raise StartupError("config", "invalid_config", "client_out_dir is empty")
     if "\x00" in value:
         raise StartupError("config", "invalid_config", "client_out_dir contains NUL")
-    normalized = os.path.abspath(os.path.normpath(value))
-    if not normalized:
-        raise StartupError("config", "invalid_config", "client_out_dir is empty")
-    return normalized
+    return os.path.abspath(os.path.normpath(value))
 
 
 def _normalize_log_level(raw_value):
@@ -304,22 +287,6 @@ def _normalize_listen_addr(raw_value):
     return value, host, port
 
 
-def _arg_value(parsed_args, name):
-    value = getattr(parsed_args, name, _SENTINEL)
-    if value is not _SENTINEL:
-        return value
-    raise StartupError(
-        "config",
-        "invalid_config",
-        "missing parsed CLI argument: %s" % name,
-        {"field": name},
-    )
-
-
-def _arg_value_default(parsed_args, name, default):
-    return getattr(parsed_args, name, default)
-
-
 def build_config(parsed_args):
     (
         domains,
@@ -327,10 +294,10 @@ def build_config(parsed_args):
         longest_domain,
         longest_domain_labels,
         longest_domain_wire_len,
-    ) = _normalize_domains(_arg_value(parsed_args, "domains"))
-    files = _normalize_files(_arg_value(parsed_args, "files"))
+    ) = _normalize_domains(parsed_args.domains)
+    files = _normalize_files(parsed_args.files)
 
-    psk = _arg_value(parsed_args, "psk")
+    psk = parsed_args.psk
     if psk is None or psk == "":
         raise StartupError("config", "invalid_config", "psk must be non-empty")
     if isinstance(psk, binary_type):
@@ -340,44 +307,44 @@ def build_config(parsed_args):
             raise StartupError("config", "invalid_config", "psk must be valid UTF-8")
 
     listen_addr, listen_host, listen_port = _normalize_listen_addr(
-        _arg_value(parsed_args, "listen_addr")
+        parsed_args.listen_addr
     )
-    ttl = _parse_int_in_range("ttl", _arg_value(parsed_args, "ttl"), 1, 300)
+    ttl = _parse_int_in_range("ttl", parsed_args.ttl, 1, 300)
     dns_edns_size = _parse_int_in_range(
         "dns_edns_size",
-        _arg_value(parsed_args, "dns_edns_size"),
+        parsed_args.dns_edns_size,
         MIN_DNS_EDNS_SIZE,
         MAX_DNS_EDNS_SIZE,
     )
     dns_max_response_bytes = _parse_int_in_range(
         "dns_max_response_bytes",
-        _arg_value_default(parsed_args, "dns_max_response_bytes", "0"),
+        getattr(parsed_args, "dns_max_response_bytes", "0"),
         0,
         65535,
     )
     dns_max_label_len = _parse_int_in_range(
         "dns_max_label_len",
-        _arg_value(parsed_args, "dns_max_label_len"),
+        parsed_args.dns_max_label_len,
         16,
         63,
     )
-    response_label = _normalize_response_label(_arg_value(parsed_args, "response_label"))
-    mapping_seed = _normalize_mapping_seed(_arg_value(parsed_args, "mapping_seed"))
+    response_label = _normalize_response_label(parsed_args.response_label)
+    mapping_seed = _normalize_mapping_seed(parsed_args.mapping_seed)
     file_tag_len = _parse_int_in_range(
-        "file_tag_len", _arg_value(parsed_args, "file_tag_len"), 4, 16
+        "file_tag_len", parsed_args.file_tag_len, 4, 16
     )
-    client_out_dir = _normalize_client_out_dir(_arg_value(parsed_args, "client_out_dir"))
+    client_out_dir = _normalize_client_out_dir(parsed_args.client_out_dir)
     compression_level = _parse_int_in_range(
         "compression_level",
-        _arg_value(parsed_args, "compression_level"),
+        parsed_args.compression_level,
         0,
         9,
     )
     log_level = _normalize_log_level(
-        _arg_value_default(parsed_args, "log_level", DEFAULT_LOG_LEVEL)
+        getattr(parsed_args, "log_level", DEFAULT_LOG_LEVEL)
     )
-    log_file = (_arg_value_default(parsed_args, "log_file", DEFAULT_LOG_FILE) or "").strip()
-    verbose = bool(_arg_value_default(parsed_args, "verbose", False))
+    log_file = (getattr(parsed_args, "log_file", DEFAULT_LOG_FILE) or "").strip()
+    verbose = bool(getattr(parsed_args, "verbose", False))
 
     if file_tag_len > dns_max_label_len:
         raise StartupError(

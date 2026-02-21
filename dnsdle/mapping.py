@@ -5,7 +5,6 @@ from dnsdle.constants import DIGEST_TEXT_CAPACITY
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.helpers import _derive_file_tag
 from dnsdle.helpers import _derive_slice_token
-from dnsdle.helpers import dns_name_wire_length
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
@@ -19,12 +18,8 @@ def _compute_tokens(seed_bytes, publish_version, total_slices, token_len):
 
 
 def _max_token_len_for_file(config, file_tag):
-    max_candidate = min(config.dns_max_label_len, DIGEST_TEXT_CAPACITY)
-    for token_len in range(max_candidate, 0, -1):
-        labels = ("a" * token_len, file_tag) + tuple(config.longest_domain_labels)
-        if dns_name_wire_length(labels) <= MAX_DNS_NAME_WIRE_LENGTH:
-            return token_len
-    return 0
+    budget = MAX_DNS_NAME_WIRE_LENGTH - 2 - len(file_tag) - config.longest_domain_wire_len
+    return min(max(budget, 0), config.dns_max_label_len, DIGEST_TEXT_CAPACITY)
 
 
 def _find_min_local_len(seed_bytes, publish_version, total_slices, max_token_len):

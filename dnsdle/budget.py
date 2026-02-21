@@ -6,24 +6,26 @@ from dnsdle.constants import BINARY_RECORD_OVERHEAD
 from dnsdle.constants import BITS_PER_BYTE
 from dnsdle.constants import CLASSIC_DNS_PACKET_LIMIT
 from dnsdle.constants import DNS_HEADER_BYTES
-from dnsdle.constants import MAX_DNS_NAME_TEXT_LENGTH
 from dnsdle.constants import MAX_DNS_NAME_WIRE_LENGTH
 from dnsdle.constants import OPT_RR_BYTES
 from dnsdle.constants import QUESTION_FIXED_BYTES
-from dnsdle.helpers import dns_name_wire_length
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
 
 
-def _payload_labels_for_chars(char_count, label_cap):
-    labels = []
-    remaining = char_count
-    while remaining > 0:
-        take = min(label_cap, remaining)
-        labels.append("a" * take)
-        remaining -= take
-    return tuple(labels)
+def _payload_wire_contribution(char_count, label_cap):
+    if char_count <= 0:
+        return 0
+    return char_count + (char_count + label_cap - 1) // label_cap
+
+
+def _max_chars_for_wire_budget(wire_budget, label_cap):
+    if wire_budget <= 0:
+        return 0
+    k = wire_budget // (label_cap + 1)
+    remaining = wire_budget - k * (label_cap + 1)
+    return k * label_cap + max(remaining - 1, 0)
 
 
 def _validate_query_token_len(config, query_token_len):
@@ -42,8 +44,8 @@ def _validate_query_token_len(config, query_token_len):
             {"query_token_len": query_token_len},
         )
 
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + config.longest_domain_labels
-    if dns_name_wire_length(qname_labels) > MAX_DNS_NAME_WIRE_LENGTH:
+    qname_wire = 2 + query_token_len + config.file_tag_len + config.longest_domain_wire_len
+    if qname_wire > MAX_DNS_NAME_WIRE_LENGTH:
         raise StartupError(
             "budget",
             "budget_unusable",
@@ -52,44 +54,36 @@ def _validate_query_token_len(config, query_token_len):
         )
 
 
-def _response_size_estimate(config, query_token_len, target_wire_len):
-    qname_labels = ("a" * query_token_len, "b" * config.file_tag_len) + config.longest_domain_labels
-    qname_wire_len = dns_name_wire_length(qname_labels)
-    question_size = qname_wire_len + QUESTION_FIXED_BYTES
-
-    # Conservative packet sizing:
-    # - answer owner name uses pointer (2 bytes, in ANSWER_FIXED_BYTES)
-    # - CNAME target is sized as full expanded DNS name wire length
-    #   (no suffix-compression credit during startup budgeting)
-    answer_size = ANSWER_FIXED_BYTES + target_wire_len
-
-    additional_size = OPT_RR_BYTES if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT else 0
-    return DNS_HEADER_BYTES + question_size + answer_size + additional_size
-
-
 def compute_max_ciphertext_slice_bytes(config, query_token_len=1):
-    domain_labels = config.longest_domain_labels
-    suffix_labels = (config.response_label,) + domain_labels
     packet_size_limit = max(config.dns_edns_size, CLASSIC_DNS_PACKET_LIMIT)
     if config.dns_max_response_bytes > 0:
         packet_size_limit = min(packet_size_limit, config.dns_max_response_bytes)
     query_token_len = int(query_token_len)
     _validate_query_token_len(config, query_token_len)
 
-    max_payload_chars = 0
-    winning_response_size = 0
-    # 253 textual chars is the practical upper bound without trailing dot.
-    for candidate in range(MAX_DNS_NAME_TEXT_LENGTH, 0, -1):
-        payload_labels = _payload_labels_for_chars(candidate, config.dns_max_label_len)
-        target_wire_len = dns_name_wire_length(payload_labels + suffix_labels)
-        candidate_response_size = _response_size_estimate(config, query_token_len, target_wire_len)
-        if (
-            target_wire_len <= MAX_DNS_NAME_WIRE_LENGTH
-            and candidate_response_size <= packet_size_limit
-        ):
-            max_payload_chars = candidate
-            winning_response_size = candidate_response_size
-            break
+    label_cap = config.dns_max_label_len
+    # CNAME target suffix: response_label + domain labels.
+    # Wire = root(1) + length-prefix(1) + response_label + domain wire - root(1)
+    suffix_wire = 1 + len(config.response_label) + config.longest_domain_wire_len
+
+    # Constraint 1: CNAME target wire length <= 255
+    wire_budget = MAX_DNS_NAME_WIRE_LENGTH - suffix_wire
+
+    # Constraint 2: total response packet <= packet_size_limit
+    # Question QNAME wire: root(1) + 2 length-prefixes + token + file_tag + domain wire - root(1)
+    qname_wire = 2 + query_token_len + config.file_tag_len + config.longest_domain_wire_len
+    additional_size = OPT_RR_BYTES if config.dns_edns_size > CLASSIC_DNS_PACKET_LIMIT else 0
+    response_fixed = (
+        DNS_HEADER_BYTES + qname_wire + QUESTION_FIXED_BYTES
+        + ANSWER_FIXED_BYTES + suffix_wire + additional_size
+    )
+    response_budget = packet_size_limit - response_fixed
+
+    max_payload_chars = _max_chars_for_wire_budget(
+        min(wire_budget, response_budget), label_cap
+    )
+    payload_wire = _payload_wire_contribution(max_payload_chars, label_cap)
+    winning_response_size = response_fixed + payload_wire
 
     if max_payload_chars <= 0:
         raise StartupError(

@@ -160,3 +160,26 @@ Delete the `if not normalized: raise ...` block after `os.path.abspath`.
 - `dnsdle/config.py`: delete `_SENTINEL`, `_arg_value`,
   `_arg_value_default`; replace call sites with `getattr`; collapse overlap
   checks; simplify longest-domain finding; remove dead normalization check.
+
+## Execution Notes
+
+All 7 design items implemented as specified, with the following deviations
+from the original plan based on review findings:
+
+- **Review finding #1 (Medium)**: `winning_response_size` is now computed
+  inline as `response_fixed + payload_wire` where `response_fixed` aggregates
+  all constant packet terms and `payload_wire` is derived from the solved
+  `max_payload_chars`.  No behavioral change to the returned `budget_info`.
+
+- **Review finding #2 (Medium)**: Removed the stale `MAX_DNS_NAME_TEXT_LENGTH`
+  import from budget.py (only used by the deleted loop).
+
+- **Review finding #3 (Low)**: `suffix_wire` in `compute_max_ciphertext_slice_bytes`
+  is computed arithmetically (`1 + len(response_label) + longest_domain_wire_len`),
+  so the `dns_name_wire_length` import was also removed from budget.py.
+
+- **Review finding #4 (Low)**: Required-arg call sites use direct attribute
+  access (`parsed_args.field`) instead of `getattr(parsed_args, "field")`.
+  Optional-arg call sites (with defaults) still use `getattr`.
+
+Commit: 11d70ee
