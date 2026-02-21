@@ -36,7 +36,6 @@ import base64
 import hashlib
 import hmac
 import random
-import re
 import socket
 import struct
 import subprocess
@@ -289,7 +288,8 @@ def _process_slice(ek, mk, si, payload_text):
 
 # Send DNS query over UDP and return response
 def _send_query(addr, pkt):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    _af = socket.AF_INET6 if ":" in addr[0] else socket.AF_INET
+    sock = socket.socket(_af, socket.SOCK_DGRAM)
     try:
         sock.settimeout(5.0)
         sock.sendto(pkt, addr)
@@ -311,12 +311,13 @@ def _discover_resolver():
     else:
         _hosts = _load_unix_resolvers()
     for _h in _hosts:
-        try:
-            _ai = socket.getaddrinfo(_h, 53, socket.AF_INET, socket.SOCK_DGRAM)
-            if _ai:
-                return _ai[0][4]
-        except Exception:
-            continue
+        for _af in (socket.AF_INET, socket.AF_INET6):
+            try:
+                _ai = socket.getaddrinfo(_h, 53, _af, socket.SOCK_DGRAM)
+                if _ai:
+                    return _ai[0][4][:2]
+            except Exception:
+                continue
     raise ValueError("no resolver")
 
 '''
@@ -341,11 +342,20 @@ if not psk:
     psk = PSK
 if not resolver:
     addr = _discover_resolver()
-    resolver = "%s:%d" % addr
+    if ":" in addr[0]:
+        resolver = "[%s]:%d" % addr
+    else:
+        resolver = "%s:%d" % addr
 else:
     host = resolver
     port = 53
-    if ":" in resolver:
+    if resolver.startswith("["):
+        _end = resolver.find("]")
+        host = resolver[1:_end]
+        _rest = resolver[_end + 1:]
+        if _rest.startswith(":"):
+            port = int(_rest[1:])
+    elif resolver.count(":") == 1:
         host, _port_s = resolver.rsplit(":", 1)
         port = int(_port_s)
     addr = (host, port)

@@ -348,11 +348,15 @@ def _parse_non_negative_int(raw_value, flag_name):
 
 
 def _resolve_udp_address(host, port):
-    infos = socket.getaddrinfo(host, int(port), socket.AF_INET, socket.SOCK_DGRAM)
-    if not infos:
-        raise ValueError("resolver lookup returned no addresses")
-    sockaddr = infos[0][4]
-    return sockaddr[0], int(sockaddr[1])
+    for af in (socket.AF_INET, socket.AF_INET6):
+        try:
+            infos = socket.getaddrinfo(host, int(port), af, socket.SOCK_DGRAM)
+            if infos:
+                sockaddr = infos[0][4]
+                return sockaddr[0], int(sockaddr[1])
+        except Exception:
+            continue
+    raise ValueError("resolver lookup returned no addresses")
 
 
 def _parse_resolver_arg(raw_value):
@@ -393,9 +397,6 @@ def _parse_resolver_arg(raw_value):
         raise ClientError(EXIT_USAGE, "usage", "--resolver lookup failed: %s" % exc)
 
 
-_IPV4_RE = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})")
-
-
 def _run_nslookup():
     args = ["nslookup", "google.com"]
     run_fn = getattr(subprocess, "run", None)
@@ -426,17 +427,22 @@ def _parse_nslookup_output(output):
             server_index = index
             break
     if server_index is None:
-        return None
+        return []
+
+    addresses = []
+    seen_addr = False
     for line in lines[server_index + 1:]:
         stripped = line.strip()
         if not stripped:
-            continue
-        if stripped.lower().startswith("non-authoritative answer"):
             break
-        match = _IPV4_RE.search(stripped)
-        if match:
-            return match.group(1)
-    return None
+        if stripped.lower().startswith("address") and ":" in stripped:
+            addr = stripped.split(":", 1)[1].strip()
+            if addr:
+                addresses.append(addr)
+            seen_addr = True
+        elif seen_addr and line[0:1] in (" ", "\t"):
+            addresses.append(stripped)
+    return addresses
 
 
 def _load_system_resolvers():
@@ -445,10 +451,7 @@ def _load_system_resolvers():
             output = _run_nslookup()
         except Exception:
             return []
-        ip = _parse_nslookup_output(output)
-        if not ip:
-            return []
-        return [ip]
+        return _parse_nslookup_output(output)
     else:
         resolvers = []
         try:
@@ -489,7 +492,8 @@ def _discover_system_resolver():
 
 
 def _send_dns_query(resolver_addr, query_packet, timeout_seconds, dns_edns_size):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    af = socket.AF_INET6 if ":" in resolver_addr[0] else socket.AF_INET
+    sock = socket.socket(af, socket.SOCK_DGRAM)
     try:
         sock.settimeout(timeout_seconds)
         sock.sendto(query_packet, resolver_addr)
@@ -772,11 +776,11 @@ def main(argv=None):
             response_label, dns_max_label_len,
         )
 
+        _resolver_fmt = "[%s]:%d" if ":" in resolver_addr[0] else "%s:%d"
         _log(
-            "start file_id=%s resolver=%s:%d slices=%d" % (
+            "start file_id=%s resolver=%s slices=%d" % (
                 file_id,
-                resolver_addr[0],
-                resolver_addr[1],
+                _resolver_fmt % resolver_addr,
                 total_slices,
             )
         )
