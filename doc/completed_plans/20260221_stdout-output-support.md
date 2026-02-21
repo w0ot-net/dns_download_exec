@@ -83,3 +83,17 @@ or any new CLI validation.  The `_write_output_atomic` path is simply bypassed.
   `main()` between stdout and file write; adjust success log label.
 - `doc/architecture/CLIENT_RUNTIME.md`: update "Output Write Behavior" section
   to document `--out -` semantics.
+
+## Execution Notes
+
+Executed 2026-02-21.  All plan items implemented as designed with no deviations.
+
+- Added `_write_stdout(payload)` at line 268 of `client_runtime.py`, immediately
+  after `_write_output_atomic`.
+- Branched `main()` call site: `out_path == "-"` routes to `_write_stdout`,
+  otherwise to `_write_output_atomic`.
+- Success log uses `"<stdout>"` label when `out_path == "-"`.
+- Updated `CLIENT_RUNTIME.md` "Output Write Behavior" section with stdout mode
+  semantics (binary buffer selection, Windows O_BINARY, error propagation).
+- No changes to `_parse_runtime_args`; `"-"` passes through the existing strip
+  unchanged as designed.

@@ -265,6 +265,15 @@ def _write_output_atomic(output_path, payload):
         raise ClientError(EXIT_WRITE, "write", "failed to write output: %s" % exc)
 
 
+def _write_stdout(payload):
+    if sys.platform == "win32":
+        import msvcrt
+        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+    stdout_bin = getattr(sys.stdout, "buffer", sys.stdout)
+    stdout_bin.write(payload)
+    stdout_bin.flush()
+
+
 def _parse_positive_float(raw_value, flag_name):
     try:
         value = float(raw_value)
@@ -651,8 +660,12 @@ def main(argv=None):
             dns_edns_size,
         )
         plaintext = _reassemble_plaintext(slices, total_slices, compressed_size, plaintext_sha256_hex)
-        _write_output_atomic(out_path, plaintext)
-        _log("success wrote=%s bytes=%d" % (out_path, len(plaintext)))
+        if out_path == "-":
+            _write_stdout(plaintext)
+        else:
+            _write_output_atomic(out_path, plaintext)
+        wrote_label = "<stdout>" if out_path == "-" else out_path
+        _log("success wrote=%s bytes=%d" % (wrote_label, len(plaintext)))
         return 0
     except ClientError as exc:
         _log("error phase=%s code=%d message=%s" % (exc.phase, exc.code, exc.message))

@@ -206,8 +206,15 @@ Failures in this phase exit with code `6`.
 
 Write policy:
 - write final plaintext only after all verification steps pass
-- if `--out` provided, write exactly to that path
+- if `--out -`, write raw binary plaintext to stdout (no file created)
+- if `--out` provided (other than `-`), write exactly to that path
 - if `--out` omitted, write to `<tempdir>/dnsdle_<file_id>`
+
+Stdout mode (`--out -`):
+- uses `sys.stdout.buffer` on Python 3, `sys.stdout` on Python 2
+- on Windows, sets `O_BINARY` mode via `msvcrt.setmode` to prevent CRLF
+  translation
+- write and flush errors propagate to the existing `ClientError` handler
 
 Output failures exit with code `7`.
 
