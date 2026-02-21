@@ -101,8 +101,8 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
     if len(message) < DNS_HEADER_BYTES:
         raise ClientError(EXIT_PARSE, "parse", "response shorter than DNS header")
 
-    response_id, flags, qdcount, ancount, nscount, arcount = struct.unpack(
-        "!HHHHHH", message[:DNS_HEADER_BYTES]
+    response_id, flags, qdcount, ancount = struct.unpack(
+        "!HHHH", message[:8]
     )
     if response_id != (int(expected_id) & 0xFFFF):
         raise ClientError(EXIT_PARSE, "parse", "response ID mismatch")
@@ -133,41 +133,25 @@ def _parse_response_for_cname(message, expected_id, expected_qname_labels):
         raise ClientError(EXIT_PARSE, "parse", "response question type/class mismatch")
 
     cname_labels = None
-    cname_matches = 0
-
-    def _consume_rrs(current_offset, count):
-        results = []
-        for _ in range(count):
-            rr_name, current_offset = _decode_name(message, current_offset)
-            if current_offset + 10 > len(message):
-                raise ClientError(EXIT_PARSE, "parse", "truncated answer RR header")
-            rr_type, rr_class, _rr_ttl, rdlength = struct.unpack(
-                "!HHIH", message[current_offset:current_offset + 10]
-            )
-            current_offset += 10
-            rdata_offset = current_offset
-            rdata_end = current_offset + rdlength
-            if rdata_end > len(message):
-                raise ClientError(EXIT_PARSE, "parse", "truncated answer RDATA")
-            results.append((rr_name, rr_type, rr_class, rdata_offset, rdata_end))
-            current_offset = rdata_end
-        return results, current_offset
-
-    answers, offset = _consume_rrs(offset, ancount)
-    for rr_name, rr_type, rr_class, rdata_offset, rdata_end in answers:
+    for _ in range(ancount):
+        rr_name, offset = _decode_name(message, offset)
+        if offset + 10 > len(message):
+            raise ClientError(EXIT_PARSE, "parse", "truncated answer RR header")
+        rr_type, rr_class, _rr_ttl, rdlength = struct.unpack(
+            "!HHIH", message[offset:offset + 10]
+        )
+        offset += 10
+        rdata_offset = offset
+        offset += rdlength
+        if offset > len(message):
+            raise ClientError(EXIT_PARSE, "parse", "truncated answer RDATA")
         if rr_type == DNS_QTYPE_CNAME and rr_class == DNS_QCLASS_IN and rr_name == expected_qname:
-            parsed_labels, parsed_end = _decode_name(message, rdata_offset)
-            if parsed_end != rdata_end:
-                raise ClientError(EXIT_PARSE, "parse", "CNAME RDATA length mismatch")
-            cname_matches += 1
-            if cname_matches > 1:
+            if cname_labels is not None:
                 raise ClientError(EXIT_PARSE, "parse", "multiple matching CNAME answers")
+            parsed_labels, parsed_end = _decode_name(message, rdata_offset)
+            if parsed_end != rdata_offset + rdlength:
+                raise ClientError(EXIT_PARSE, "parse", "CNAME RDATA length mismatch")
             cname_labels = parsed_labels
-
-    _, offset = _consume_rrs(offset, nscount)
-    _, offset = _consume_rrs(offset, arcount)
-    if offset != len(message):
-        raise ClientError(EXIT_PARSE, "parse", "trailing bytes in response message")
 
     if cname_labels is None:
         raise ClientError(EXIT_PARSE, "parse", "missing required CNAME answer")
@@ -194,59 +178,39 @@ def _extract_payload_text(cname_labels, selected_domain_labels, response_label, 
     return "".join(payload_labels)
 
 
-def _parse_slice_record(payload_text):
+def _process_slice(enc_key_bytes, mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, payload_text):
     record = bytearray(base32_decode_no_pad(payload_text))
     if len(record) < 12:
         raise ClientError(EXIT_PARSE, "parse", "slice record is too short")
 
-    profile = record[0]
-    flags = record[1]
-    if profile != PAYLOAD_PROFILE_V1_BYTE:
+    if record[0] != PAYLOAD_PROFILE_V1_BYTE:
         raise ClientError(EXIT_PARSE, "parse", "unsupported payload profile")
-    if flags != PAYLOAD_FLAGS_V1_BYTE:
+    if record[1] != PAYLOAD_FLAGS_V1_BYTE:
         raise ClientError(EXIT_PARSE, "parse", "unsupported payload flags")
 
     cipher_len = struct.unpack("!H", record[2:4])[0]
     if cipher_len <= 0:
         raise ClientError(EXIT_PARSE, "parse", "cipher_len must be positive")
-
-    expected_total = 4 + cipher_len + PAYLOAD_MAC_TRUNC_LEN
-    if len(record) != expected_total:
+    if len(record) != 4 + cipher_len + PAYLOAD_MAC_TRUNC_LEN:
         raise ClientError(EXIT_PARSE, "parse", "slice record length mismatch")
 
     ciphertext = bytes(record[4:4 + cipher_len])
     mac = bytes(record[4 + cipher_len:])
-    return ciphertext, mac
 
-
-def _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext):
-    message = (
+    expected = hmac_sha256(mac_key_bytes, (
         PAYLOAD_MAC_MESSAGE_LABEL
-        + encode_ascii(file_id)
-        + b"|"
-        + encode_ascii(publish_version)
-        + b"|"
-        + encode_ascii_int(slice_index, "slice_index")
-        + b"|"
-        + encode_ascii_int(total_slices, "total_slices")
-        + b"|"
-        + encode_ascii_int(compressed_size, "compressed_size")
-        + b"|"
+        + encode_ascii(file_id) + b"|"
+        + encode_ascii(publish_version) + b"|"
+        + encode_ascii_int(slice_index, "slice_index") + b"|"
+        + encode_ascii_int(total_slices, "total_slices") + b"|"
+        + encode_ascii_int(compressed_size, "compressed_size") + b"|"
         + ciphertext
-    )
-    return hmac_sha256(mac_key_bytes, message)[:PAYLOAD_MAC_TRUNC_LEN]
-
-
-def _decrypt_and_verify_slice(enc_key_bytes, mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext, mac):
-    expected = _expected_mac(mac_key_bytes, file_id, publish_version, slice_index, total_slices, compressed_size, ciphertext)
+    ))[:PAYLOAD_MAC_TRUNC_LEN]
     if not constant_time_equals(expected, mac):
         raise ClientError(EXIT_CRYPTO, "crypto", "MAC verification failed")
 
-    stream = _keystream_bytes(enc_key_bytes, file_id, publish_version, slice_index, len(ciphertext))
-    plaintext = _xor_bytes(ciphertext, stream)
-    if not plaintext:
-        raise ClientError(EXIT_CRYPTO, "crypto", "decrypted slice is empty")
-    return plaintext
+    stream = _keystream_bytes(enc_key_bytes, file_id, publish_version, slice_index, cipher_len)
+    return _xor_bytes(ciphertext, stream)
 
 
 def _reassemble_plaintext(slice_bytes_by_index, total_slices, compressed_size, plaintext_sha256_hex):
@@ -473,7 +437,6 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
         if rounds > max_rounds:
             raise ClientError(EXIT_TRANSPORT, "dns", "max rounds exhausted")
 
-        progress_this_round = False
         current_missing = sorted(missing)
         for slice_index in current_missing:
             if (time.time() - last_progress_time) >= no_progress_timeout:
@@ -505,24 +468,15 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
 
             consecutive_timeouts = 0
             payload_text = _extract_payload_text(cname_labels, domain_labels, response_label, dns_max_label_len)
-            ciphertext, mac = _parse_slice_record(payload_text)
-            slice_plain = _decrypt_and_verify_slice(
-                enc_key_bytes,
-                mac_key_bytes,
-                file_id,
-                publish_version,
-                slice_index,
-                total_slices,
-                compressed_size,
-                ciphertext,
-                mac,
+            slice_plain = _process_slice(
+                enc_key_bytes, mac_key_bytes, file_id, publish_version,
+                slice_index, total_slices, compressed_size, payload_text,
             )
 
             current_value = stored.get(slice_index)
             if current_value is None:
                 stored[slice_index] = slice_plain
                 missing.remove(slice_index)
-                progress_this_round = True
                 last_progress_time = time.time()
                 _log(
                     "progress received=%d missing=%d" % (
@@ -535,9 +489,6 @@ def _download_slices(psk_value, file_id, file_tag, publish_version, total_slices
 
             if query_interval_sec > 0:
                 time.sleep(query_interval_sec)
-
-        if not progress_this_round and (time.time() - last_progress_time) >= no_progress_timeout:
-            raise ClientError(EXIT_TRANSPORT, "dns", "no-progress timeout")
 
     return stored
 
