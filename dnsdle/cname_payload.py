@@ -6,7 +6,6 @@ from dnsdle.compat import base32_lower_no_pad
 from dnsdle.compat import encode_ascii
 from dnsdle.compat import encode_ascii_int
 from dnsdle.compat import encode_utf8
-from dnsdle.compat import iter_byte_values
 from dnsdle.constants import PAYLOAD_ENC_KEY_LABEL
 from dnsdle.constants import PAYLOAD_ENC_STREAM_LABEL
 from dnsdle.constants import PAYLOAD_FLAGS_V1_BYTE
@@ -78,10 +77,7 @@ def _xor_bytes(left_bytes, right_bytes):
     if len(left_bytes) != len(right_bytes):
         raise ValueError("xor inputs must have equal length")
 
-    out = bytearray(len(left_bytes))
-    for index, (a, b) in enumerate(zip(iter_byte_values(left_bytes), iter_byte_values(right_bytes))):
-        out[index] = a ^ b
-    return bytes(out)
+    return bytes(bytearray(a ^ b for a, b in zip(bytearray(left_bytes), bytearray(right_bytes))))
 # __END_EXTRACT__
 
 

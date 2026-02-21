@@ -63,44 +63,17 @@ def base32_decode_no_pad(value):
 # __END_EXTRACT__
 
 
-# __EXTRACT: byte_value__
-def byte_value(value):
-    if isinstance(value, integer_types):
-        int_value = int(value)
-        if int_value < 0 or int_value > 255:
-            raise ValueError("byte value out of range")
-        return int_value
-    if isinstance(value, binary_type):
-        if len(value) != 1:
-            raise ValueError("byte input must be length 1")
-        if PY2:
-            return ord(value)
-        return value[0]
-    raise TypeError("value must be integer or single-byte value")
-# __END_EXTRACT__
-
-
-# __EXTRACT: iter_byte_values__
-def iter_byte_values(raw_bytes):
-    for value in raw_bytes:
-        yield byte_value(value)
-# __END_EXTRACT__
-
-
 # __EXTRACT: constant_time_equals__
 def constant_time_equals(left_value, right_value):
     if not is_binary(left_value) or not is_binary(right_value):
         raise TypeError("values must be bytes")
     compare = getattr(hmac, "compare_digest", None)
     if compare is not None:
-        try:
-            return bool(compare(left_value, right_value))
-        except Exception:
-            pass
+        return bool(compare(left_value, right_value))
     if len(left_value) != len(right_value):
         return False
     result = 0
-    for left_byte, right_byte in zip(iter_byte_values(left_value), iter_byte_values(right_value)):
+    for left_byte, right_byte in zip(bytearray(left_value), bytearray(right_value)):
         result |= left_byte ^ right_byte
     return result == 0
 # __END_EXTRACT__

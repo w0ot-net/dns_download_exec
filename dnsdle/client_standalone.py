@@ -15,8 +15,6 @@ _COMPAT_EXTRACTIONS = [
     "decode_ascii",
     "base32_lower_no_pad",
     "base32_decode_no_pad",
-    "byte_value",
-    "iter_byte_values",
     "constant_time_equals",
     "encode_ascii_int",
     "is_binary",

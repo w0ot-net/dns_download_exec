@@ -8,7 +8,7 @@ import hashlib, zlib, argparse, base64, hmac, tempfile
 from dnsdle.compat import (
     encode_ascii, encode_ascii_int,
     base32_lower_no_pad, base32_decode_no_pad,
-    byte_value, constant_time_equals,
+    constant_time_equals,
 )
 from dnsdle.helpers import (
     hmac_sha256, dns_name_wire_length,
@@ -195,12 +195,12 @@ def _extract_payload_text(cname_labels, selected_domain_labels, response_label, 
 
 
 def _parse_slice_record(payload_text):
-    record = base32_decode_no_pad(payload_text)
+    record = bytearray(base32_decode_no_pad(payload_text))
     if len(record) < 12:
         raise ClientError(EXIT_PARSE, "parse", "slice record is too short")
 
-    profile = byte_value(record[0])
-    flags = byte_value(record[1])
+    profile = record[0]
+    flags = record[1]
     if profile != PAYLOAD_PROFILE_V1_BYTE:
         raise ClientError(EXIT_PARSE, "parse", "unsupported payload profile")
     if flags != PAYLOAD_FLAGS_V1_BYTE:
@@ -214,8 +214,8 @@ def _parse_slice_record(payload_text):
     if len(record) != expected_total:
         raise ClientError(EXIT_PARSE, "parse", "slice record length mismatch")
 
-    ciphertext = record[4:4 + cipher_len]
-    mac = record[4 + cipher_len:]
+    ciphertext = bytes(record[4:4 + cipher_len])
+    mac = bytes(record[4 + cipher_len:])
     return ciphertext, mac
 
 

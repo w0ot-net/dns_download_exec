@@ -2,7 +2,6 @@ from __future__ import absolute_import, unicode_literals
 
 import struct
 
-from dnsdle.compat import byte_value
 from dnsdle.compat import decode_ascii
 from dnsdle.compat import encode_ascii
 from dnsdle.constants import DNS_HEADER_BYTES
@@ -48,7 +47,8 @@ def encode_name(labels):
 
 # __EXTRACT: _decode_name__
 def _decode_name(message, start_offset):
-    message_len = len(message)
+    ba = bytearray(message)
+    message_len = len(ba)
     labels = []
     offset = start_offset
     jumped = False
@@ -59,11 +59,11 @@ def _decode_name(message, start_offset):
         if offset >= message_len:
             raise DnsParseError("name extends past message")
 
-        first = byte_value(message[offset])
+        first = ba[offset]
         if (first & DNS_POINTER_TAG) == DNS_POINTER_TAG:
             if offset + 1 >= message_len:
                 raise DnsParseError("truncated name pointer")
-            pointer = ((first & 0x3F) << 8) | byte_value(message[offset + 1])
+            pointer = ((first & 0x3F) << 8) | ba[offset + 1]
             if pointer >= message_len:
                 raise DnsParseError("name pointer is out of bounds")
             if pointer in visited_offsets:
@@ -85,7 +85,7 @@ def _decode_name(message, start_offset):
         end_offset = offset + first
         if end_offset > message_len:
             raise DnsParseError("label extends past message")
-        raw = message[offset:end_offset]
+        raw = bytes(ba[offset:end_offset])
         try:
             label = decode_ascii(raw)
         except Exception:
