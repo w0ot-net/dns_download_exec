@@ -268,3 +268,43 @@ tradeoff for crypto correctness guarantees.
   `_STAGER_DNS_OPS`. Replace `# __TEMPLATE_SOURCE__` sentinel description with
   `extract_functions()` mechanism. Update the 4-section structure to reflect the
   new 5-part assembly (header, extracted functions, DNS ops, discover, suffix).
+
+## Execution Notes
+
+Implemented 2026-02-21.
+
+All plan items completed as specified:
+
+- `stager_template.py`: Rewrote entirely. Removed `_read_resolver_source()`,
+  `import os`, `from dnsdle.state import StartupError`. Added
+  `from dnsdle.extract import extract_functions`. Split `_STAGER_PRE_RESOLVER`
+  into `_STAGER_HEADER` (imports, placeholders, type compat, crypto constants)
+  and `_STAGER_DNS_OPS` (stager-specific functions). Removed all 15 inline
+  crypto/encoding functions (`_ab`, `_ub`, `_ib`, `_b32d`, `_secure_compare`,
+  `_enc_key`, `_mac_key`, `_keystream`, `_xor`, `_expected_mac`,
+  `_derive_slice_token`, `_decode_name`, `_encode_name` internals). Rewrote
+  `_process_slice` to use extracted building blocks. Updated call sites in
+  `_STAGER_SUFFIX` (`_derive_file_bound_key` replaces `_enc_key`/`_mac_key`,
+  `_derive_slice_token` now takes explicit args). Rewrote
+  `build_stager_template()` to use `extract_functions()`.
+- `stager_minify.py`: Regenerated `_RENAME_TABLE` (158 entries, down from 157).
+  Removed entries for eliminated inline functions. Added entries for extracted
+  function names and their internal variables. Fixed semicolon-join pass to
+  preserve multiline parenthesized expressions (prev ending with `(` or
+  current starting with operator/`)` prevents joining).
+- `resolver_linux.py`: Removed `# __TEMPLATE_SOURCE__` sentinel.
+- `resolver_windows.py`: Removed `# __TEMPLATE_SOURCE__` sentinel.
+- `doc/architecture/STAGER.md`: Updated template assembly from 4-section to
+  5-section structure. Updated rename table entry count. Updated semicolon-join
+  documentation.
+
+Deviation: The semicolon-join pass in the minifier needed a fix to handle
+multiline parenthesized expressions present in extracted functions (e.g.
+`_keystream_bytes` block_input assignment). This was not anticipated in the
+plan. The fix adds two additional conditions to the join heuristic: previous
+line ending with `(` and current line starting with an operator or `)`.
+
+Validation: Assembled template compiles after placeholder substitution and
+minification. Minified output is 9342 bytes, compresses to 4984 bytes base64.
+
+Commit: PENDING

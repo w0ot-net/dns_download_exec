@@ -26,21 +26,29 @@ The pipeline has three modules executed in order:
 
 ## Template Assembly
 
-`build_stager_template()` concatenates four sections into a single Python
+`build_stager_template()` concatenates five sections into a single Python
 source string:
 
-1. **`_STAGER_PRE_RESOLVER`** -- imports, placeholder constants, and all
-   helper functions (DNS encoding/decoding, crypto key derivation, CNAME
-   parsing, payload extraction, MAC verification, XOR decryption, query
-   sending).
-2. **Resolver sources** -- platform-specific resolver discovery code extracted
-   from `resolver_windows.py` and `resolver_linux.py`.  Each file is read at
-   generation time and the content after the `# __TEMPLATE_SOURCE__` sentinel
-   is included verbatim.
-3. **`_STAGER_DISCOVER`** -- the `_discover_resolver()` dispatcher that calls
+1. **`_STAGER_HEADER`** -- shebang, imports, `@@PLACEHOLDER@@` template
+   constants, Python 2/3 type compatibility definitions (`text_type`,
+   `binary_type`), and hardcoded crypto/DNS constants (`DnsParseError`,
+   `DNS_POINTER_TAG`, `PAYLOAD_*_LABEL`, `PAYLOAD_MAC_TRUNC_LEN`,
+   `MAPPING_SLICE_LABEL`).
+2. **Extracted functions** -- encoding, crypto, DNS decoding, and resolver
+   discovery functions pulled at generation time via `extract_functions()`
+   from `compat.py`, `helpers.py`, `cname_payload.py`, `dnswire.py`,
+   `resolver_linux.py`, and `resolver_windows.py`.  This is the same
+   extraction mechanism the universal client uses (`__EXTRACT__` /
+   `__END_EXTRACT__` markers).
+3. **`_STAGER_DNS_OPS`** -- stager-specific functions with no canonical
+   extractable equivalent: `_encode_name`, `_build_query`, `_parse_cname`,
+   `_extract_payload`, `_send_query`, and `_process_slice`.  These call the
+   extracted building blocks (e.g. `encode_ascii`, `hmac_sha256`,
+   `_keystream_bytes`) rather than maintaining inline copies.
+4. **`_STAGER_DISCOVER`** -- the `_discover_resolver()` dispatcher that calls
    the Windows or Linux loader based on `sys.platform` and resolves the first
    working address with IPv4/IPv6 fallback.
-4. **`_STAGER_SUFFIX`** -- runtime entry point: CLI argument parsing,
+5. **`_STAGER_SUFFIX`** -- runtime entry point: CLI argument parsing,
    resolver setup, download loop, reassembly/verification, `sys.argv`
    reconstruction, and `exec()` of the universal client.
 
@@ -96,7 +104,7 @@ triggers a fatal `StartupError("stager_generation_failed")`.
 3. **Protect strings and rename identifiers** -- extract all string literals
    (single/double quoted, optional `b` prefix) into numbered placeholders
    (`__S0__`, `__S1__`, ...) to prevent corruption, then apply a longest-first
-   rename table (157 entries) that replaces long identifiers with 1-2 character
+   rename table (158 entries) that replaces long identifiers with 1-2 character
    aliases via compiled `\b`-bounded regex.  String literals are restored after
    renaming.
 4. **Reduce indentation** -- convert 4-space indentation to 1 space per
@@ -104,7 +112,9 @@ triggers a fatal `StartupError("stager_generation_failed")`.
 5. **Semicolon-join** -- join consecutive same-indent non-block lines with `;`.
    Block starters (`if`, `for`, `while`, `try`, `except`, `else`, `elif`,
    `finally`, `def`, `return`, `with`, `break`, `continue`) are never joined.
-   Lines ending with `,` (continuation) are not joined.
+   Lines ending with `,` or `(` are not joined.  Lines starting with an
+   operator (`+`, `-`, `*`, `/`, `|`, `&`, `^`, `%`, `~`) or `)` are not
+   joined, preserving multiline parenthesized expressions.
 
 Same input always produces same output.
 

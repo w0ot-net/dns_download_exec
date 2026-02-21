@@ -3,7 +3,6 @@ from __future__ import absolute_import, unicode_literals
 
 import subprocess
 
-# __TEMPLATE_SOURCE__
 # __EXTRACT: _run_nslookup__
 def _run_nslookup():
     args = ["nslookup", "google.com"]

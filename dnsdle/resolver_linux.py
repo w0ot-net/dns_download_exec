@@ -1,7 +1,6 @@
 # -*- coding: ascii -*-
 from __future__ import absolute_import, unicode_literals
 
-# __TEMPLATE_SOURCE__
 # __EXTRACT: _load_unix_resolvers__
 def _load_unix_resolvers():
     resolvers = []
