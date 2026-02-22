@@ -36,14 +36,14 @@ def _build_parser():
         parser = _RaisingArgumentParser()
 
     required = parser.add_argument_group("required")
-    required.add_argument("--domain", dest="domain_deprecated",
-                          default=None, help=argparse.SUPPRESS)
-    required.add_argument("--domains", required=True,
-                          help="comma-separated base domains (required)")
-    required.add_argument("--file", dest="file_deprecated",
-                          default=None, help=argparse.SUPPRESS)
-    required.add_argument("--files", required=True,
-                          help="comma-separated file paths to publish (required)")
+    required.add_argument("--domain", default=None,
+                          help="single base domain")
+    required.add_argument("--domains", default=None,
+                          help="comma-separated base domains")
+    required.add_argument("--file", default=None,
+                          help="single file path to publish")
+    required.add_argument("--files", default=None,
+                          help="comma-separated file paths to publish")
     required.add_argument("--psk", required=True,
                           help="shared secret for v1 crypto (required)")
 
@@ -87,19 +87,24 @@ def _build_parser():
     return parser
 
 
+def _merge_singular_plural(singular, plural, name):
+    parts = []
+    if singular is not None:
+        parts.append(singular)
+    if plural is not None:
+        parts.append(plural)
+    if not parts:
+        raise StartupError(
+            "config",
+            "invalid_config",
+            "--%s or --%ss is required" % (name, name),
+        )
+    return ",".join(parts)
+
+
 def parse_cli_args(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.domain_deprecated is not None:
-        raise StartupError(
-            "config",
-            "invalid_config",
-            "--domain is removed; use --domains",
-        )
-    if args.file_deprecated is not None:
-        raise StartupError(
-            "config",
-            "invalid_config",
-            "--file is removed; use --files",
-        )
+    args.domains = _merge_singular_plural(args.domain, args.domains, "domain")
+    args.files = _merge_singular_plural(args.file, args.files, "file")
     return args
