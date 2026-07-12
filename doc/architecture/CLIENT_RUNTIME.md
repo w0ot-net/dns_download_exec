@@ -194,7 +194,7 @@ Classification:
 When no indices remain missing:
 1. reassemble compressed bytes in ascending index order
 2. verify compressed length equals `compressed_size`
-3. decompress bytes
+3. decompress the RFC 1952 gzip stream
 4. compute plaintext SHA-256
 5. compare against `sha256`
 

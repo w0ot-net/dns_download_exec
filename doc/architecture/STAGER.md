@@ -56,7 +56,7 @@ source string:
 
 ## Placeholder Substitution
 
-The template contains 19 `@@PLACEHOLDER@@` tokens replaced with `repr()`-encoded
+The template contains 18 `@@PLACEHOLDER@@` tokens replaced with `repr()`-encoded
 Python literals at generation time.
 
 **Client download params** (universal client's own publish metadata, same for
@@ -75,7 +75,6 @@ all stagers):
 | `@@SLICE_TOKEN_LEN@@` | client publish item `slice_token_len` |
 | `@@RESPONSE_LABEL@@` | `config.response_label` |
 | `@@DNS_EDNS_SIZE@@` | `config.dns_edns_size` |
-| `@@PSK@@` | `config.psk` |
 | `@@DOMAINS_STR@@` | comma-joined `config.domains` |
 | `@@FILE_TAG_LEN@@` | `config.file_tag_len` |
 
@@ -138,15 +137,22 @@ After minification, `generate_stager()` performs:
    python3 -c "import base64,zlib;exec(zlib.decompress(base64.b64decode('...')))"
    ```
 
+This outer zlib wrapper packages the stager program only. Bytes downloaded
+from the publish pipeline use the gzip contract in
+`doc/architecture/PUBLISH_PIPELINE.md`.
+
 ---
 
 ## Output Contract
 
-One `.1-liner.txt` file per payload, written to the managed output directory
+One Python stager file per payload, written to the managed output directory
 (`<client_out_dir>/dnsdle_v1/`).
 
-Filename derivation: `<payload_basename>.1-liner.txt` (extension stripped from
-source filename, `.1-liner.txt` appended).
+Filename: `dnsdle_<file_id>.python.1-liner.txt`.
+
+The common artifact record contains only `language=python`, `kind=stager`,
+`source_filename`, and `path`. It is followed immediately by the same payload's
+Bash downloader in the returned artifact sequence.
 
 Write is atomic: content is written to a `.tmp` file first, then renamed.
 On write failure, the `.tmp` file is cleaned up and a
@@ -158,8 +164,8 @@ On write failure, the `.tmp` file is cleaned up and a
 
 When a user executes a stager one-liner, the extracted script:
 
-1. Parses `--psk` and `--resolver` from `sys.argv` if present; falls back to
-   the embedded `PSK` constant and system resolver discovery.
+1. Requires non-empty runtime `--psk` and parses optional `--resolver` from
+   `sys.argv`. Missing/empty `--psk` exits `2` before resolver discovery.
 2. Detects `--verbose` in `sys.argv` without consuming it, so it is forwarded
    unchanged to the universal client.  When active, the stager emits to stderr:
    - `resolver <addr>` -- resolved DNS address
@@ -170,7 +176,7 @@ When a user executes a stager one-liner, the extracted script:
 4. Enforces a 60-second no-progress deadline per slice (resets after each
    successful acquisition).  Retries on any exception with 1-second sleep.
 5. After all slices are collected, verifies compressed size matches
-   `COMPRESSED_SIZE`, decompresses, and verifies plaintext SHA-256 matches
+   `COMPRESSED_SIZE`, gzip-decompresses, and verifies plaintext SHA-256 matches
    `PLAINTEXT_SHA256_HEX`.
 6. Reconstructs `sys.argv` with per-payload metadata and calls
    `exec(client_source)` to invoke the universal client.

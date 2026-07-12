@@ -135,8 +135,8 @@ For each expected `slice_index` in `[0, total_slices - 1]`:
 Ordering rule:
 - client must parse/validate payload record fields first, verify MAC over
   ciphertext-bound metadata second, and decrypt only after MAC success.
-- this ordering is implemented by `dnsdle/client_payload.py` and must remain
-  invariant in generated client equivalents.
+- this ordering is implemented by `dnsdle/client_runtime.py` and the generated
+  Bash binary-file pipeline and must remain invariant in both clients.
 
 After all indices are present:
 1. Reassemble slices in strict index order.
@@ -168,10 +168,14 @@ reinterpret v1 records.
 
 ---
 
-## Python Compatibility Constraints
+## Runtime Compatibility Constraints
 
-Implementation must support Python 2.7 and Python 3.x with standard library
-only. Compatibility aliases and byte/text coercion helpers should be
-centralized in `dnsdle/compat.py` so crypto/payload code paths avoid duplicated
-interpreter-branching logic. Architecture-level crypto requirements are fixed;
-implementation details must preserve the invariants in this document.
+Python implementation must support Python 2.7 and Python 3.x with standard
+library only. Compatibility aliases and byte/text coercion helpers should be
+centralized in `dnsdle/compat.py`.
+
+The direct Bash implementation requires Bash 4.0+ and OpenSSL HMAC-SHA256. It
+keeps all binary values in private files, uses hex only in shell variables,
+compares the truncated MAC with a fixed-length XOR accumulator, and decrypts
+only after successful authentication. A fixed HMAC capability vector must pass
+before DNS activity.

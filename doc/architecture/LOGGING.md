@@ -23,9 +23,14 @@ Additional event-specific keys may be included as context.
 
 ### Generation Events
 
-`generation_ok` required fields: `filename`, `path`.
+`generation_ok` required fields: `filename`, `path`, `managed_dir`,
+`artifact_count`, `payload_artifact_count`.
 
-`generation_summary` required fields: `managed_dir`, `artifact_count`.
+`download_artifact_ready` required fields: `language`, `kind`,
+`source_filename`, `path`.
+
+`artifact_count` is the universal-client count and remains `1`.
+`payload_artifact_count` is exactly twice the configured payload count.
 
 ---
 
@@ -64,6 +69,7 @@ Logging must never include:
 - PSK material
 - derived key material
 - raw payload bytes
+- generated source or invocation strings
 
 Network-facing request logs must not include source file paths.
 

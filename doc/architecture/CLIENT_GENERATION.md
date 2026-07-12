@@ -1,6 +1,8 @@
 # Client Generation
 
-This document defines how the server generates the universal download client.
+This document defines how the server generates the universal Python download
+client. Direct Bash generation is defined separately in
+`doc/architecture/BASH_DOWNLOADER.md`.
 
 v1 generation produces a single universal client that takes all file-specific
 parameters via CLI arguments.  The server publishes one client for all
@@ -95,7 +97,7 @@ The universal client accepts all parameters via CLI:
 
 ## Output Artifacts
 
-A single universal client script is generated per server startup.
+A single universal Python client script is generated per server startup.
 
 Cardinality invariant:
 - `artifact_count = 1`
@@ -112,6 +114,12 @@ Required properties:
 Output naming:
 - `dnsdle_universal_client.py`
 - managed output boundary: `client_out_dir/dnsdle_v1/`
+
+After mapping convergence, the server also emits two per-payload artifacts
+through `dnsdle/downloader_generator.py`: a Python stager and a direct Bash
+downloader. These are not included in the universal client's
+`artifact_count = 1`; their count is reported separately as
+`payload_artifact_count`.
 
 ---
 
@@ -179,6 +187,9 @@ Each stager embeds:
   all stagers)
 - **Payload params**: 5 per-file values passed to the client via `sys.argv`
 
+The PSK is not embedded. The stager requires runtime `--psk` and exits `2`
+before resolver selection when it is missing or empty.
+
 ### Stager `--verbose` flag
 
 The stager detects `--verbose` in `sys.argv` without consuming it, so the
@@ -242,7 +253,7 @@ Rules:
 After all slices are present:
 1. Reassemble bytes by ascending slice index.
 2. Validate reassembled compressed length equals `compressed_size`.
-3. Decompress.
+3. Decompress the RFC 1952 gzip stream.
 4. Compute plaintext SHA-256.
 5. Compare to `sha256`.
 6. Write plaintext bytes to output path only on success.

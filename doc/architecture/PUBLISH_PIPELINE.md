@@ -113,9 +113,16 @@ Launch invariant:
 Compression is mandatory in v1.
 
 v1 compression algorithm:
-- zlib stream (RFC 1950 wrapper + DEFLATE payload)
+- gzip stream (RFC 1952 wrapper + DEFLATE payload)
 - level = configured `compression_level` (`0..9`)
 - no preset dictionary
+- fixed ten-byte header: gzip magic, DEFLATE method, zero flags/mtime/XFL, and
+  OS byte `255`
+- little-endian trailer: CRC32 of plaintext plus plaintext size modulo `2^32`
+
+The implementation builds the wrapper explicitly around raw DEFLATE output.
+It must not use gzip helpers that inject a timestamp, source filename, or host
+OS value.
 
 Implementation profile (for determinism guarantees):
 - python implementation + major/minor version

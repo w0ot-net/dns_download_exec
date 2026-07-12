@@ -185,9 +185,7 @@ v1 does not emit truncated (`TC=1`) slice responses.
 Client validation requirements for recursive-compatible acceptance:
 1. verify `QR=1` and matching transaction ID
 2. verify `TC=0` and opcode `QUERY`
-3. verify `QDCOUNT=1` (generated template positional parser requires this;
-   `client_payload.py` gets equivalent coverage from downstream question-count
-   check)
+3. verify `QDCOUNT=1`
 4. verify response question matches request qname/qtype/qclass
 5. require `RCODE=NOERROR` for slice success path
 6. locate exactly one matching `IN CNAME` answer for requested name
@@ -202,6 +200,20 @@ modify or remove OPT records. The invariants above hold end-to-end regardless
 of resolver topology.
 
 Any parse or format violation is fatal per client error policy.
+
+### Bash `dig` boundary
+
+The direct Bash downloader delegates transaction IDs, wire-name decoding,
+question echo checks, response-source checks, and compression-pointer safety to
+`dig`. It issues an absolute A query over UDP with one try, bounded timeout, and
+the configured EDNS buffer (`+noedns` at `512`). It parses `dig` header/answer
+presentation and requires `NOERROR`, no `TC`, and exactly one matching IN CNAME
+owner. Command failure, non-NOERROR status, truncation, or a missing CNAME is
+retryable; multiple matching CNAMEs are fatal parse errors.
+
+After that boundary, Bash validates the CNAME suffix, label cap/alphabet,
+base32 representation, binary record, MAC, and plaintext independently. It
+never treats `dig` presentation text as authenticated payload bytes.
 
 ---
 
@@ -224,5 +236,6 @@ Any change to:
 
 is a breaking wire change and requires synchronized updates to:
 - server runtime
-- generated client parser
+- generated Python client parser
+- generated Bash `dig` presentation validator
 - affected architecture docs

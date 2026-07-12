@@ -39,7 +39,7 @@ Processing flow is two-step:
   the effective packet-size ceiling becomes
   `min(max(dns_edns_size, 512), dns_max_response_bytes)`. Does not affect EDNS
   OPT advertisement.
-- `dns_max_label_len` (`--dns-max-label-len`): payload label cap, default `63`,
+- `dns_max_label_len` (`--dns-max-label-len`): payload label cap, default `40`,
   valid `16..63`.
 - `response_label` (`--response-label`): fixed CNAME response discriminator,
   default `r-x`.
@@ -47,8 +47,9 @@ Processing flow is two-step:
 - `file_tag_len` (`--file-tag-len`): deterministic file-tag length, default `6`,
   valid `4..16`.
 - `client_out_dir` (`--client-out-dir`): output directory for generated client
-  files, default `./generated_clients` (normalized to absolute path at startup).
-- `compression_level` (`--compression-level`): compressed payload level,
+  and per-payload artifact files, default `./generated_clients` (normalized to
+  absolute path at startup).
+- `compression_level` (`--compression-level`): gzip DEFLATE level,
   default `9`, valid `0..9`.
 - `log_level` (`--log-level`): logging threshold
   (`error|warn|info|debug|trace`), default `info`.
@@ -63,6 +64,8 @@ Processing flow is two-step:
 - `query_mapping_case = lowercase`
 - `generated_client_single_file = true`
 - `generated_client_download_only = true`
+- `generated_payload_artifacts_per_file = 2`
+- `generated_payload_artifact_order = python_stager,bash_downloader`
 
 Wire profile, crypto profile, and response type are implicit in the v1 wire
 format and not carried as runtime configuration fields.
@@ -71,10 +74,10 @@ Changing these values requires architecture/version updates, not runtime flags.
 
 ---
 
-## Generated Client Embedded Defaults
+## Generated Runtime Defaults
 
-These values are emitted into each generated client unless overridden by
-runtime CLI flags in the generated client.
+These values are emitted into the universal Python client and, where the
+runtime supports them, the direct Bash downloader.
 
 - `request_timeout_seconds = 3.0`
 - `no_progress_timeout_seconds = 60`
@@ -94,6 +97,9 @@ Generated-client runtime overrides:
 
 Generated-client runtime required input:
 - `--psk secret` (non-empty shared secret for v1 crypto profile)
+
+Both per-payload artifacts also require `--psk secret`. The server-side PSK is
+never embedded in their generated source.
 
 No runtime flag for execution is allowed in v1.
 
@@ -177,7 +183,13 @@ Startup fails if any derived value cannot be computed within constraints.
 ### Generation
 
 - generator must produce exactly one universal client `.py` file.
-- no sidecar files may be emitted.
+- generator must produce exactly one Python stager and one Bash downloader per
+  configured payload.
+- payload artifacts use file-ID-only ASCII filenames and expose only
+  `language`, `kind`, `source_filename`, and `path` metadata.
+- generated source, invocation strings, and PSK material are not returned or
+  logged through the common artifact contract.
+- no runtime sidecar files may be emitted.
 - generated files are written only under
   `<normalized client_out_dir>/dnsdle_v1/`.
 

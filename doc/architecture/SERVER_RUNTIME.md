@@ -21,7 +21,7 @@ semantics for deterministic mappings.
 Server runtime has five phases:
 1. startup validation
 2. publish preparation
-3. generated-client emission
+3. universal-client and per-payload artifact emission
 4. serving loop
 5. graceful shutdown
 
@@ -104,8 +104,11 @@ After convergence, the combined mapping is used to build `RuntimeState`.  The
 universal client publish item must be present in the combined mapping; its
 absence raises `StartupError("mapping_stability_violation")`.
 
-Stagers are then generated for each payload file using the converged client and
-payload publish items (see `doc/architecture/STAGER.md`).
+The server then generates a Python stager and direct Bash downloader for each
+payload using the converged client/payload mapping. Artifact order is payload
+input order, Python then Bash. Any render, cardinality, path-uniqueness, or write
+failure is startup-fatal (see `doc/architecture/STAGER.md` and
+`doc/architecture/BASH_DOWNLOADER.md`).
 
 ---
 
@@ -267,3 +270,4 @@ Forced shutdown may drop in-flight responses; this is acceptable for UDP.
 - `doc/architecture/CLIENT_GENERATION.md`
 - `doc/architecture/ERRORS_AND_INVARIANTS.md`
 - `doc/architecture/STAGER.md`
+- `doc/architecture/BASH_DOWNLOADER.md`

@@ -3,25 +3,29 @@
 ## What is dnsdle?
 
 dnsdle is a DNS-based file transfer system. It publishes operator-selected
-files as DNS CNAME responses and generates self-contained Python clients that
-download those files by issuing ordinary DNS queries, verifying cryptographic
-integrity, and reassembling the result on disk.
+files as DNS CNAME responses and generates Python and Bash clients that download
+those files by issuing ordinary DNS queries, verifying cryptographic integrity,
+and reassembling the result on disk.
 
 The operator starts a DNS server with a pre-shared key, a list of domains, and
 one or more files to serve. dnsdle compresses and slices each file, derives
 deterministic query tokens so that neither file names nor slice indexes appear
 in the wire traffic, and encrypts every slice with HMAC-verified, per-file
-keying material. It then emits two artifacts:
+keying material. It then emits these artifacts:
 
 - A **universal client** -- a single generated Python script that can download
   any published file given the correct parameters.
 - Per-file **one-liner stagers** -- minimal bootstrap scripts that first
   download the universal client over DNS, then invoke it to retrieve the target
   file.
+- Per-file **Bash downloaders** -- direct download scripts that contain the
+  final mapped slice tokens and do not bootstrap through Python.
 
-All generated code is standard-library-only Python (2.7 and 3.x), so the
-client side requires nothing beyond a working Python interpreter and DNS
-connectivity.
+The universal client and stager support standard-library-only Python 2.7/3.x on
+Windows and Linux. The Bash downloader targets Linux with Bash 4.0 or newer and
+requires `dig`, `openssl`, `base32`, `od`, `dd`, `xxd`, `gzip`, `sha256sum`,
+`mktemp`, `cat`, `rm`, `sleep`, `wc`, and `mv`. Neither per-file artifact embeds
+the PSK; pass `--psk <secret>` when invoking either one.
 
 ## How does the download work?
 
@@ -46,7 +50,7 @@ The client downloads a file by retrieving it one slice at a time over DNS.
    decrypts the ciphertext with a per-file keystream derived from the PSK.
 
 5. **Reassemble.** Once every slice has been received, the client concatenates
-   them in index order, decompresses with zlib, and verifies the plaintext
+   them in index order, decompresses the deterministic gzip stream, and verifies the plaintext
    SHA-256 against the expected hash. On success it atomically writes the file
    to disk.
 
@@ -65,18 +69,19 @@ you want file delivery to blend into normal DNS traffic.
 - **Penetration testing and red-team engagements.** Delivering payloads or
   tooling to a compromised host that has no other outbound path. The one-liner
   stagers are designed to bootstrap from a single command.
-- **Minimal-dependency hosts.** Servers or containers that have Python and DNS
-  but no curl, wget, or outbound TCP. dnsdle needs only the standard library
-  and UDP port 53.
+- **Minimal-dependency hosts.** Use the Python artifacts where Python is
+  present, or the Bash artifact on Linux hosts that have the documented command
+  set but no Python interpreter. Neither path needs curl, wget, or outbound TCP.
 - **Covert file distribution.** DNS queries are routine traffic and rarely
   inspected at the payload level, making dnsdle less visible than HTTP-based
   transfers in environments with deep packet inspection.
 
 ## How does the crypto work?
 
-Everything is built from HMAC-SHA256 and XOR using the standard library only.
-The operator supplies a pre-shared key (PSK); all other keying material is
-derived deterministically from the PSK, a file identity, and a publish version.
+Everything is built from HMAC-SHA256 and XOR. Python uses its standard library;
+the Bash downloader uses the OpenSSL command-line HMAC implementation. The
+operator supplies a pre-shared key (PSK); all other keying material is derived
+deterministically from the PSK, a file identity, and a publish version.
 
 **Key derivation.** For each published file the server derives two independent
 32-byte keys:

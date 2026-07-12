@@ -359,7 +359,8 @@ if [[ "$out" != "-" ]]; then
 fi
 _require_commands
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dnsdle.XXXXXX") || _fail 2 "cannot create temporary directory"
-trap _cleanup EXIT HUP INT TERM
+trap _cleanup EXIT
+trap 'exit 3' HUP INT TERM
 _capability_check
 
 psk_hex=$(printf '%s' "$psk" | xxd -p -c 65535) || _fail 5 "cannot encode PSK"

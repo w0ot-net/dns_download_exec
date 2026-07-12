@@ -26,6 +26,9 @@ Examples:
 - slice budget computation failure
 - generated-client contract mismatch (`generator_invalid_contract`)
 - generated-client transactional write failure (`generator_write_failed`)
+- payload-artifact contract mismatch (`download_artifact_invalid_contract`)
+- payload-artifact transactional write failure
+  (`download_artifact_write_failed`)
 
 ### Request Misses (Server)
 
@@ -170,6 +173,8 @@ Generated client failure classes map to exit codes from
 - `2` usage/CLI error:
   - invalid runtime flag value
   - invalid output path argument
+  - missing/empty `--psk`
+  - missing or incompatible Bash runtime command
 - `3` DNS/transport exhaustion:
   - retries/timeouts exhausted without full slice set
   - no new slice acquired for longer than no-progress timeout (default `60`
@@ -193,8 +198,10 @@ Retry policy:
 - format/crypto/invariant violations are non-retryable fatal
 
 Client module boundary:
-- `dnsdle/client_runtime.py` is the single authority for parse/format (`4`),
+- `dnsdle/client_runtime.py` is the Python authority for parse/format (`4`),
   crypto verification (`5`), and reconstruction/decompress/hash (`6`) failures.
+- `dnsdle/bash_downloader.py` generates equivalent Bash classifications after
+  the `dig` presentation boundary.
 
 ---
 
@@ -247,13 +254,20 @@ Client module boundary:
 ### Generator Contract
 
 1. Exactly one universal standalone `.py` artifact for all files and platforms.
-2. No sidecar artifacts for runtime dependencies.
-3. Assembled source must compile and be ASCII-clean.
-4. Generator writes only within managed output directory
+2. Exactly two payload artifacts per configured file, ordered Python stager then
+   Bash downloader in payload input order.
+3. No runtime sidecar artifacts.
+4. Assembled Python source must compile; all generated code/text is ASCII-clean.
+5. Payload filenames are file-ID-only and globally unique for the run.
+6. Common payload artifact records contain exactly `language`, `kind`,
+   `source_filename`, and `path`.
+7. Neither payload artifact embeds the PSK or returns generated source through
+   the common record.
+8. Generator writes only within managed output directory
    `<client_out_dir>/dnsdle_v1/`.
-5. Generation commit is transactional per run; failure leaves no newly emitted
-   artifacts from that run.
-6. `artifact_count == 1`; the universal client handles all files via CLI args.
+9. Each file write is transactional and removes its temporary file on failure.
+10. `artifact_count == 1` remains scoped to the universal client;
+    `payload_artifact_count == 2 * configured_payload_count`.
 
 Any invariant breach is fatal for the current operation context.
 

@@ -114,8 +114,11 @@ Decoding steps:
 3. Base32-decode (accept lowercase form).
 4. Parse binary record and validate profile/flags/length invariants.
 
-The v1 parity parser (`dnsdle/client_runtime.py`) treats any decode-step
-violation as a parse/format fatal error with no fallback mode.
+The Python parity parser (`dnsdle/client_runtime.py`) and generated Bash decoder
+treat any decode-step violation as a parse/format fatal error with no fallback
+mode. Bash uppercases canonical unpadded text, rejects impossible length
+residues, restores exact RFC 4648 padding, and invokes `base32 -d` into a binary
+file.
 
 The server must emit canonical lowercase/no-padding encoding so duplicate
 replies for the same slice are byte-stable at the DNS text layer.
@@ -224,5 +227,5 @@ Any change to:
 
 requires a new profile version and simultaneous update of:
 - server encoder
-- generated client decoder
+- generated Python and Bash decoders
 - related architecture docs

@@ -6,7 +6,9 @@ that publishes selected files as DNS CNAME slice responses.
 The architecture is intentionally narrow:
 - server publishes operator-selected files only
 - transport is DNS with CNAME responses only (v1)
-- Python 2.7/3.x, standard library only, Windows and Linux support
+- Python server/client support for 2.7/3.x, standard library only, Windows and
+  Linux
+- direct Bash 4.0+ downloader support on Linux with an explicit command set
 - deterministic follow-up A handling for CNAME chase traffic
 
 ---
@@ -59,8 +61,8 @@ Client behavior:
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────┴──────────────────────┐
-│ Generated Client Emission                    │
-│ (single-file render, transactional write)    │
+│ Generated Artifact Emission                  │
+│ (universal client + per-payload artifacts)   │
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────┴──────────────────────┐
@@ -107,6 +109,9 @@ Client protocol logic lives in two modules:
   verification, reassembly, decompression, and output writing.
 
 No module may maintain a second compressed-name decoding implementation.
+The direct Bash implementation is generated from `dnsdle/bash_downloader.py`
+and delegates DNS packet handling to `dig`; its presentation-level validation
+and binary file pipeline are defined in `doc/architecture/BASH_DOWNLOADER.md`.
 
 ### 2. File Publish Pipeline
 
@@ -175,6 +180,14 @@ Rules:
 
 Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 
+### 5. Per-Payload Artifact Generation
+
+After mapping convergence, each payload produces exactly two artifacts in input
+order: a Python stager followed by a direct Bash downloader. Both require a
+runtime `--psk`; neither stores the configured PSK. Artifacts use file-ID-only
+ASCII names and a common metadata contract (`language`, `kind`,
+`source_filename`, `path`).
+
 ---
 
 ## Data Flow
@@ -185,9 +198,11 @@ Crypto and integrity requirements are defined in `doc/architecture/CRYPTO.md`.
 2. Server parses CLI arguments.
 3. Server normalizes/validates config invariants.
 4. Server builds in-memory publish artifacts for each file.
-5. Server generates one universal client artifact for all files and platforms.
-6. Server validates runtime-serving invariants for DNS response construction.
-7. Server binds DNS socket and begins serving queries.
+5. Server generates one universal Python client.
+6. Server includes that client in publish preparation and converges mapping.
+7. Server emits one Python stager and one Bash downloader per payload.
+8. Server validates runtime-serving invariants for DNS response construction.
+9. Server binds DNS socket and begins serving queries.
 
 ### Download Flow
 
@@ -268,3 +283,4 @@ The v1 goal is a small, deterministic, auditable file download path over DNS.
 
 - `doc/architecture/LOGGING.md`
 - `doc/architecture/STAGER.md`
+- `doc/architecture/BASH_DOWNLOADER.md`

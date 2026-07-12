@@ -221,6 +221,18 @@ This supports out-of-order fetch and repeat retries without exposing index
 values in QNAMEs. Client file size is bounded by code size alone, independent
 of slice count.
 
+## Bash Downloader Mapping
+
+Each direct Bash downloader embeds the final `file_tag` and ordered
+`slice_tokens` from the converged mapped payload item. It does not reimplement
+mapping HMAC or global collision promotion in shell. Generation fails unless
+the token count equals `total_slices`, every token is valid, and tokens are
+unique.
+
+Embedding the reverse map makes Bash artifact size proportional to slice count,
+but guarantees it queries the exact globally promoted keys present in the
+server lookup table.
+
 ---
 
 ## Server Lookup Flow
