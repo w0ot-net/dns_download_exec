@@ -157,21 +157,21 @@ def build_client_source():
     source = preamble + extracted_source + "\n"
 
     try:
-        compile(source, "<universal_client>", "exec")
-    except SyntaxError as exc:
-        raise StartupError(
-            "startup",
-            "generator_invalid_contract",
-            "universal client source fails compilation: %s" % exc,
-        )
-
-    try:
-        encode_ascii(source)
+        source_bytes = encode_ascii(source)
     except Exception:
         raise StartupError(
             "startup",
             "generator_invalid_contract",
             "universal client source is not ASCII",
+        )
+
+    try:
+        compile(source_bytes, "<universal_client>", "exec")
+    except SyntaxError as exc:
+        raise StartupError(
+            "startup",
+            "generator_invalid_contract",
+            "universal client source fails compilation: %s" % exc,
         )
 
     return source

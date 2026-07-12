@@ -24,13 +24,13 @@ Additional event-specific keys may be included as context.
 ### Generation Events
 
 `generation_ok` required fields: `filename`, `path`, `managed_dir`,
-`artifact_count`, `payload_artifact_count`.
+`artifact_count`, `download_artifact_count`.
 
 `download_artifact_ready` required fields: `language`, `kind`,
 `source_filename`, `path`.
 
 `artifact_count` is the universal-client count and remains `1`.
-`payload_artifact_count` is exactly twice the configured payload count.
+`download_artifact_count` is exactly twice the configured payload count.
 
 ---
 

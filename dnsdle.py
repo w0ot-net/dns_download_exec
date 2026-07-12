@@ -51,7 +51,7 @@ def main(argv=None):
             "path": generation_result["path"],
             "managed_dir": generation_result["managed_dir"],
             "artifact_count": generation_result["artifact_count"],
-            "payload_artifact_count": len(download_artifacts),
+            "download_artifact_count": len(download_artifacts),
         },
         level="info",
         category="publish",

@@ -267,7 +267,7 @@ Client module boundary:
    `<client_out_dir>/dnsdle_v1/`.
 9. Each file write is transactional and removes its temporary file on failure.
 10. `artifact_count == 1` remains scoped to the universal client;
-    `payload_artifact_count == 2 * configured_payload_count`.
+    `download_artifact_count == 2 * configured_payload_count`.
 
 Any invariant breach is fatal for the current operation context.
 

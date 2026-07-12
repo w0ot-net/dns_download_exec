@@ -43,6 +43,8 @@ startup from canonical source modules using an extraction system:
 5. A thin `DnsParseError(ClientError)` subclass in the client preamble adapts
    the single-arg `DnsParseError` constructor used by extracted `_decode_name`
    to `ClientError`'s `(code, phase, message)` signature.
+6. The assembled source is ASCII-encoded before `compile()` so its encoding
+   declaration is valid under both Python 2.7 and Python 3.
 
 Extracted blocks:
 - **compat.py** (8 functions): `encode_ascii`, `encode_utf8`,
@@ -119,7 +121,7 @@ After mapping convergence, the server also emits two per-payload artifacts
 through `dnsdle/downloader_generator.py`: a Python stager and a direct Bash
 downloader. These are not included in the universal client's
 `artifact_count = 1`; their count is reported separately as
-`payload_artifact_count`.
+`download_artifact_count`.
 
 ---
 
