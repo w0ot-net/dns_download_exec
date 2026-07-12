@@ -52,10 +52,16 @@ Optional:
 - `--resolver host[:port]` or `[ipv6]:port`
 - `--out path` (`-` writes verified plaintext to stdout)
 - `--verbose`
+- `--help` or `-h`
 
 Missing/empty PSK, unknown arguments, invalid resolver syntax, invalid output
 directory, embedded contract failure, or missing/incompatible commands exit
 `2` before DNS or final-output work.
+
+Errors are always written to standard error. `--verbose` additionally enables
+progress and success messages. Generated Bash artifacts have mode `0700`; they
+can still be invoked with `bash path` when the containing filesystem is
+mounted `noexec`.
 
 Default output is `${TMPDIR:-/tmp}/dnsdle_<file_id>`.
 

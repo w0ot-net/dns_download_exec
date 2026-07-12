@@ -150,6 +150,17 @@ One Python stager file per payload, written to the managed output directory
 
 Filename: `dnsdle_<file_id>.python.1-liner.txt`.
 
+The generated one-line shell command ends with `"$@"`, so it supports both
+copy/paste execution with appended arguments and direct Bash-file execution:
+
+```bash
+bash dnsdle_<file_id>.python.1-liner.txt --psk "$PSK" --resolver 127.0.0.1
+```
+
+Shells that do not expand `"$@"` pass it as a literal argument; the stager
+removes that forwarding sentinel before parsing and invoking the universal
+client. The Python runtime remains portable across Windows and Linux.
+
 The common artifact record contains only `language=python`, `kind=stager`,
 `source_filename`, and `path`. It is followed immediately by the same payload's
 Bash downloader in the returned artifact sequence.
@@ -166,6 +177,7 @@ When a user executes a stager one-liner, the extracted script:
 
 1. Requires non-empty runtime `--psk` and parses optional `--resolver` from
    `sys.argv`. Missing/empty `--psk` exits `2` before resolver discovery.
+   The error is written to standard error unconditionally.
 2. Detects `--verbose` in `sys.argv` without consuming it, so it is forwarded
    unchanged to the universal client.  When active, the stager emits to stderr:
    - `resolver <addr>` -- resolved DNS address
@@ -174,7 +186,9 @@ When a user executes a stager one-liner, the extracted script:
 3. Downloads the universal client by iterating over all slice indices
    sequentially, querying `<slice_token>.<file_tag>.<domain_labels>` for each.
 4. Enforces a 60-second no-progress deadline per slice (resets after each
-   successful acquisition).  Retries on any exception with 1-second sleep.
+   successful acquisition). It retries transient parse and transport errors
+   with a 1-second sleep, but a MAC failure is a hard cryptographic error that
+   is reported immediately with exit `5`.
 5. After all slices are collected, verifies compressed size matches
    `COMPRESSED_SIZE`, gzip-decompresses, and verifies plaintext SHA-256 matches
    `PLAINTEXT_SHA256_HEX`.

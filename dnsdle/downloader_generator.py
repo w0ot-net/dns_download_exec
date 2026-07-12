@@ -30,6 +30,8 @@ def _write_artifact(managed_dir, rendered):
         content = encode_ascii(rendered["content"])
         with open(temp_path, "wb") as handle:
             handle.write(content)
+        if rendered["language"] == "bash":
+            os.chmod(temp_path, 0o700)
         if os.path.exists(path):
             os.remove(path)
         os.rename(temp_path, path)

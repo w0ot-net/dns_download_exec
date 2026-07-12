@@ -341,6 +341,8 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None, display_names
                 stop_state["reason"] = "keyboard_interrupt"
                 continue
             except socket.error as exc:
+                if stop_state["stop"]:
+                    continue
                 emit_record(
                     _build_log(
                         "runtime_fault",
@@ -373,6 +375,8 @@ def serve_runtime(runtime_state, emit_record, stop_requested=None, display_names
             try:
                 sock.sendto(response_bytes, addr)
             except socket.error as exc:
+                if stop_state["stop"]:
+                    continue
                 counters["runtime_fault"] += 1
                 emit_record(
                     _build_log(

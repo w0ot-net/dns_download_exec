@@ -27,6 +27,17 @@ requires `dig`, `openssl`, `base32`, `od`, `dd`, `xxd`, `gzip`, `sha256sum`,
 `mktemp`, `cat`, `rm`, `sleep`, `wc`, and `mv`. Neither per-file artifact embeds
 the PSK; pass `--psk <secret>` when invoking either one.
 
+Both per-file artifacts can be invoked as Bash files, with arguments appended:
+
+```bash
+bash dnsdle_<file_id>.bash.sh --psk "$PSK" --resolver 127.0.0.1 --verbose
+bash dnsdle_<file_id>.python.1-liner.txt --psk "$PSK" --resolver 127.0.0.1 --verbose
+```
+
+The one-liner forwards its Bash positional arguments to Python. Missing PSKs
+and cryptographic failures are always written to standard error, even without
+`--verbose`.
+
 ## How does the download work?
 
 The client downloads a file by retrieving it one slice at a time over DNS.

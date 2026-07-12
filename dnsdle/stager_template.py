@@ -194,10 +194,16 @@ def _discover_resolver():
 
 
 _STAGER_SUFFIX = '''# __RUNTIME__
-_sa = sys.argv[1:]
+_sa = [arg for arg in sys.argv[1:] if arg != "$@"]
 verbose = "--verbose" in _sa
 psk = None
 resolver = None
+
+def _exit_error(code, message):
+    sys.stderr.write("error code=%d %s\\n" % (code, message))
+    sys.stderr.flush()
+    sys.exit(code)
+
 _i = 0
 while _i < len(_sa):
     if _sa[_i] == "--psk" and _i + 1 < len(_sa):
@@ -209,7 +215,7 @@ while _i < len(_sa):
     else:
         _i += 1
 if not psk:
-    sys.exit(2)
+    _exit_error(2, "--psk is required; append --psk SECRET [--resolver HOST[:PORT]]")
 if not resolver:
     addr = _discover_resolver()
     if ":" in addr[0]:
@@ -251,6 +257,12 @@ for si in range(TOTAL_SLICES):
                 sys.stderr.write("[%d/%d]\\n" % (si + 1, TOTAL_SLICES))
             _deadline = time.time() + 60
             break
+        except ValueError as exc:
+            if exc.args and exc.args[0] == "mac":
+                _exit_error(5, "MAC verification failed")
+            if verbose:
+                sys.stderr.write("retry %d\\n" % si)
+            time.sleep(1)
         except Exception:
             if verbose:
                 sys.stderr.write("retry %d\\n" % si)

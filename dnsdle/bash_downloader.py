@@ -68,10 +68,14 @@ _log() {
     fi
 }
 
+_usage() {
+    printf 'usage: bash %s --psk SECRET [--resolver HOST[:PORT]] [--out PATH] [--verbose]\n' "$0" >&2
+}
+
 _fail() {
     local code="$1"
     shift
-    _log "error code=${code} $*"
+    printf 'error code=%s %s\n' "$code" "$*" >&2
     exit "$code"
 }
 
@@ -339,13 +343,17 @@ while (( $# )); do
             verbose=1
             shift
             ;;
+        --help|-h)
+            _usage
+            exit 0
+            ;;
         *)
             _fail 2 "unknown argument $1"
             ;;
     esac
 done
 
-[[ -n "$psk" ]] || _fail 2 "--psk is required"
+[[ -n "$psk" ]] || _fail 2 "--psk is required; use --help for usage"
 _validate_embedded
 _parse_resolver
 if [[ -z "$out" ]]; then

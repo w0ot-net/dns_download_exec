@@ -59,6 +59,10 @@ def console_startup(config, generation_result, download_artifacts):
             % (src_base, label, _color("0;33", artifact_base))
         )
     _write(
+        "  invoke:   bash ARTIFACT --psk \"$PSK\" "
+        "[--resolver host[:port]] [--out path] [--verbose]"
+    )
+    _write(
         "  client:   "
         + _color("0;33", generation_result["path"])
     )
