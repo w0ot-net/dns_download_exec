@@ -1,5 +1,7 @@
 # Plan: Generate a Pure Bash Downloader
 
+*Distilled: 2026-07-12*
+
 ## Summary
 
 Add a generated, per-payload Bash downloader that retrieves and verifies the
