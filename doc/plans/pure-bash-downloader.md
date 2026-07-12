@@ -51,9 +51,9 @@ After implementation, every configured payload has:
 The Bash downloader must run without Python or PowerShell, require a non-empty
 runtime `--psk`, fail before its first DNS request when a required command or
 embedded invariant is unavailable, remain silent unless `--verbose` is
-supplied, and never write unverified plaintext. Server-side generation must
-continue to work under Python 2.7 and 3.x on Windows and Linux using only the
-Python standard library.
+supplied, and never expose unverified plaintext at the requested output path or
+on stdout. Server-side generation must continue to work under Python 2.7 and
+3.x on Windows and Linux using only the Python standard library.
 
 PowerShell generation is not part of the current codebase or this change. The
 new language-tagged artifact boundary is the integration point for a separate
@@ -158,7 +158,9 @@ For each embedded `(slice_index, slice_token)` pair:
    slice file with `xxd`, never placing ciphertext, plaintext, or NUL-bearing
    data in a shell variable;
 6. append verified slices strictly by index, verify compressed length, decode
-   with `gzip`, and compare `sha256sum` output to the embedded plaintext hash.
+   with `gzip` only into the private temporary directory, and compare
+   `sha256sum` output to the embedded plaintext hash before copying to stdout or
+   renaming into the requested output path.
 
 DNS command failures, empty/missing CNAME output, and timeouts are retryable and
 consume the same bounded round/no-progress budgets as the Python client.
