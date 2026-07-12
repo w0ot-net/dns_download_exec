@@ -276,6 +276,8 @@ generator and runtime contract are implemented.
   invariants.
 - `dnsdle/client_runtime.py`: decode the new gzip-only representation in the
   universal Python downloader without a legacy fallback.
+- `dnsdle/client_standalone.py`: compile the assembled ASCII bytes so the
+  encoding declaration remains valid under Python 2.7 as well as Python 3.
 - `dnsdle/stager_template.py`: decode the gzip-published universal client before
   executing it, remove the embedded PSK placeholder/fallback, and require
   runtime `--psk`.
