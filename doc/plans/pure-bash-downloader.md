@@ -31,7 +31,9 @@ another programming-language runtime; the explicitly validated system commands
 The current `stager_ready` structured event also includes the complete Python
 one-liner. That encoded program contains embedded transfer configuration,
 including the PSK, so the generic artifact logging change must stop logging
-generated command/source content and retain only non-secret metadata.
+generated command/source content and retain only non-secret metadata. The
+Python stager and new Bash artifact files themselves also need an explicit
+at-rest permission contract because both contain the embedded PSK.
 
 ## Goal
 
@@ -96,16 +98,20 @@ metadata/token cardinality mismatches, unreplaced placeholders, non-ASCII
 output, duplicate output paths, and values outside the documented shell
 contract before writing anything.
 
-Use deterministic Bash and Python-stager filenames containing both a sanitized
-payload stem and `file_id`, such as `<stem>.<file_id>.bash.sh` and
-`<stem>.<file_id>.python.1-liner.txt`, so equal basenames from different source
-directories cannot overwrite each other. Render and validate the complete
-payload-artifact set, including global path uniqueness, before opening any
-output file. Write each artifact through a PID-qualified temporary file in the
-managed directory and rename only after complete output; do not depend on
-executable-bit support on a Windows generation host. Documentation and console
-output should instruct the operator to invoke a Bash artifact as `bash <path>`
-without constructing or storing a shell command string in artifact metadata.
+Use file-ID-only ASCII names, `dnsdle_<file_id>.bash.sh` and
+`dnsdle_<file_id>.python.1-liner.txt`. This avoids basename collisions and
+removes platform-dependent filename sanitization entirely. Render and validate
+the complete payload-artifact set, including global path uniqueness, before
+opening any output file. Write each artifact through a PID-qualified temporary
+file in the managed directory and rename only after complete output. Create
+temporary and final PSK-bearing artifacts with mode `0600` on POSIX and treat a
+permission-setting failure as startup-fatal. On Windows, where the standard
+library cannot establish an equivalent ACL, inherit the managed directory's
+ACL and document that the operator must restrict that directory. Do not depend
+on executable-bit support on a Windows generation host. Documentation and
+console output should instruct the operator to invoke a Bash artifact as
+`bash <path>` without constructing or storing a shell command string in
+artifact metadata.
 
 ### 3. Implement the Bash runtime as a binary-safe file pipeline
 
@@ -168,6 +174,11 @@ fields: `language`, `kind`, `source_filename`, and `path`. Use
 invocation strings remain inside their language-specific renderer/writer and
 are not returned by the common orchestration boundary.
 
+Artifact order is payload input order, with the Python stager immediately
+followed by the Bash downloader for each payload. The orchestrator must assert
+that it produced exactly two artifacts per payload and that every common field
+is present before returning the immutable sequence.
+
 Update the Python stager generator to produce that schema directly. Update all
 call sites in the same change: `build_startup_state()`, the process entry point,
 and human console rendering. Emit a single `download_artifact_ready` structured
@@ -209,8 +220,12 @@ generator and runtime contract are implemented.
 ## Validation
 
 - Generate artifacts for two payloads with the same basename but different
-  contents and confirm unique, deterministic Python/Bash paths and stable
-  artifact ordering across repeated launches.
+  contents and confirm file-ID-only unique Python/Bash paths plus stable
+  payload-order/Python-then-Bash ordering across repeated launches.
+- On POSIX, confirm every PSK-bearing generated artifact and its temporary file
+  is mode `0600`; confirm permission failures abort startup and remove the
+  temporary path. On Windows, confirm both artifacts inherit the managed
+  directory ACL and the documented directory-security warning is present.
 - Confirm every generated Bash file is ASCII, contains no placeholders, passes
   `bash -n`, and produces its dependency/config failure before issuing DNS or
   creating the final output.
@@ -241,6 +256,8 @@ generator and runtime contract are implemented.
   code/scripts, and valid on Windows and Linux server hosts.
 - Logs and console output identify every generated artifact without exposing
   embedded command/source content or secret material.
+- PSK-bearing generated files are private by invariant on POSIX and inherit an
+  explicitly documented operator-controlled managed-directory ACL on Windows.
 - Documentation describes only implemented language support and does not claim
   PowerShell generation exists.
 
@@ -254,13 +271,13 @@ generator and runtime contract are implemented.
 - `dnsdle/stager_template.py`: decode the gzip-published universal client before
   executing it.
 - `dnsdle/bash_downloader.py`: new ASCII Bash template, safe renderer,
-  invariant validation, deterministic filename policy, and transactional
-  artifact writer.
+  invariant validation, file-ID-only naming, restrictive POSIX permissions,
+  and transactional artifact writer.
 - `dnsdle/downloader_generator.py`: new common orchestrator and exact
   language-tagged generated-artifact contract.
 - `dnsdle/stager_generator.py`: migrate Python stager output to the common
-  artifact schema, add `file_id` to its collision-safe filename, and retain
-  atomic ASCII one-liner emission.
+  artifact schema, replace basename naming with file-ID-only naming, enforce
+  restrictive POSIX permissions, and retain atomic ASCII one-liner emission.
 - `dnsdle/__init__.py`: generate Bash and Python payload artifacts after mapping
   convergence and return the common artifact collection.
 - `dnsdle.py`: consume the new startup result, report separate artifact
