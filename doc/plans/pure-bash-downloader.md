@@ -80,8 +80,9 @@ Add one generator/template module that accepts validated config plus the final
 mapped payload item. Render only ASCII source and embed:
 
 - `file_id`, `publish_version`, `file_tag`, `total_slices`, compressed size,
-  plaintext SHA-256, response label, EDNS size, ordered domains, and the final
-  collision-resolved `slice_tokens` from `apply_mapping()`;
+  plaintext SHA-256, response label, DNS payload-label cap, EDNS size, ordered
+  domains, and the final collision-resolved `slice_tokens` from
+  `apply_mapping()`;
 - crypto/profile labels and bounded retry/timing defaults from canonical Python
   constants rather than independently chosen values;
 - the PSK as ASCII-safe encoded bytes, never as an interpolated shell literal;
@@ -95,18 +96,24 @@ metadata/token cardinality mismatches, unreplaced placeholders, non-ASCII
 output, duplicate output paths, and values outside the documented shell
 contract before writing anything.
 
-Use a deterministic filename containing both a sanitized payload stem and
-`file_id`, such as `<stem>.<file_id>.bash.sh`, so equal basenames from different
-source directories cannot overwrite each other. Write through a PID-qualified
-temporary file in the managed directory and rename only after complete output;
-do not depend on executable-bit support on a Windows generation host. Report a
-launch command of `bash <path>` instead.
+Use deterministic Bash and Python-stager filenames containing both a sanitized
+payload stem and `file_id`, such as `<stem>.<file_id>.bash.sh` and
+`<stem>.<file_id>.python.1-liner.txt`, so equal basenames from different source
+directories cannot overwrite each other. Render and validate the complete
+payload-artifact set, including global path uniqueness, before opening any
+output file. Write each artifact through a PID-qualified temporary file in the
+managed directory and rename only after complete output; do not depend on
+executable-bit support on a Windows generation host. Documentation and console
+output should instruct the operator to invoke a Bash artifact as `bash <path>`
+without constructing or storing a shell command string in artifact metadata.
 
 ### 3. Implement the Bash runtime as a binary-safe file pipeline
 
-The generated script must use `set -u` and explicit checked status handling,
-while avoiding `set -e` behavior that can accidentally convert classified
-retry paths into process exits. Before networking, validate Bash version,
+The generated script must require Bash 4.0 or newer, use `set -u` and explicit
+checked status handling, and avoid `set -e` behavior that can accidentally
+convert classified retry paths into process exits. Set `umask 077`, allocate one
+private temporary directory, and install its cleanup trap before decoding the
+embedded PSK or deriving keys. Before networking, validate Bash version,
 required commands, embedded array cardinalities, numeric bounds, PSK presence,
 output directory, and the optional `--resolver` syntax.
 Run fixed local capability vectors for the exact `openssl` HMAC-with-hex-key,
@@ -128,12 +135,16 @@ For each embedded `(slice_index, slice_token)` pair:
    optional explicit resolver;
 2. require one matching CNAME result, normalize only the presentation trailing
    dot/case, validate its response-label/domain suffix, validate every payload
-   label, and join the base32 text;
-3. base32-decode into a file and use `od`/`dd` to enforce profile, flags,
-   big-endian ciphertext length, record size, and eight-byte MAC invariants;
+   label against the embedded `dns_max_label_len`, and join the base32 text;
+3. uppercase the canonical unpadded payload text, reject impossible base32
+   length residues, and restore the exact RFC 4648 `=` padding needed to reach a
+   multiple of eight characters before invoking `base32 -d`; decode into a file
+   and use `od`/`dd` to enforce profile, flags, big-endian ciphertext length,
+   record size, and eight-byte MAC invariants;
 4. use `openssl` HMAC-SHA256 over exact byte files to derive the file keys,
    authenticate the metadata/ciphertext message, and generate deterministic
-   keystream blocks;
+   keystream blocks; compare the received and expected MAC hex with a
+   fixed-length XOR accumulator rather than an early-exit string comparison;
 5. XOR hex text in bounded Bash arithmetic and convert it back to a binary
    slice file with `xxd`, never placing ciphertext, plaintext, or NUL-bearing
    data in a shell variable;
@@ -150,16 +161,19 @@ Do not add compatibility fallbacks or accept multiple CNAME candidates.
 
 Add a small orchestration module that invokes the existing Python stager
 generator and the new Bash generator, then returns one deterministic sequence
-of dictionaries. Every dictionary must have exactly these common fields:
-`language`, `kind`, `source_filename`, `path`, and `launch_command`. Use
+of dictionaries. Every dictionary must have exactly these non-secret common
+fields: `language`, `kind`, `source_filename`, and `path`. Use
 `language=python, kind=stager` for current one-liners and
-`language=bash, kind=downloader` for the new scripts.
+`language=bash, kind=downloader` for the new scripts. Generated source and
+invocation strings remain inside their language-specific renderer/writer and
+are not returned by the common orchestration boundary.
 
 Update the Python stager generator to produce that schema directly. Update all
 call sites in the same change: `build_startup_state()`, the process entry point,
 and human console rendering. Emit a single `download_artifact_ready` structured
 event per artifact with language, kind, source basename, and path only. Never
-log `launch_command`, rendered source, PSK material, or other embedded secrets.
+log an invocation string, rendered source, PSK material, or other embedded
+secrets.
 Keep `generation_result["artifact_count"] == 1` scoped to the universal Python
 client; report the separately generated payload-artifact count explicitly so
 the two cardinalities cannot be confused.
@@ -245,7 +259,8 @@ generator and runtime contract are implemented.
 - `dnsdle/downloader_generator.py`: new common orchestrator and exact
   language-tagged generated-artifact contract.
 - `dnsdle/stager_generator.py`: migrate Python stager output to the common
-  artifact schema and retain atomic ASCII one-liner emission.
+  artifact schema, add `file_id` to its collision-safe filename, and retain
+  atomic ASCII one-liner emission.
 - `dnsdle/__init__.py`: generate Bash and Python payload artifacts after mapping
   convergence and return the common artifact collection.
 - `dnsdle.py`: consume the new startup result, report separate artifact
