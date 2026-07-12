@@ -73,7 +73,7 @@ def _build_parser():
     generation.add_argument("--client-out-dir", default="./generated_clients",
                             help="output dir for generated clients (default: %(default)s)")
     generation.add_argument("--compression-level", default="9",
-                            help="zlib level, 0..9 (default: %(default)s)")
+                            help="gzip DEFLATE level, 0..9 (default: %(default)s)")
 
     logging_grp = parser.add_argument_group("logging")
     logging_grp.add_argument("--log-level", default=DEFAULT_LOG_LEVEL,

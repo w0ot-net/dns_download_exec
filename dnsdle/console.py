@@ -38,7 +38,7 @@ def _write(text):
         pass
 
 
-def console_startup(config, generation_result, stagers):
+def console_startup(config, generation_result, download_artifacts):
     if not _ENABLED:
         return
     domains_str = ", ".join(config.domains)
@@ -49,11 +49,15 @@ def console_startup(config, generation_result, stagers):
         % (file_count, "" if file_count == 1 else "s", domains_str)
     )
     managed_dir = generation_result["managed_dir"]
-    _write("  stagers:  " + _color("0;33", managed_dir + os.sep))
-    for stager in stagers:
-        src_base = os.path.basename(stager["source_filename"])
-        stager_base = os.path.basename(stager["path"])
-        _write("    %-12s -> %s" % (src_base, _color("0;33", stager_base)))
+    _write("  artifacts: " + _color("0;33", managed_dir + os.sep))
+    for artifact in download_artifacts:
+        src_base = os.path.basename(artifact["source_filename"])
+        artifact_base = os.path.basename(artifact["path"])
+        label = "%s/%s" % (artifact["language"], artifact["kind"])
+        _write(
+            "    %-12s %-17s -> %s"
+            % (src_base, label, _color("0;33", artifact_base))
+        )
     _write(
         "  client:   "
         + _color("0;33", generation_result["path"])

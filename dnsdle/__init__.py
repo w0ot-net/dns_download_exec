@@ -8,6 +8,7 @@ from dnsdle.compat import encode_ascii
 from dnsdle.config import build_config
 from dnsdle.client_generator import generate_client_artifacts
 from dnsdle.console import configure_console
+from dnsdle.downloader_generator import generate_download_artifacts
 from dnsdle.logging_runtime import configure_active_logger
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
@@ -16,7 +17,6 @@ from dnsdle.publish import read_payload_sources
 from dnsdle.publish import prepare_publish_sources
 from dnsdle.publish import slice_prepared_sources
 from dnsdle.server import serve_runtime
-from dnsdle.stager_generator import generate_stagers
 from dnsdle.state import build_runtime_state
 from dnsdle.state import StartupError
 
@@ -73,7 +73,7 @@ def build_startup_state(argv=None):
         budget_info=budget_info,
     )
 
-    # Find the single universal client mapped item for stager generation
+    # Find the single universal client mapped item for payload artifact generation.
     client_mapped_item = None
     payload_mapped_items = []
     for item in combined_mapped:
@@ -89,7 +89,12 @@ def build_startup_state(argv=None):
             "universal client publish item not found in combined mapping",
         )
 
-    stagers = generate_stagers(config, generation_result, client_mapped_item, payload_mapped_items)
+    download_artifacts = generate_download_artifacts(
+        config,
+        generation_result,
+        client_mapped_item,
+        payload_mapped_items,
+    )
 
     display_names = {}
     for item in runtime_state.publish_items:
@@ -98,4 +103,4 @@ def build_startup_state(argv=None):
         else:
             display_names[item.file_tag] = os.path.basename(item.source_filename)
 
-    return runtime_state, generation_result, stagers, display_names
+    return runtime_state, generation_result, download_artifacts, display_names

@@ -27,7 +27,6 @@ MAPPING_SEED = @@MAPPING_SEED@@
 SLICE_TOKEN_LEN = @@SLICE_TOKEN_LEN@@
 RESPONSE_LABEL = @@RESPONSE_LABEL@@
 DNS_EDNS_SIZE = @@DNS_EDNS_SIZE@@
-PSK = @@PSK@@
 DOMAINS_STR = @@DOMAINS_STR@@
 FILE_TAG_LEN = @@FILE_TAG_LEN@@
 
@@ -210,7 +209,7 @@ while _i < len(_sa):
     else:
         _i += 1
 if not psk:
-    psk = PSK
+    sys.exit(2)
 if not resolver:
     addr = _discover_resolver()
     if ":" in addr[0]:
@@ -259,7 +258,7 @@ for si in range(TOTAL_SLICES):
 compressed = b"".join(slices[i] for i in range(TOTAL_SLICES))
 if len(compressed) != COMPRESSED_SIZE:
     raise ValueError("sz", len(compressed), COMPRESSED_SIZE)
-plaintext = zlib.decompress(compressed)
+plaintext = zlib.decompress(compressed, 16 + zlib.MAX_WBITS)
 if hashlib.sha256(plaintext).hexdigest().lower() != PLAINTEXT_SHA256_HEX:
     raise ValueError("sha256")
 client_source = plaintext

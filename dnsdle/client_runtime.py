@@ -229,7 +229,7 @@ def _reassemble_plaintext(slice_bytes_by_index, total_slices, compressed_size, p
         )
 
     try:
-        plaintext = zlib.decompress(compressed)
+        plaintext = zlib.decompress(compressed, 16 + zlib.MAX_WBITS)
     except Exception as exc:
         raise ClientError(EXIT_REASSEMBLY, "reassembly", "decompress failed: %s" % exc)
 

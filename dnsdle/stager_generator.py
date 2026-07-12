@@ -1,7 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
 import base64
-import os
 import re
 import zlib
 
@@ -10,15 +9,15 @@ from dnsdle.stager_template import build_stager_template
 from dnsdle.state import StartupError
 
 
-def generate_stager(config, template, client_publish_item, payload_publish_item):
-    """Generate a stager one-liner for a single payload file.
+def render_stager(config, template, client_publish_item, payload_publish_item):
+    """Render a Python stager one-liner for one payload file.
 
     template is the stager template source from build_stager_template().
     client_publish_item is the mapped publish item dict for the universal
     client script.  payload_publish_item is the mapped publish item dict
     for the user payload file.
 
-    Returns a dict with keys: source_filename, oneliner, minified_source.
+    The returned internal render record is consumed by downloader_generator.
     """
 
     replacements = {
@@ -34,7 +33,6 @@ def generate_stager(config, template, client_publish_item, payload_publish_item)
         "SLICE_TOKEN_LEN": int(client_publish_item["slice_token_len"]),
         "RESPONSE_LABEL": config.response_label,
         "DNS_EDNS_SIZE": int(config.dns_edns_size),
-        "PSK": config.psk,
         "DOMAINS_STR": ",".join(config.domains),
         "FILE_TAG_LEN": int(config.file_tag_len),
         # Payload params (per-file, passed to universal client via sys.argv)
@@ -69,7 +67,14 @@ def generate_stager(config, template, client_publish_item, payload_publish_item)
             "minified stager source fails compilation: %s" % exc,
         )
 
-    minified_bytes = minified.encode("ascii")
+    try:
+        minified_bytes = minified.encode("ascii")
+    except UnicodeEncodeError:
+        raise StartupError(
+            "startup",
+            "stager_generation_failed",
+            "minified stager source is not ASCII",
+        )
     compressed = zlib.compress(minified_bytes, 9)
     payload_str = base64.b64encode(compressed).decode("ascii")
     oneliner = (
@@ -79,59 +84,28 @@ def generate_stager(config, template, client_publish_item, payload_publish_item)
         % payload_str
     )
 
-    return {
-        "source_filename": payload_publish_item["source_filename"],
-        "oneliner": oneliner,
-        "minified_source": minified,
-    }
-
-
-def _stager_txt_filename(source_filename):
-    """Derive the stager .txt filename from the payload source filename."""
-    base = os.path.basename(source_filename)
-    name, _ext = os.path.splitext(base)
-    return name + ".1-liner.txt"
-
-
-def _write_stager_file(managed_dir, stager):
-    """Write a stager one-liner to a .txt file in the managed directory."""
-    txt_name = _stager_txt_filename(stager["source_filename"])
-    path = os.path.join(managed_dir, txt_name)
-    temp_path = path + ".tmp"
-    try:
-        with open(temp_path, "wb") as handle:
-            handle.write(stager["oneliner"].encode("ascii"))
-            handle.write(b"\n")
-        os.rename(temp_path, path)
-    except Exception as exc:
-        try:
-            os.remove(temp_path)
-        except Exception:
-            pass
+    file_id = payload_publish_item["file_id"]
+    if not re.match(r"^[0-9a-f]{16}$", file_id):
         raise StartupError(
             "startup",
             "stager_generation_failed",
-            "failed to write stager file: %s" % exc,
-            {"path": path},
+            "payload file_id is invalid for artifact naming",
+            {"file_id": file_id},
         )
-    return path
+
+    return {
+        "language": "python",
+        "kind": "stager",
+        "source_filename": payload_publish_item["source_filename"],
+        "filename": "dnsdle_%s.python.1-liner.txt" % file_id,
+        "content": oneliner + "\n",
+    }
 
 
-def generate_stagers(config, generation_result, client_publish_item, payload_publish_items):
-    """Generate stagers for all payload files.
-
-    client_publish_item is the single mapped publish item dict for the
-    universal client.  payload_publish_items is the list of mapped
-    publish item dicts for user payload files.
-
-    Returns a list of stager dicts (one per payload file).
-    """
+def render_stagers(config, client_publish_item, payload_publish_items):
+    """Render one Python stager per payload without writing files."""
     template = build_stager_template()
-    managed_dir = generation_result["managed_dir"]
-    stagers = []
-    for payload_item in payload_publish_items:
-        stager = generate_stager(config, template, client_publish_item, payload_item)
-        stager["path"] = _write_stager_file(managed_dir, stager)
-        stagers.append(stager)
-
-    return stagers
+    return tuple(
+        render_stager(config, template, client_publish_item, payload_item)
+        for payload_item in payload_publish_items
+    )

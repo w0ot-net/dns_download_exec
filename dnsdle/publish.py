@@ -1,6 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 
 import hashlib
+import struct
 import zlib
 
 import os
@@ -9,6 +10,24 @@ from dnsdle.helpers import _derive_file_id
 from dnsdle.logging_runtime import log_event
 from dnsdle.logging_runtime import logger_enabled
 from dnsdle.state import StartupError
+
+
+_GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
+
+
+def _gzip_compress(plaintext_bytes, compression_level):
+    compressor = zlib.compressobj(
+        compression_level,
+        zlib.DEFLATED,
+        -zlib.MAX_WBITS,
+    )
+    deflate_bytes = compressor.compress(plaintext_bytes) + compressor.flush()
+    trailer = struct.pack(
+        "<II",
+        zlib.crc32(plaintext_bytes) & 0xFFFFFFFF,
+        len(plaintext_bytes) & 0xFFFFFFFF,
+    )
+    return _GZIP_HEADER + deflate_bytes + trailer
 
 
 def _prepare_single_source(
@@ -29,7 +48,7 @@ def _prepare_single_source(
     seen_plaintext_sha256.add(plaintext_sha256)
 
     try:
-        compressed_bytes = zlib.compress(plaintext_bytes, compression_level)
+        compressed_bytes = _gzip_compress(plaintext_bytes, compression_level)
     except Exception as exc:
         raise StartupError(
             "publish",

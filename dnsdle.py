@@ -17,7 +17,7 @@ def main(argv=None):
     reset_active_logger()
     reset_console()
     try:
-        runtime_state, generation_result, stagers, display_names = build_startup_state(argv)
+        runtime_state, generation_result, download_artifacts, display_names = build_startup_state(argv)
     except StartupError as exc:
         emit_structured_record(
             exc.to_log_record(),
@@ -51,20 +51,22 @@ def main(argv=None):
             "path": generation_result["path"],
             "managed_dir": generation_result["managed_dir"],
             "artifact_count": generation_result["artifact_count"],
+            "payload_artifact_count": len(download_artifacts),
         },
         level="info",
         category="publish",
     )
 
-    for stager in stagers:
+    for artifact in download_artifacts:
         emit_structured_record(
             {
-                "classification": "stager_ready",
+                "classification": "download_artifact_ready",
                 "phase": "startup",
-                "reason_code": "stager_ready",
-                "source_filename": stager["source_filename"],
-                "oneliner": stager["oneliner"],
-                "path": stager["path"],
+                "reason_code": "download_artifact_ready",
+                "language": artifact["language"],
+                "kind": artifact["kind"],
+                "source_filename": artifact["source_filename"],
+                "path": artifact["path"],
             },
             level="info",
             category="startup",
@@ -106,7 +108,7 @@ def main(argv=None):
             category="publish",
         )
 
-    console_startup(config, generation_result, stagers)
+    console_startup(config, generation_result, download_artifacts)
 
     try:
         return serve_runtime(runtime_state, emit_structured_record, display_names=display_names)
