@@ -330,3 +330,69 @@ generator and runtime contract are implemented.
   classes, common artifact invariants, and gzip-only reconstruction failures.
 - `doc/architecture/LOGGING.md`: define `download_artifact_ready`, separate
   client/artifact counts, and prohibit logging rendered commands or sources.
+
+## Execution Notes
+
+Implemented 2026-07-12.
+
+### Delivered
+
+- Replaced RFC 1950 publish bytes with a deterministic explicit RFC 1952 gzip
+  envelope and updated the universal Python client and Python stager to accept
+  gzip only.
+- Added direct per-payload Bash downloaders with final embedded mapping tokens,
+  bounded `dig` transport, binary-file record processing, OpenSSL HMAC/keystream
+  parity, constant-work truncated-MAC comparison, gzip reconstruction, verified
+  stdout/file output, and private cleanup traps.
+- Added the common four-field artifact contract and deterministic payload-order,
+  Python-then-Bash emission with file-ID-only filenames.
+- Removed embedded PSKs from both per-payload artifacts and replaced generated
+  command logging with secret-free artifact metadata.
+- Updated user and architecture documentation and added
+  `doc/architecture/BASH_DOWNLOADER.md`.
+
+### Deviations and Scope Corrections
+
+- Added `dnsdle/cli.py` to update zlib-specific compression help discovered
+  during affected-component review.
+- Added `dnsdle/client_standalone.py` after Python 2.7 validation found that
+  compiling a Unicode source string with an encoding declaration failed;
+  assembled source is now ASCII-encoded before compilation.
+- Renamed the planned log field from `payload_artifact_count` to
+  `download_artifact_count` because the existing logger intentionally redacts
+  keys containing `payload`.
+- Native Windows-host generation was unavailable in the execution environment.
+  Cross-platform generation was reviewed for standard-library-only filesystem
+  behavior and validated under both Python 2.7 and Python 3 on Linux.
+- No files under `tests/` were created or modified.
+
+### Validation
+
+- Python 2.7 and Python 3 compilation and artifact generation succeeded.
+- Python 2.7 and Python 3 produced identical deterministic gzip bytes/header for
+  the same input.
+- Same-basename payloads produced stable, unique file-ID-only Python/Bash paths
+  in exact payload-order/Python-then-Bash order.
+- Generated Bash source was ASCII, placeholder-free, contained no Python or
+  PowerShell invocation, omitted sentinel PSKs, and passed `bash -n`.
+- Live local DNS transfers succeeded for empty, text, NUL-containing binary,
+  and 24 KiB multi-slice payloads through both Python stagers and Bash
+  downloaders; file and Bash stdout hashes matched the inputs.
+- System-resolver mode (through a validation `dig` wrapper), explicit resolver,
+  two-domain failure rotation, verbose/silent behavior, missing dependency,
+  missing/empty/wrong PSK, timeout/no-progress, malformed CNAME, MAC, gzip,
+  final-hash, stdout, and unwritable-output paths produced the expected exit
+  classes and left no final or temporary files on failure.
+- Structured logs reported `download_artifact_count = 2` and artifact metadata
+  without generated source, invocation strings, or PSK material.
+- `git diff --check` passed and the worktree was clean after each implementation
+  layer was committed.
+
+### Implementation Commits
+
+- `2883dab`: correct the plan scope for gzip CLI help.
+- `467f5e6`: add generated Bash downloader artifacts and coordinated runtime
+  changes.
+- `aef4af9`: document the Bash downloader architecture.
+- `ce5779f`: add the Python 2 generator correction to plan scope.
+- `f0cc45b`: fix Python 2 generation and artifact-count logging.
