@@ -269,6 +269,8 @@ generator and runtime contract are implemented.
 
 ## Affected Components
 
+- `dnsdle/cli.py`: update compression-level help text for the gzip publish
+  representation.
 - `dnsdle/publish.py`: emit deterministic RFC 1952 gzip publish bytes instead
   of RFC 1950 zlib bytes while preserving publish identity and slicing
   invariants.
